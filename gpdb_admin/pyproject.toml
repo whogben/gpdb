@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gpdb-admin"
+version = "0.1.0"
+description = "GPDB admin CLI, REST API, and MCP server (optional add-on to gpdb)"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "whogben"}
+]
+requires-python = ">=3.9"
+dependencies = [
+    "gpdb",
+    "toolaccess",
+]
+
+[project.optional-dependencies]
+dev = [
+    "gpdb[dev]",
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "fastapi",
+    "httpx",
+]
+
+[project.scripts]
+gpdb = "gpdb.admin.entry:main"
+
+[project.urls]
+Homepage = "https://github.com/whogben/gpdb"
+Repository = "https://github.com/whogben/gpdb"
+Issues = "https://github.com/whogben/gpdb/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["gpdb.admin*"]
+
+[tool.setuptools.package-dir]
+"" = "src"

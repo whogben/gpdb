@@ -1,4 +1,4 @@
-"""Entry point for the `gpdp` console command."""
+"""Entry point for the `gpdb` console command."""
 
 from toolaccess import (
     ServerManager,
