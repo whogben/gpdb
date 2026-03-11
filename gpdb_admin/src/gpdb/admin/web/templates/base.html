@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}{{ page_title or "GPDB Admin" }}{% endblock %}</title>
+    <link rel="stylesheet" href="{{ web_app.url_path_for('static', path='css/tokens.css') }}">
+    <link rel="stylesheet" href="{{ web_app.url_path_for('static', path='css/app.css') }}">
+    <script src="{{ web_app.url_path_for('static', path='js/theme.js') }}"></script>
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="site-header">
+        <a class="site-brand" href="{{ web_app.url_path_for('home') }}">GPDB Admin</a>
+        <p class="site-tagline">Generic admin shell for future graphs, tools, and workflows.</p>
+      </header>
+
+      <main class="site-main">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </body>
+</html>

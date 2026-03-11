@@ -58,3 +58,15 @@ def test_health_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"mcp_servers": ["gpdb"]}
+
+
+def test_home_page():
+    """Test that the mounted web app serves a generic landing page."""
+    manager = entry.create_manager()
+
+    client = TestClient(manager.app)
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "GPDB Admin" in response.text
+    assert "Starter Layout" in response.text

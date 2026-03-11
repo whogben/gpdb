@@ -6,3 +6,8 @@ Project Layout:
 Testing:
 - Always run tests against the .venv at the project root, never with system Python.
 - From repo root with both packages installed: `pytest` runs core and admin tests. Install with `pip install -e . -e ./gpdb_admin[dev]` for development.
+
+Admin Web App:
+- Keep the human-facing web UI in `gpdb_admin/src/gpdb/admin/web`; do not add web code to the core `gpdb` package.
+- Put server-rendered page routes in `web/routes`, shared templates in `web/templates`, and static assets in `web/static`.
+- Keep `toolaccess` tool endpoints under `/api` and use the mounted web app for browser pages at `/`.

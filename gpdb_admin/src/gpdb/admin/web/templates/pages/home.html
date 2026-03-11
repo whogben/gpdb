@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-copy">
+    <p class="eyebrow">Starter Layout</p>
+    <h1>Welcome to the GPDB admin web app.</h1>
+    <p class="hero-text">
+      This landing page is intentionally generic so future work can add routes,
+      forms, dashboards, and graph-specific tools without reworking the base layout.
+    </p>
+  </div>
+
+  <div class="hero-panel">
+    <h2>Initial structure</h2>
+    <ul class="feature-list">
+      <li>Server-rendered pages live behind a dedicated FastAPI web app.</li>
+      <li>Shared templates and static assets establish the common shell.</li>
+      <li>Light and dark themes follow the system preference automatically.</li>
+    </ul>
+  </div>
+</section>
+{% endblock %}
