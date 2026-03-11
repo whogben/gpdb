@@ -33,11 +33,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+admin = []
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "pixeltable-pgserver>=0.1.0",
 ]
+
+[project.scripts]
+gpdb = "gpdb.admin.entry:main"
 
 [project.urls]
 Homepage = "https://github.com/whogben/gpdb"
