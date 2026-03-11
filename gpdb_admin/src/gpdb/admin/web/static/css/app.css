@@ -112,6 +112,82 @@ a {
   line-height: 1.7;
 }
 
+.auth-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.9fr);
+  gap: 1.5rem;
+}
+
+.auth-copy,
+.auth-card {
+  padding: 1.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 1.5rem;
+  background: var(--surface-bg);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 18px 44px -30px var(--shadow-color);
+}
+
+.auth-card h2 {
+  margin-top: 0;
+}
+
+.auth-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.field span {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.field input {
+  width: 100%;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.85rem;
+  background: var(--page-bg);
+  color: var(--text-color);
+  font: inherit;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-width: 8.5rem;
+  padding: 0.8rem 1rem;
+  border: 0;
+  border-radius: 0.9rem;
+  background: var(--accent-color);
+  color: white;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.button-secondary {
+  background: color-mix(in srgb, var(--surface-bg) 75%, var(--accent-color) 25%);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+}
+
+.form-error {
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(210, 77, 87, 0.35);
+  border-radius: 0.9rem;
+  background: rgba(210, 77, 87, 0.1);
+  color: #c53d4b;
+}
+
 @media (max-width: 800px) {
   .site-shell {
     width: min(100% - 1rem, 1080px);
@@ -119,6 +195,10 @@ a {
   }
 
   .hero {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-layout {
     grid-template-columns: 1fr;
   }
 }

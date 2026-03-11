@@ -8,7 +8,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from platformdirs import user_config_path
+from platformdirs import user_config_path, user_data_path
 from pydantic import BaseModel, Field
 import tomli_w
 
@@ -37,10 +37,24 @@ class ServerConfig(BaseModel):
     port: int = 8747
 
 
+class RuntimeConfig(BaseModel):
+    """Config values for local runtime-owned state."""
+
+    data_dir: str = Field(default_factory=lambda: str(default_data_dir()))
+
+
+class AuthConfig(BaseModel):
+    """File-backed auth settings for the admin runtime."""
+
+    session_secret: str | None = None
+
+
 class AdminConfig(BaseModel):
     """File-backed gpdb-admin configuration."""
 
     server: ServerConfig = Field(default_factory=ServerConfig)
+    runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
+    auth: AuthConfig = Field(default_factory=AuthConfig)
 
 
 @dataclass(frozen=True)
@@ -60,11 +74,18 @@ class ResolvedConfig:
     file_config: AdminConfig
     location: ConfigLocation
     server: ServerConfig
+    runtime: RuntimeConfig
+    auth: AuthConfig
 
 
 def default_config_path() -> Path:
     """Return the default config path for the current user."""
     return user_config_path("gpdb") / DEFAULT_CONFIG_FILENAME
+
+
+def default_data_dir() -> Path:
+    """Return the default local data directory for gpdb-admin."""
+    return user_data_path("gpdb") / "admin"
 
 
 def extract_config_arg(argv: Sequence[str]) -> tuple[Path | None, list[str]]:
@@ -148,6 +169,8 @@ class ConfigStore:
             file_config=file_config,
             location=self.location,
             server=file_config.server.model_copy(deep=True),
+            runtime=file_config.runtime.model_copy(deep=True),
+            auth=file_config.auth.model_copy(deep=True),
         )
 
     def save(self, config: AdminConfig) -> Path:

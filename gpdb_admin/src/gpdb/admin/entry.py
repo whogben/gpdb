@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import secrets
 import sys
 
 import uvicorn
@@ -10,6 +11,7 @@ from toolaccess import CLIServer, OpenAPIServer, SSEMCPServer, ServerManager, To
 from toolaccess.toolaccess import MountableApp
 
 from gpdb.admin.config import ConfigStore, ResolvedConfig, extract_config_arg
+from gpdb.admin.runtime import AdminServices, create_admin_lifespan
 from gpdb.admin.web import create_web_app
 
 
@@ -26,8 +28,12 @@ def create_manager(
     if config_store is None:
         config_store = ConfigStore.from_sources()
     if resolved_config is None:
-        resolved_config = config_store.load()
+        resolved_config = _ensure_runtime_config(config_store)
 
+    services = AdminServices(
+        resolved_config=resolved_config,
+        config_store=config_store,
+    )
     admin_service = ToolService("admin", [status])
 
     rest_api = OpenAPIServer(path_prefix="/api", title="GPDB Admin API")
@@ -40,14 +46,22 @@ def create_manager(
     cli.mount(admin_service)
 
     web_app = MountableApp(
-        create_web_app(resolved_config=resolved_config, config_store=config_store),
+        create_web_app(
+            resolved_config=resolved_config,
+            config_store=config_store,
+            services=services,
+        ),
         path_prefix="",
         name="web",
     )
 
-    manager = ServerManager(name="gpdb-admin")
+    manager = ServerManager(
+        name="gpdb-admin",
+        lifespan=create_admin_lifespan(services),
+    )
     manager.app.state.config = resolved_config
     manager.app.state.config_store = config_store
+    manager.app.state.services = services
     manager.add_server(web_app)
     manager.add_server(rest_api)
     manager.add_server(mcp_server)
@@ -60,7 +74,7 @@ def bootstrap_runtime(argv: list[str] | None = None) -> tuple[ServerManager, Res
     cli_args = list(sys.argv[1:] if argv is None else argv)
     config_arg, remaining_args = extract_config_arg(cli_args)
     config_store = ConfigStore.from_sources(cli_path=config_arg)
-    resolved_config = config_store.load()
+    resolved_config = _ensure_runtime_config(config_store)
     manager = create_manager(resolved_config=resolved_config, config_store=config_store)
     return manager, resolved_config, remaining_args
 
@@ -97,6 +111,18 @@ def _run_start_command(
             print(f"🌐 Web App ({server.name}): http://{args.host}:{args.port}{prefix}")
     print("---------------------------------------------------")
     uvicorn.run(manager.app, host=args.host, port=args.port)
+
+
+def _ensure_runtime_config(config_store: ConfigStore) -> ResolvedConfig:
+    """Ensure required runtime secrets exist before the app starts."""
+    resolved_config = config_store.load()
+    if resolved_config.auth.session_secret:
+        return resolved_config
+
+    updated = resolved_config.file_config.model_copy(deep=True)
+    updated.auth.session_secret = secrets.token_urlsafe(32)
+    config_store.save(updated)
+    return config_store.load()
 
 
 if __name__ == "__main__":

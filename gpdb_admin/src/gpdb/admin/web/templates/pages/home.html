@@ -3,21 +3,24 @@
 {% block content %}
 <section class="hero">
   <div class="hero-copy">
-    <p class="eyebrow">Starter Layout</p>
+    <p class="eyebrow">Authenticated</p>
     <h1>Welcome to the GPDB admin web app.</h1>
     <p class="hero-text">
-      This landing page is intentionally generic so future work can add routes,
-      forms, dashboards, and graph-specific tools without reworking the base layout.
+      You are signed in as <strong>{{ current_user.display_name }}</strong> and the
+      admin runtime has completed its initial bootstrap flow.
     </p>
   </div>
 
   <div class="hero-panel">
-    <h2>Initial structure</h2>
+    <h2>Current state</h2>
     <ul class="feature-list">
-      <li>Server-rendered pages live behind a dedicated FastAPI web app.</li>
-      <li>Shared templates and static assets establish the common shell.</li>
-      <li>Light and dark themes follow the system preference automatically.</li>
+      <li>Owner setup is complete.</li>
+      <li>Web requests now require an authenticated user session.</li>
+      <li>The captive admin store is ready for the next implementation steps.</li>
     </ul>
+    <form action="{{ web_app.url_path_for('logout') }}" method="post">
+      <button class="button button-secondary" type="submit">Sign out</button>
+    </form>
   </div>
 </section>
 {% endblock %}

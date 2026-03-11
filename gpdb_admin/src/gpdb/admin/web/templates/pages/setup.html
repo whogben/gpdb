@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="auth-layout">
+  <div class="auth-copy">
+    <p class="eyebrow">First Run</p>
+    <h1>Create the initial owner user.</h1>
+    <p class="hero-text">
+      This GPDB admin install does not have an owner account yet. Create the first
+      user to finish setup and unlock the login flow.
+    </p>
+  </div>
+
+  <div class="auth-card">
+    <h2>Owner setup</h2>
+    {% if error_message %}
+    <p class="form-error">{{ error_message }}</p>
+    {% endif %}
+    <form class="auth-form" action="{{ web_app.url_path_for('setup') }}" method="post">
+      <label class="field">
+        <span>Username</span>
+        <input name="username" value="{{ (form_data or {}).get('username', '') }}" required>
+      </label>
+      <label class="field">
+        <span>Display name</span>
+        <input name="display_name" value="{{ (form_data or {}).get('display_name', '') }}">
+      </label>
+      <label class="field">
+        <span>Password</span>
+        <input name="password" type="password" required>
+      </label>
+      <label class="field">
+        <span>Confirm password</span>
+        <input name="confirm_password" type="password" required>
+      </label>
+      <button class="button" type="submit">Create owner</button>
+    </form>
+  </div>
+</section>
+{% endblock %}
