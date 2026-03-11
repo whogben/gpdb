@@ -12,6 +12,10 @@ from gpdb.graph import (
     NodeUpsert,
     Op,
     Page,
+    SchemaBreakingChangeError,
+    SchemaInUseError,
+    SchemaNotFoundError,
+    SchemaValidationError,
     SearchQuery,
     Sort,
 )
@@ -32,6 +36,10 @@ __all__ = [
     "NodeUpsert",
     "Op",
     "Page",
+    "SchemaBreakingChangeError",
+    "SchemaInUseError",
+    "SchemaNotFoundError",
+    "SchemaValidationError",
     "SearchQuery",
     "Sort",
 ]

@@ -7,6 +7,7 @@ Generic utility - designed to live in this one file
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import re
 from contextlib import asynccontextmanager
@@ -16,7 +17,8 @@ from enum import Enum
 from typing import Any, Dict, Generic, List, Optional, TypeVar, Union
 from uuid import uuid4
 
-
+import jsonschema
+import jsonschema.exceptions
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from sqlalchemy import (
@@ -52,6 +54,30 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 # -----------------------------------------------------------------------------
 # Schema & Models
 # -----------------------------------------------------------------------------
+
+
+class SchemaNotFoundError(Exception):
+    """Raised when a schema is not found."""
+
+    pass
+
+
+class SchemaValidationError(Exception):
+    """Raised when data validation against a schema fails."""
+
+    pass
+
+
+class SchemaBreakingChangeError(Exception):
+    """Raised when a schema update contains breaking changes."""
+
+    pass
+
+
+class SchemaInUseError(Exception):
+    """Raised when attempting to delete a schema that is still referenced by nodes or edges."""
+
+    pass
 
 
 class Op(str, Enum):
@@ -152,6 +178,7 @@ class NodeUpsert(BaseModel):
     name: Optional[str] = None
     owner_id: Optional[str] = None
     parent_id: Optional[str] = None
+    schema_name: Optional[str] = None
     data: Dict[str, Any] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
     payload: Optional[bytes] = None
@@ -168,6 +195,7 @@ class NodeRead(BaseModel):
     name: Optional[str] = None
     owner_id: Optional[str] = None
     parent_id: Optional[str] = None
+    schema_name: Optional[str] = None
     data: Dict[str, Any] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
     created_at: datetime
@@ -193,6 +221,7 @@ class EdgeUpsert(BaseModel):
     type: str
     source_id: str
     target_id: str
+    schema_name: Optional[str] = None
     data: Dict[str, Any] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
 
@@ -206,6 +235,7 @@ class EdgeRead(BaseModel):
     type: str
     source_id: str
     target_id: str
+    schema_name: Optional[str] = None
     data: Dict[str, Any] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
     created_at: datetime
@@ -406,6 +436,9 @@ class _GPRecord(_Base):
 
     # -- User-defined Content --
     type: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    schema_name: Mapped[Optional[str]] = mapped_column(
+        String, index=True, nullable=True
+    )
     data: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict)
     tags: Mapped[List[str]] = mapped_column(JSONB, default=list)
 
@@ -497,6 +530,19 @@ class _GPEdge(_GPEdgeBase):
     __tablename__ = "edges"
 
 
+class _GPSchema(_Base):
+    """Schema registry table for storing JSON schemas."""
+
+    __tablename__ = "schemas"
+
+    name: Mapped[str] = mapped_column(String, primary_key=True)
+    version: Mapped[str] = mapped_column(String, default="1.0.0")
+    json_schema: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 # -----------------------------------------------------------------------------
 # Dynamic Table Factories
 # -----------------------------------------------------------------------------
@@ -516,7 +562,9 @@ def create_node_model(table_name: str) -> type:
         return _model_cache[cache_key]
 
     # Use unique class name to avoid SQLAlchemy registry collisions
-    class_name = f"_DynamicNode_{table_name}"
+    import uuid
+
+    class_name = f"_DynamicNode_{table_name}_{uuid.uuid4().hex[:8]}"
     DynamicNode = type(class_name, (_GPNodeBase,), {"__tablename__": table_name})
 
     _model_cache[cache_key] = DynamicNode
@@ -534,7 +582,9 @@ def create_edge_model(table_name: str, node_table_name: str) -> type:
         return _model_cache[cache_key]
 
     # Use unique class name to avoid SQLAlchemy registry collisions
-    class_name = f"_DynamicEdge_{table_name}"
+    import uuid
+
+    class_name = f"_DynamicEdge_{table_name}_{uuid.uuid4().hex[:8]}"
     DynamicEdge = type(
         class_name,
         (_GPEdgeBase,),
@@ -543,6 +593,38 @@ def create_edge_model(table_name: str, node_table_name: str) -> type:
 
     _model_cache[cache_key] = DynamicEdge
     return DynamicEdge
+
+
+def create_schema_model(table_name: str) -> type:
+    """
+    Create a schema ORM class for a specific table name.
+    Used for side tables with custom prefixes.
+    Caches models to avoid redefining tables for the same prefix.
+    """
+    cache_key = f"schema:{table_name}"
+    if cache_key in _model_cache:
+        return _model_cache[cache_key]
+
+    # Use unique class name to avoid SQLAlchemy registry collisions
+    import uuid
+
+    class_name = f"_DynamicSchema_{table_name}_{uuid.uuid4().hex[:8]}"
+    DynamicSchema = type(
+        class_name,
+        (_Base,),
+        {
+            "__tablename__": table_name,
+            "name": mapped_column(String, primary_key=True),
+            "version": mapped_column(String, default="1.0.0"),
+            "json_schema": mapped_column(JSONB, default=dict),
+            "created_at": mapped_column(
+                DateTime(timezone=True), server_default=func.now()
+            ),
+        },
+    )
+
+    _model_cache[cache_key] = DynamicSchema
+    return DynamicSchema
 
 
 # -----------------------------------------------------------------------------
@@ -564,6 +646,8 @@ def _node_upsert_to_orm(
             existing.owner_id = dto.owner_id
         if dto.parent_id is not None:
             existing.parent_id = dto.parent_id
+        if dto.schema_name is not None:
+            existing.schema_name = dto.schema_name
         if dto.data is not None:
             existing.data = dto.data
         if dto.tags is not None:
@@ -579,6 +663,7 @@ def _node_upsert_to_orm(
         "name": dto.name,
         "owner_id": dto.owner_id,
         "parent_id": dto.parent_id,
+        "schema_name": dto.schema_name,
         "data": dto.data,
         "tags": dto.tags,
         "payload": dto.payload,
@@ -610,6 +695,8 @@ def _edge_upsert_to_orm(
             existing.source_id = dto.source_id
         if dto.target_id is not None:
             existing.target_id = dto.target_id
+        if dto.schema_name is not None:
+            existing.schema_name = dto.schema_name
         if dto.data is not None:
             existing.data = dto.data
         if dto.tags is not None:
@@ -620,6 +707,7 @@ def _edge_upsert_to_orm(
         "type": dto.type,
         "source_id": dto.source_id,
         "target_id": dto.target_id,
+        "schema_name": dto.schema_name,
         "data": dto.data,
         "tags": dto.tags,
     }
@@ -651,16 +739,30 @@ class GPGraph:
             self.sqla_engine, expire_on_commit=False
         )
         self._session_ctx = ContextVar(f"session_{id(self)}", default=None)
+        self._validators: Dict[str, Any] = {}
 
         # Create dynamic models if prefix specified, else use defaults
         if table_prefix:
             node_table = f"{table_prefix}_nodes"
             edge_table = f"{table_prefix}_edges"
+            schema_table = f"{table_prefix}_schemas"
             self._Node = create_node_model(node_table)
             self._Edge = create_edge_model(edge_table, node_table)
+            self._Schema = create_schema_model(schema_table)
         else:
             self._Node = _GPNode
             self._Edge = _GPEdge
+            self._Schema = _GPSchema
+
+        # Expose ORM models for external access
+        self.SchemaTable = self._Schema
+        self.NodeTable = self._Node
+        self.EdgeTable = self._Edge
+
+    @property
+    def async_session(self):
+        """Alias for sqla_sessionmaker for backward compatibility."""
+        return self.sqla_sessionmaker
 
     @asynccontextmanager
     async def transaction(self):
@@ -699,6 +801,11 @@ class GPGraph:
         async with self.sqla_engine.begin() as conn:
             # Only create this instance's specific tables
             await conn.run_sync(
+                lambda sync_conn: self._Schema.__table__.create(
+                    sync_conn, checkfirst=True
+                )
+            )
+            await conn.run_sync(
                 lambda sync_conn: self._Node.__table__.create(
                     sync_conn, checkfirst=True
                 )
@@ -714,12 +821,17 @@ class GPGraph:
         Drop tables for this GPGraph instance's models.
         """
         async with self.sqla_engine.begin() as conn:
-            # Drop in reverse order (edges first, then nodes) due to FKs
+            # Drop in reverse order of create_tables (edges, nodes, schema) due to FKs
             await conn.run_sync(
                 lambda sync_conn: self._Edge.__table__.drop(sync_conn, checkfirst=True)
             )
             await conn.run_sync(
                 lambda sync_conn: self._Node.__table__.drop(sync_conn, checkfirst=True)
+            )
+            await conn.run_sync(
+                lambda sync_conn: self._Schema.__table__.drop(
+                    sync_conn, checkfirst=True
+                )
             )
 
     async def drop_tables_for_prefix(self, table_prefix: str):
@@ -739,6 +851,7 @@ class GPGraph:
 
         node_table = f"{table_prefix}_nodes"
         edge_table = f"{table_prefix}_edges"
+        schema_table = f"{table_prefix}_schemas"
 
         # Get current session from transaction context
         session = self._session_ctx.get()
@@ -747,13 +860,433 @@ class GPGraph:
                 "drop_tables_for_prefix must be called within db.transaction()"
             )
 
-        # Drop edges first (due to FKs), then nodes using SQLAlchemy schema API
+        # Drop edges first (due to FKs), then nodes, then schema table
         metadata = MetaData()
         edge_table_obj = Table(edge_table, metadata)
         node_table_obj = Table(node_table, metadata)
+        schema_table_obj = Table(schema_table, metadata)
 
         await session.execute(DropTable(edge_table_obj, if_exists=True))
         await session.execute(DropTable(node_table_obj, if_exists=True))
+        await session.execute(DropTable(schema_table_obj, if_exists=True))
+
+    def _bump_semver(self, old_version: str, change_type: str) -> str:
+        """
+        Bump a semantic version string.
+
+        Args:
+            old_version: Current version string (e.g., "1.2.3")
+            change_type: "major", "minor", or "patch"
+
+        Returns:
+            New version string
+        """
+        parts = old_version.split(".")
+        major, minor, patch = int(parts[0]), int(parts[1]), int(parts[2])
+
+        if change_type == "major":
+            major += 1
+            minor = 0
+            patch = 0
+        elif change_type == "minor":
+            minor += 1
+            patch = 0
+        elif change_type == "patch":
+            patch += 1
+
+        return f"{major}.{minor}.{patch}"
+
+    def _detect_semver_change(
+        self, old_schema: Dict[str, Any], new_schema: Dict[str, Any]
+    ) -> str:
+        """
+        Detect the type of SemVer change between two schemas.
+
+        Returns:
+            "major" if breaking changes detected
+            "minor" if backward compatible changes (e.g., new optional field)
+            "patch" if only non-consequential changes (descriptions, titles, examples)
+        """
+        old_props = old_schema.get("properties", {})
+        new_props = new_schema.get("properties", {})
+        old_required = set(old_schema.get("required", []))
+        new_required = set(new_schema.get("required", []))
+
+        # Check for breaking changes (major)
+        removed_fields = set(old_props.keys()) - set(new_props.keys())
+        if removed_fields:
+            return "major"
+
+        for field in old_props:
+            if field in new_props:
+                old_type = old_props[field].get("type")
+                new_type = new_props[field].get("type")
+                if old_type != new_type:
+                    return "major"
+
+        newly_required = new_required - old_required
+        if newly_required:
+            return "major"
+
+        # Check for backward compatible changes (minor)
+        added_fields = set(new_props.keys()) - set(old_props.keys())
+        if added_fields:
+            # If any added field is required, it's a major change (e.g. was implicitly required before)
+            for field in added_fields:
+                if field in new_required:
+                    return "major"
+
+            # If all added fields are optional, it's a minor change
+            return "minor"
+
+        # Otherwise, it's a patch change (descriptions, titles, examples)
+        return "patch"
+
+    def _inline_refs(self, schema: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Inline all $ref references in a JSON Schema to make it standalone.
+
+        Resolves references from the $defs section (or $definitions for older schemas).
+
+        Args:
+            schema: JSON Schema dictionary that may contain $ref
+
+        Returns:
+            JSON Schema with all $ref references inlined
+        """
+        # Extract definitions from $defs or $definitions
+        defs = schema.get("$defs", schema.get("definitions", {}))
+
+        def inline(obj: Any) -> Any:
+            if isinstance(obj, dict):
+                if "$ref" in obj:
+                    ref = obj["$ref"]
+                    # Handle #/$defs/name or #/definitions/name format
+                    if ref.startswith("#/$defs/"):
+                        def_name = ref[len("#/$defs/") :]
+                    elif ref.startswith("#/definitions/"):
+                        def_name = ref[len("#/definitions/") :]
+                    else:
+                        # Simple name reference
+                        def_name = ref
+
+                    # Get the definition and recursively inline it
+                    if def_name in defs:
+                        return inline(copy.deepcopy(defs[def_name]))
+                    return {}
+                return {k: inline(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [inline(item) for item in obj]
+            return obj
+
+        # Inline all references
+        result = inline(copy.deepcopy(schema))
+
+        # Remove $defs/$definitions from the result since everything is inlined
+        if "$defs" in result:
+            del result["$defs"]
+        if "definitions" in result:
+            del result["definitions"]
+
+        return result
+
+    async def register_schema(
+        self,
+        name: str,
+        schema: Union[Dict[str, Any], type[BaseModel]],
+    ):
+        """
+        Register a JSON schema in the schema registry.
+
+        The system automatically detects the type of change and bumps the version:
+        - Major: Breaking changes (removed fields, type changes, newly required fields)
+        - Minor: Backward compatible changes (new optional fields)
+        - Patch: Non-consequential changes (descriptions, titles, examples)
+
+        Args:
+            name: Unique name for the schema
+            schema: JSON schema dictionary or Pydantic model class
+
+        Raises:
+            SchemaBreakingChangeError: If breaking changes are detected
+
+        Returns:
+            The schema ORM object with updated version
+        """
+        # Convert Pydantic model to JSON schema if needed
+        if isinstance(schema, type) and issubclass(schema, BaseModel):
+            json_schema = schema.model_json_schema()
+        else:
+            json_schema = schema
+
+        # Inline $ref references to make schema standalone
+        json_schema = self._inline_refs(json_schema)
+
+        async with self._get_session() as session:
+            # Check if schema already exists
+            existing = await session.get(self._Schema, name)
+            if existing:
+                # Detect type of change
+                change_type = self._detect_semver_change(
+                    existing.json_schema, json_schema
+                )
+
+                # Fail on breaking changes
+                if change_type == "major":
+                    self._check_breaking_changes(
+                        existing.json_schema, json_schema, name
+                    )
+
+                # Bump version
+                new_version = self._bump_semver(existing.version, change_type)
+
+                # Update existing schema
+                existing.json_schema = json_schema
+                existing.version = new_version
+                self._validators.pop(name, None)  # invalidate cache for updated schema
+                await session.flush()
+                await session.refresh(existing)
+                return existing
+
+            # Create new schema with version 1.0.0
+            new_schema = self._Schema(
+                name=name, json_schema=json_schema, version="1.0.0"
+            )
+            session.add(new_schema)
+            await session.flush()
+            await session.refresh(new_schema)
+            return new_schema
+
+    async def get_schema(self, name: str) -> Optional[Any]:
+        """
+        Retrieve a registered schema by name.
+
+        Args:
+            name: Schema name to retrieve
+
+        Returns:
+            Schema ORM object if found, None otherwise
+        """
+        async with self._get_session() as session:
+            return await session.get(self._Schema, name)
+
+    async def delete_schema(self, name: str) -> None:
+        """
+        Delete a schema from the registry.
+
+        Args:
+            name: Schema name to delete
+
+        Raises:
+            SchemaInUseError: If any nodes or edges reference this schema
+        """
+        async with self._get_session() as session:
+            # Check if any nodes use this schema
+            node_stmt = select(self._Node).where(self._Node.schema_name == name)
+            node_result = await session.execute(node_stmt)
+            if node_result.scalars().first() is not None:
+                raise SchemaInUseError(
+                    f"Cannot delete schema '{name}': it is referenced by one or more nodes"
+                )
+
+            # Check if any edges use this schema
+            edge_stmt = select(self._Edge).where(self._Edge.schema_name == name)
+            edge_result = await session.execute(edge_stmt)
+            if edge_result.scalars().first() is not None:
+                raise SchemaInUseError(
+                    f"Cannot delete schema '{name}': it is referenced by one or more edges"
+                )
+
+            # Delete the schema record
+            schema = await session.get(self._Schema, name)
+            if schema is not None:
+                await session.delete(schema)
+
+    async def list_schemas(self) -> List[str]:
+        """
+        List all registered schema names.
+
+        Returns:
+            List of schema names
+        """
+        async with self._get_session() as session:
+            stmt = select(self._Schema.name)
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+
+    def _check_breaking_changes(
+        self, old_schema: Dict[str, Any], new_schema: Dict[str, Any], name: str
+    ):
+        """
+        Check if new schema contains breaking changes compared to old schema.
+
+        Breaking changes:
+        - Adding a required field
+        - Removing a field
+        - Changing a field's type
+
+        Args:
+            old_schema: Existing JSON schema
+            new_schema: New JSON schema to validate
+            name: Schema name (for error messages)
+
+        Raises:
+            SchemaBreakingChangeError: If breaking changes detected
+        """
+        old_props = old_schema.get("properties", {})
+        new_props = new_schema.get("properties", {})
+        old_required = set(old_schema.get("required", []))
+        new_required = set(new_schema.get("required", []))
+
+        # Check for removed fields
+        removed_fields = set(old_props.keys()) - set(new_props.keys())
+        if removed_fields:
+            raise SchemaBreakingChangeError(
+                f"Schema '{name}' has breaking changes: removed fields {removed_fields}"
+            )
+
+        # Check for type changes
+        for field in old_props:
+            if field in new_props:
+                old_type = old_props[field].get("type")
+                new_type = new_props[field].get("type")
+                if old_type != new_type:
+                    raise SchemaBreakingChangeError(
+                        f"Schema '{name}' has breaking changes: field '{field}' type changed from {old_type} to {new_type}"
+                    )
+
+        # Check for newly required fields
+        newly_required = new_required - old_required
+        if newly_required:
+            raise SchemaBreakingChangeError(
+                f"Schema '{name}' has breaking changes: newly required fields {newly_required}"
+            )
+
+    async def migrate_schema(
+        self,
+        name: str,
+        migration_func: callable,
+        new_schema: Union[Dict[str, Any], type[BaseModel]],
+    ):
+        """
+        Migrate all nodes/edges using a schema to a new schema version.
+
+        This method atomically:
+        1. Migrates all data using the provided migration function
+        2. Registers the new schema (with auto SemVer bump)
+        3. All in a single transaction for 100% integrity
+
+        Args:
+            name: Schema name to migrate
+            migration_func: Function that transforms old data to new data: (old_data) -> new_data
+            new_schema: New JSON schema or Pydantic model class
+        """
+        # Convert Pydantic model to JSON schema if needed
+        if isinstance(new_schema, type) and issubclass(new_schema, BaseModel):
+            json_schema = new_schema.model_json_schema()
+        else:
+            json_schema = new_schema
+
+        # Inline $ref references to make schema standalone
+        json_schema = self._inline_refs(json_schema)
+
+        # Create validator for new schema directly (not from cache since schema not yet registered)
+        validator = jsonschema.Draft7Validator(json_schema)
+
+        async with self.sqla_sessionmaker() as session:
+            async with session.begin():
+                # Get all nodes with this schema
+                stmt = select(self._Node).where(self._Node.schema_name == name)
+                result = await session.execute(stmt)
+                nodes = result.scalars().all()
+
+                # Migrate each node's data and validate
+                for node in nodes:
+                    new_data = migration_func(node.data)
+                    try:
+                        validator.validate(new_data)
+                    except jsonschema.exceptions.ValidationError as e:
+                        raise SchemaValidationError(
+                            f"Migration produced invalid data for node {node.id}: {e.message}"
+                        )
+                    node.data = new_data
+
+                # Get all edges with this schema
+                stmt = select(self._Edge).where(self._Edge.schema_name == name)
+                result = await session.execute(stmt)
+                edges = result.scalars().all()
+
+                # Migrate each edge's data and validate
+                for edge in edges:
+                    new_data = migration_func(edge.data)
+                    try:
+                        validator.validate(new_data)
+                    except jsonschema.exceptions.ValidationError as e:
+                        raise SchemaValidationError(
+                            f"Migration produced invalid data for edge {edge.id}: {e.message}"
+                        )
+                    edge.data = new_data
+
+                # Update schema with new version (bump major for breaking changes)
+                existing = await session.get(self._Schema, name)
+                if existing:
+                    # Detect change type and bump version
+                    change_type = self._detect_semver_change(
+                        existing.json_schema, json_schema
+                    )
+                    new_version = self._bump_semver(existing.version, change_type)
+                    existing.json_schema = json_schema
+                    existing.version = new_version
+                else:
+                    new_schema_record = self._Schema(
+                        name=name, json_schema=json_schema, version="1.0.0"
+                    )
+                    session.add(new_schema_record)
+                self._validators.pop(name, None)  # invalidate cache for updated schema
+
+    async def _get_validator(self, schema_name: str) -> Any:
+        """
+        Get a cached jsonschema validator for the given schema name.
+
+        Args:
+            schema_name: Name of the schema to get validator for
+
+        Returns:
+            Compiled jsonschema validator
+
+        Raises:
+            SchemaNotFoundError: If schema is not found
+        """
+        if schema_name in self._validators:
+            return self._validators[schema_name]
+
+        schema = await self.get_schema(schema_name)
+        if schema is None:
+            raise SchemaNotFoundError(f"Schema '{schema_name}' not found")
+
+        validator = jsonschema.Draft7Validator(schema.json_schema)
+        self._validators[schema_name] = validator
+        return validator
+
+    async def _validate_data(self, schema_name: str, data: Dict[str, Any]):
+        """
+        Validate data against a registered schema.
+
+        Args:
+            schema_name: Name of the schema to validate against
+            data: Data to validate
+
+        Raises:
+            SchemaNotFoundError: If schema is not found
+            SchemaValidationError: If validation fails
+        """
+        validator = await self._get_validator(schema_name)
+        errors = list(validator.iter_errors(data))
+        if errors:
+            error_details = [e.message for e in errors]
+            raise SchemaValidationError(
+                f"Validation failed for schema '{schema_name}': {error_details}"
+            )
 
     async def set_node(self, node: NodeUpsert) -> NodeRead:
         """
@@ -764,6 +1297,20 @@ class GPGraph:
         Note: If node.payload is provided, it will be stored.
         For updating only payload, use set_node_payload().
         """
+        # Preserve existing schema_name if updating and not provided
+        schema_to_validate = node.schema_name
+        if node.id and node.schema_name is None:
+            async with self._get_session() as session:
+                existing = await session.get(self._Node, node.id)
+                if existing and existing.schema_name:
+                    schema_to_validate = existing.schema_name
+                    # Update DTO to ensure schema persistence
+                    node.schema_name = schema_to_validate
+
+        # Validate data against schema if schema_name is provided
+        if schema_to_validate:
+            await self._validate_data(schema_to_validate, node.data)
+
         async with self._get_session() as session:
             # Check if node exists (for update)
             existing = None
@@ -892,6 +1439,20 @@ class GPGraph:
         Upsert an Edge.
         Creates if new, updates if existing (matched by id).
         """
+        # Preserve existing schema_name if updating and not provided
+        schema_to_validate = edge.schema_name
+        if edge.id and edge.schema_name is None:
+            async with self._get_session() as session:
+                existing = await session.get(self._Edge, edge.id)
+                if existing and existing.schema_name:
+                    schema_to_validate = existing.schema_name
+                    # Update DTO to ensure schema persistence
+                    edge.schema_name = schema_to_validate
+
+        # Validate data against schema if schema_name is provided
+        if schema_to_validate:
+            await self._validate_data(schema_to_validate, edge.data)
+
         async with self._get_session() as session:
             # Check if edge exists (for update)
             existing = None
@@ -1398,6 +1959,11 @@ def _parse_expr(tokens: List[Any], pos: int) -> tuple[Union[Filter, FilterGroup]
 # -----------------------------------------------------------------------------
 
 __all__ = [
+    # Exceptions
+    "SchemaNotFoundError",
+    "SchemaValidationError",
+    "SchemaBreakingChangeError",
+    "SchemaInUseError",
     # Pydantic models
     "Op",
     "Logic",
