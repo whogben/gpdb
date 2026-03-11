@@ -16,6 +16,9 @@ dependencies = [
     "gpdb",
     "fastapi",
     "jinja2",
+    "platformdirs",
+    "tomli; python_version < '3.11'",
+    "tomli-w",
     "toolaccess",
 ]
 

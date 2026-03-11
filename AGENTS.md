@@ -11,3 +11,7 @@ Admin Web App:
 - Keep the human-facing web UI in `gpdb_admin/src/gpdb/admin/web`; do not add web code to the core `gpdb` package.
 - Put server-rendered page routes in `web/routes`, shared templates in `web/templates`, and static assets in `web/static`.
 - Keep `toolaccess` tool endpoints under `/api` and use the mounted web app for browser pages at `/`.
+
+Admin Config:
+- Keep file-backed admin config in `gpdb_admin/src/gpdb/admin/config.py`; resolve config path from CLI `--config`, then `GPDB_CONFIG`, then the default user config path.
+- Use `ResolvedConfig` for runtime values and `ConfigStore` for file reads/writes; only persist file-backed values, not env or CLI overrides.

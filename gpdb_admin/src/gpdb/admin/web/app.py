@@ -6,14 +6,18 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from gpdb.admin.config import ConfigStore, ResolvedConfig
+
 from .routes.pages import router as pages_router
 
 
 WEB_ROOT = Path(__file__).resolve().parent
-TEMPLATES = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
 
 
-def create_web_app() -> FastAPI:
+def create_web_app(
+    resolved_config: ResolvedConfig,
+    config_store: ConfigStore,
+) -> FastAPI:
     """Create the admin web application."""
     app = FastAPI(
         title="GPDB Admin Web",
@@ -21,12 +25,15 @@ def create_web_app() -> FastAPI:
         redoc_url=None,
         openapi_url=None,
     )
-    app.state.templates = TEMPLATES
+    templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
+    app.state.templates = templates
+    app.state.config = resolved_config
+    app.state.config_store = config_store
 
     def _inject_web_app(request):
-        return {"web_app": app}
+        return {"web_app": app, "resolved_config": resolved_config}
 
-    TEMPLATES.context_processors.append(_inject_web_app)
+    templates.context_processors.append(_inject_web_app)
 
     app.include_router(pages_router)
     app.mount("/static", StaticFiles(directory=str(WEB_ROOT / "static")), name="static")
