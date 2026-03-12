@@ -99,19 +99,25 @@ def create_manager(
         config_store=config_store,
     )
     admin_service = ToolService("admin", [status])
+    rest_graph_service = ToolService("admin-graph-api", _build_rest_graph_content_tools(services))
+    cli_graph_service = ToolService("admin-graph-cli", _build_cli_graph_content_tools(services))
+    mcp_graph_service = ToolService("admin-graph-mcp", _build_mcp_graph_content_tools(services))
     cli_api_key_service = ToolService("admin-cli", _build_cli_api_key_tools(services))
     mcp_api_key_service = ToolService("admin-mcp", _build_mcp_api_key_tools(services))
 
     rest_api = OpenAPIServer(path_prefix="/api", title="GPDB Admin API")
     rest_api.mount(admin_service)
+    rest_api.mount(rest_graph_service)
     _install_api_key_auth(rest_api, services)
 
     mcp_server = SSEMCPServer("gpdb", auth_provider=_AdminAPIKeyTokenVerifier(services))
     mcp_server.mount(admin_service)
+    mcp_server.mount(mcp_graph_service)
     mcp_server.mount(mcp_api_key_service)
 
     cli = CLIServer("gpdb")
     cli.mount(admin_service)
+    cli.mount(cli_graph_service)
     cli.mount(cli_api_key_service)
 
     web_app = MountableApp(
@@ -223,6 +229,57 @@ def _unauthorized_response() -> JSONResponse:
         status_code=401,
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinition]:
+    """Build authenticated REST tools for graph-content access."""
+
+    async def graph_overview(graph_id: str, request: Request) -> dict[str, object]:
+        """Return one managed graph overview for the authenticated REST user."""
+        current_user = _require_rest_user(request)
+        result = await _require_graph_content(services).get_graph_overview(
+            graph_id=graph_id,
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json")
+
+    return [
+        ToolDefinition(graph_overview, "graph_overview", http_method="GET"),
+    ]
+
+
+def _build_cli_graph_content_tools(services: AdminServices) -> list[ToolDefinition]:
+    """Build trusted local CLI commands for graph-content access."""
+
+    async def graph_overview(graph_id: str) -> dict[str, object]:
+        """Return one managed graph overview for trusted local CLI use."""
+        result = await _require_graph_content(services).get_graph_overview(
+            graph_id=graph_id,
+            current_user=None,
+            allow_local_system=True,
+        )
+        return _emit_cli_result(result.model_dump(mode="json"))
+
+    return [
+        ToolDefinition(graph_overview, "graph_overview"),
+    ]
+
+
+def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefinition]:
+    """Build authenticated MCP tools for graph-content access."""
+
+    async def graph_overview(graph_id: str, ctx: Context) -> dict[str, object]:
+        """Return one managed graph overview for the authenticated MCP user."""
+        current_user = await _require_mcp_user(services, ctx)
+        result = await _require_graph_content(services).get_graph_overview(
+            graph_id=graph_id,
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json")
+
+    return [
+        ToolDefinition(graph_overview, "graph_overview"),
+    ]
 
 
 def _build_cli_api_key_tools(services: AdminServices) -> list[ToolDefinition]:
@@ -398,6 +455,22 @@ async def _require_owned_api_key(
 def _serialize_api_key(api_key) -> dict[str, object]:
     """Project one API key dataclass into a tool-friendly dict."""
     return asdict(api_key)
+
+
+def _require_graph_content(services: AdminServices):
+    """Return the shared graph-content service once startup has completed."""
+    graph_content = services.graph_content
+    if graph_content is None:
+        raise RuntimeError("Graph content service is not ready yet.")
+    return graph_content
+
+
+def _require_rest_user(request: Request):
+    """Return the authenticated REST user set by API-key middleware."""
+    current_user = getattr(request.state, "current_user", None)
+    if current_user is None:
+        raise RuntimeError("Authenticated REST API key required.")
+    return current_user
 
 
 def _emit_cli_result(result):

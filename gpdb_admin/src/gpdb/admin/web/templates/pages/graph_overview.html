@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-copy">
+    <p class="eyebrow">Graph Overview</p>
+    <h1>{{ overview.graph.display_name }}</h1>
+    <p class="hero-text">
+      Managed on <strong>{{ overview.instance.display_name }}</strong> with table prefix
+      <strong>{{ overview.graph.table_prefix_label }}</strong>.
+    </p>
+    <div class="button-row">
+      <a class="button button-secondary" href="{{ web_app.url_path_for('home') }}">Back to dashboard</a>
+      {% if current_user.is_owner %}
+      <a class="button" href="{{ web_app.url_path_for('graph_edit_page', graph_id=overview.graph.id) }}">Edit graph</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="hero-panel">
+    <h2>Live summary</h2>
+    <ul class="feature-list">
+      {% if overview.summary.schema_count is not none %}
+      <li>{{ overview.summary.schema_count }} registered schema{{ "" if overview.summary.schema_count == 1 else "s" }}.</li>
+      {% else %}
+      <li>Registered schema count unavailable.</li>
+      {% endif %}
+      {% if overview.summary.node_count is not none %}
+      <li>{{ overview.summary.node_count }} node{{ "" if overview.summary.node_count == 1 else "s" }}.</li>
+      {% else %}
+      <li>Node count unavailable.</li>
+      {% endif %}
+      {% if overview.summary.edge_count is not none %}
+      <li>{{ overview.summary.edge_count }} edge{{ "" if overview.summary.edge_count == 1 else "s" }}.</li>
+      {% else %}
+      <li>Edge count unavailable.</li>
+      {% endif %}
+      <li>Graph status: {{ overview.graph.status }}.</li>
+    </ul>
+  </div>
+</section>
+
+{% if overview.content_error %}
+<p class="form-error">{{ overview.content_error }}</p>
+{% endif %}
+
+<section class="dashboard-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Managed Metadata</p>
+      <h2>Graph</h2>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    <article class="resource-card">
+      <div class="resource-header">
+        <div>
+          <h3>{{ overview.graph.display_name }}</h3>
+          <p class="resource-subtitle">{{ overview.instance.display_name }}</p>
+        </div>
+        <span class="status-pill status-{{ overview.graph.status }}">{{ overview.graph.status }}</span>
+      </div>
+      <dl class="resource-meta">
+        <div>
+          <dt>Graph ID</dt>
+          <dd>{{ overview.graph.id }}</dd>
+        </div>
+        <div>
+          <dt>Prefix</dt>
+          <dd>{{ overview.graph.table_prefix_label }}</dd>
+        </div>
+        <div>
+          <dt>Source</dt>
+          <dd>{{ overview.graph.source }}</dd>
+        </div>
+        <div>
+          <dt>Present</dt>
+          <dd>{{ "yes" if overview.graph.exists_in_instance else "no" }}</dd>
+        </div>
+      </dl>
+      {% if overview.graph.status_message %}
+      <p class="resource-note">{{ overview.graph.status_message }}</p>
+      {% endif %}
+    </article>
+
+    <article class="resource-card">
+      <div class="resource-header">
+        <div>
+          <h3>{{ overview.instance.display_name }}</h3>
+          <p class="resource-subtitle">{{ overview.instance.slug }}</p>
+        </div>
+        <span class="status-pill status-{{ overview.instance.status }}">{{ overview.instance.status }}</span>
+      </div>
+      <dl class="resource-meta">
+        <div>
+          <dt>Mode</dt>
+          <dd>{{ overview.instance.mode }}</dd>
+        </div>
+        <div>
+          <dt>Database</dt>
+          <dd>{{ overview.instance.database or "runtime-managed" }}</dd>
+        </div>
+        <div>
+          <dt>Host</dt>
+          <dd>{{ overview.instance.host or "runtime-managed" }}</dd>
+        </div>
+        <div>
+          <dt>Active</dt>
+          <dd>{{ "yes" if overview.instance.is_active else "no" }}</dd>
+        </div>
+      </dl>
+      {% if overview.instance.description %}
+      <p class="resource-note">{{ overview.instance.description }}</p>
+      {% endif %}
+      {% if overview.instance.status_message %}
+      <p class="resource-note">{{ overview.instance.status_message }}</p>
+      {% endif %}
+    </article>
+  </div>
+</section>
+{% endblock %}

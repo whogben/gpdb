@@ -9,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 from gpdb.admin.config import ConfigStore, ResolvedConfig
 from gpdb.admin.runtime import AdminServices
 
+from .routes.graph_overview import router as graph_overview_router
 from .routes.pages import router as pages_router
 
 
@@ -39,5 +40,6 @@ def create_web_app(
     templates.context_processors.append(_inject_web_app)
 
     app.include_router(pages_router)
+    app.include_router(graph_overview_router)
     app.mount("/static", StaticFiles(directory=str(WEB_ROOT / "static")), name="static")
     return app

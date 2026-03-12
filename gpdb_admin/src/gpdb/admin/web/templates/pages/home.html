@@ -84,6 +84,7 @@
       {% endif %}
       {% if current_user.is_owner %}
       <div class="button-row">
+        <a class="button button-secondary" href="{{ web_app.url_path_for('graph_overview_page', graph_id=graph.id) }}">Open</a>
         <a class="button button-secondary" href="{{ web_app.url_path_for('graph_edit_page', graph_id=graph.id) }}">Edit</a>
         {% if graph.table_prefix %}
         <form action="{{ web_app.url_path_for('graph_delete', graph_id=graph.id) }}" method="post">

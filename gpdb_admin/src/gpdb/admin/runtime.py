@@ -13,6 +13,7 @@ from pixeltable_pgserver import postgres_server as postgres_server_module
 from gpdb import GPGraph
 from gpdb.admin.auth import SessionSigner
 from gpdb.admin.config import ConfigStore, ResolvedConfig
+from gpdb.admin.graph_content import GraphContentService
 from gpdb.admin.instances import ManagedInstanceMonitor
 from gpdb.admin.store import AdminStore
 
@@ -27,6 +28,7 @@ class AdminServices:
     session_signer: SessionSigner | None = None
     captive_server: PostgresServer | None = None
     instance_monitor: ManagedInstanceMonitor | None = None
+    graph_content: GraphContentService | None = None
 
 
 class _PathSafePostgresServer(PostgresServer):
@@ -163,6 +165,10 @@ def create_admin_lifespan(services: AdminServices):
             services.admin_store = admin_store
             services.session_signer = SessionSigner(session_secret)
             services.instance_monitor = instance_monitor
+            services.graph_content = GraphContentService(
+                admin_store=admin_store,
+                captive_url_factory=server.get_uri,
+            )
             app.state.services = services
             yield
             await instance_monitor.stop()

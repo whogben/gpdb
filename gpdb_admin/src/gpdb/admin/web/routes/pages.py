@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import urlencode
 
 from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -22,6 +21,13 @@ from gpdb.admin.store import (
     OwnerAlreadyExistsError,
     UserAlreadyExistsError,
 )
+from gpdb.admin.web.routes.common import (
+    current_user_from_request,
+    redirect_with_message,
+    render,
+    require_authenticated_user,
+    require_owner_user,
+)
 
 
 router = APIRouter()
@@ -35,13 +41,13 @@ async def home(request: Request) -> HTMLResponse:
     assert services.admin_store is not None
 
     if not await services.admin_store.owner_exists():
-        return _render(
+        return render(
             request,
             "pages/setup.html",
             page_title="Create Initial Owner",
         )
 
-    current_user = await _current_user(request)
+    current_user = await current_user_from_request(request)
     if current_user is None:
         return RedirectResponse(
             url=request.app.url_path_for("login"),
@@ -51,7 +57,7 @@ async def home(request: Request) -> HTMLResponse:
     if services.instance_monitor is not None:
         await services.instance_monitor.refresh_all()
 
-    return _render(
+    return render(
         request,
         "pages/home.html",
         page_title="GPDB Admin",
@@ -76,14 +82,14 @@ async def login_page(request: Request) -> HTMLResponse:
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
-    current_user = await _current_user(request)
+    current_user = await current_user_from_request(request)
     if current_user is not None:
         return RedirectResponse(
             url=request.app.url_path_for("home"),
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
-    return _render(
+    return render(
         request,
         "pages/login.html",
         page_title="Sign In",
@@ -112,7 +118,7 @@ async def setup_owner(
     display_name = display_name.strip()
 
     if not username or not password:
-        return _render(
+        return render(
             request,
             "pages/setup.html",
             page_title="Create Initial Owner",
@@ -120,7 +126,7 @@ async def setup_owner(
             form_data={"username": username, "display_name": display_name},
         )
     if password != confirm_password:
-        return _render(
+        return render(
             request,
             "pages/setup.html",
             page_title="Create Initial Owner",
@@ -135,7 +141,7 @@ async def setup_owner(
             display_name=display_name or username,
         )
     except (OwnerAlreadyExistsError, UserAlreadyExistsError) as exc:
-        return _render(
+        return render(
             request,
             "pages/setup.html",
             page_title="Create Initial Owner",
@@ -174,7 +180,7 @@ async def login_submit(
         verify_password=verify_password,
     )
     if user is None:
-        return _render(
+        return render(
             request,
             "pages/login.html",
             page_title="Sign In",
@@ -214,11 +220,11 @@ async def api_keys_page(request: Request) -> HTMLResponse:
     services = request.app.state.services
     assert services.admin_store is not None
 
-    current_user = await _require_authenticated_user(request)
+    current_user = await require_authenticated_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
 
-    return _render(
+    return render(
         request,
         "pages/api_keys.html",
         page_title="API Keys",
@@ -237,15 +243,15 @@ async def api_key_detail_page(request: Request, api_key_id: str) -> HTMLResponse
     services = request.app.state.services
     assert services.admin_store is not None
 
-    current_user = await _require_authenticated_user(request)
+    current_user = await require_authenticated_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
 
     api_key = await services.admin_store.get_api_key_by_id(api_key_id)
     if api_key is None or api_key.user_id != current_user.id:
-        return _redirect_with_message(request, "api_keys_page", error="API key not found.")
+        return redirect_with_message(request, "api_keys_page", error="API key not found.")
 
-    return _render(
+    return render(
         request,
         "pages/api_keys.html",
         page_title="API Keys",
@@ -267,13 +273,13 @@ async def api_key_create(
     services = request.app.state.services
     assert services.admin_store is not None
 
-    current_user = await _require_authenticated_user(request)
+    current_user = await require_authenticated_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
 
     label = label.strip()
     if not label:
-        return _render(
+        return render(
             request,
             "pages/api_keys.html",
             page_title="API Keys",
@@ -294,7 +300,7 @@ async def api_key_create(
         secret_hash=hash_api_key_secret(generated.secret),
         key_value=generated.token,
     )
-    return _redirect_with_message(
+    return redirect_with_message(
         request,
         "api_key_detail_page",
         api_key_id=api_key.id,
@@ -308,25 +314,25 @@ async def api_key_revoke(request: Request, api_key_id: str) -> RedirectResponse:
     services = request.app.state.services
     assert services.admin_store is not None
 
-    current_user = await _require_authenticated_user(request)
+    current_user = await require_authenticated_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
 
     api_key = await services.admin_store.get_api_key_by_id(api_key_id)
     if api_key is None or api_key.user_id != current_user.id:
-        return _redirect_with_message(request, "api_keys_page", error="API key not found.")
+        return redirect_with_message(request, "api_keys_page", error="API key not found.")
     await services.admin_store.revoke_api_key(api_key_id)
-    return _redirect_with_message(request, "api_keys_page", success="API key revoked.")
+    return redirect_with_message(request, "api_keys_page", success="API key revoked.")
 
 
 @router.get("/instances/new", response_class=HTMLResponse, name="instance_create_page")
 async def instance_create_page(request: Request) -> HTMLResponse:
     """Render the add-instance form."""
-    current_user = await _require_owner_user(request)
+    current_user = await require_owner_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
 
-    return _render(
+    return render(
         request,
         "pages/instance_form.html",
         page_title="Add Instance",
@@ -355,7 +361,7 @@ async def instance_create(
     assert services.admin_store is not None
     assert services.instance_monitor is not None
 
-    current_user = await _require_owner_user(request)
+    current_user = await require_owner_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
 
@@ -371,7 +377,7 @@ async def instance_create(
     }
     error_message = _validate_instance_form(form_data)
     if error_message:
-        return _render(
+        return render(
             request,
             "pages/instance_form.html",
             page_title="Add Instance",
@@ -396,7 +402,7 @@ async def instance_create(
         )
         await services.instance_monitor.refresh_instance(instance.id)
     except InstanceAlreadyExistsError as exc:
-        return _render(
+        return render(
             request,
             "pages/instance_form.html",
             page_title="Add Instance",
@@ -408,7 +414,7 @@ async def instance_create(
             error_message=str(exc),
         )
     except Exception as exc:
-        return _render(
+        return render(
             request,
             "pages/instance_form.html",
             page_title="Add Instance",
@@ -420,7 +426,7 @@ async def instance_create(
             error_message=str(exc),
         )
 
-    return _redirect_with_message(
+    return redirect_with_message(
         request,
         "home",
         success="Instance added.",
@@ -433,15 +439,15 @@ async def instance_edit_page(request: Request, instance_id: str) -> HTMLResponse
     services = request.app.state.services
     assert services.admin_store is not None
 
-    current_user = await _require_owner_user(request)
+    current_user = await require_owner_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
 
     instance = await services.admin_store.get_instance_by_id(instance_id)
     if instance is None:
-        return _redirect_with_message(request, "home", error="Instance not found.")
+        return redirect_with_message(request, "home", error="Instance not found.")
 
-    return _render(
+    return render(
         request,
         "pages/instance_form.html",
         page_title="Edit Instance",
@@ -479,13 +485,13 @@ async def instance_edit(
     assert services.admin_store is not None
     assert services.instance_monitor is not None
 
-    current_user = await _require_owner_user(request)
+    current_user = await require_owner_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
 
     instance = await services.admin_store.get_instance_by_id(instance_id)
     if instance is None:
-        return _redirect_with_message(request, "home", error="Instance not found.")
+        return redirect_with_message(request, "home", error="Instance not found.")
 
     form_data = {
         "display_name": display_name.strip(),
@@ -505,7 +511,7 @@ async def instance_edit(
         require_connection_fields=instance.mode == "external",
     )
     if error_message:
-        return _render(
+        return render(
             request,
             "pages/instance_form.html",
             page_title="Edit Instance",
@@ -529,10 +535,10 @@ async def instance_edit(
         password=form_data["password"] if form_data["password"] else None,
     )
     if updated is None:
-        return _redirect_with_message(request, "home", error="Instance not found.")
+        return redirect_with_message(request, "home", error="Instance not found.")
 
     await services.instance_monitor.refresh_instance(updated.id)
-    return _redirect_with_message(
+    return redirect_with_message(
         request,
         "home",
         success="Instance updated.",
@@ -545,15 +551,15 @@ async def instance_delete(request: Request, instance_id: str) -> RedirectRespons
     services = request.app.state.services
     assert services.admin_store is not None
 
-    current_user = await _require_owner_user(request)
+    current_user = await require_owner_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
 
     try:
         await services.admin_store.delete_instance(instance_id)
     except ValueError as exc:
-        return _redirect_with_message(request, "home", error=str(exc))
-    return _redirect_with_message(request, "home", success="Instance removed.")
+        return redirect_with_message(request, "home", error=str(exc))
+    return redirect_with_message(request, "home", success="Instance removed.")
 
 
 @router.get("/graphs/new", response_class=HTMLResponse, name="graph_create_page")
@@ -562,12 +568,12 @@ async def graph_create_page(request: Request) -> HTMLResponse:
     services = request.app.state.services
     assert services.admin_store is not None
 
-    current_user = await _require_owner_user(request)
+    current_user = await require_owner_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
 
     instances = await services.admin_store.list_instances()
-    return _render(
+    return render(
         request,
         "pages/graph_form.html",
         page_title="Add Graph",
@@ -592,7 +598,7 @@ async def graph_create(
     assert services.admin_store is not None
     assert services.instance_monitor is not None
 
-    current_user = await _require_owner_user(request)
+    current_user = await require_owner_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
 
@@ -604,7 +610,7 @@ async def graph_create(
     }
     error_message = _validate_graph_form(form_data, instances)
     if error_message:
-        return _render(
+        return render(
             request,
             "pages/graph_form.html",
             page_title="Add Graph",
@@ -624,7 +630,7 @@ async def graph_create(
             display_name=form_data["display_name"] or None,
         )
     except (GraphAlreadyExistsError, ValueError) as exc:
-        return _render(
+        return render(
             request,
             "pages/graph_form.html",
             page_title="Add Graph",
@@ -637,7 +643,7 @@ async def graph_create(
             error_message=str(exc),
         )
 
-    return _redirect_with_message(request, "home", success="Graph created.")
+    return redirect_with_message(request, "home", success="Graph created.")
 
 
 @router.get("/graphs/{graph_id}/edit", response_class=HTMLResponse, name="graph_edit_page")
@@ -646,15 +652,15 @@ async def graph_edit_page(request: Request, graph_id: str) -> HTMLResponse:
     services = request.app.state.services
     assert services.admin_store is not None
 
-    current_user = await _require_owner_user(request)
+    current_user = await require_owner_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
 
     graph = await services.admin_store.get_graph_by_id(graph_id)
     if graph is None:
-        return _redirect_with_message(request, "home", error="Graph not found.")
+        return redirect_with_message(request, "home", error="Graph not found.")
 
-    return _render(
+    return render(
         request,
         "pages/graph_form.html",
         page_title="Edit Graph",
@@ -680,23 +686,23 @@ async def graph_edit(
     assert services.admin_store is not None
     assert services.instance_monitor is not None
 
-    current_user = await _require_owner_user(request)
+    current_user = await require_owner_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
 
     graph = await services.admin_store.get_graph_by_id(graph_id)
     if graph is None:
-        return _redirect_with_message(request, "home", error="Graph not found.")
+        return redirect_with_message(request, "home", error="Graph not found.")
 
     updated = await services.admin_store.update_graph(
         graph_id=graph_id,
         display_name=display_name.strip() or graph.display_name,
     )
     if updated is None:
-        return _redirect_with_message(request, "home", error="Graph not found.")
+        return redirect_with_message(request, "home", error="Graph not found.")
 
     await services.instance_monitor.refresh_instance(updated.instance_id)
-    return _redirect_with_message(request, "home", success="Graph updated.")
+    return redirect_with_message(request, "home", success="Graph updated.")
 
 
 @router.post("/graphs/{graph_id}/delete", name="graph_delete")
@@ -705,91 +711,15 @@ async def graph_delete(request: Request, graph_id: str) -> RedirectResponse:
     services = request.app.state.services
     assert services.instance_monitor is not None
 
-    current_user = await _require_owner_user(request)
+    current_user = await require_owner_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
 
     try:
         await services.instance_monitor.delete_graph(graph_id)
     except ValueError as exc:
-        return _redirect_with_message(request, "home", error=str(exc))
-    return _redirect_with_message(request, "home", success="Graph deleted.")
-
-
-def _render(request: Request, template_name: str, **context) -> HTMLResponse:
-    """Render a template with the shared template environment."""
-    return request.app.state.templates.TemplateResponse(
-        request=request,
-        name=template_name,
-        context=context,
-    )
-
-
-async def _require_owner_user(request: Request):
-    """Return the signed-in owner or redirect away if unavailable."""
-    current_user = await _require_authenticated_user(request)
-    if isinstance(current_user, RedirectResponse):
-        return current_user
-    if not current_user.is_owner:
-        return _redirect_with_message(
-            request,
-            "home",
-            error="Only the server owner can manage instances and graphs.",
-        )
-    return current_user
-
-
-async def _require_authenticated_user(request: Request):
-    """Return the signed-in user or redirect to login."""
-    current_user = await _current_user(request)
-    if current_user is None:
-        return RedirectResponse(
-            url=request.app.url_path_for("login"),
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
-    return current_user
-
-
-async def _current_user(request: Request):
-    """Resolve the signed session cookie into the current user, if any."""
-    services = request.app.state.services
-    assert services.admin_store is not None
-    assert services.session_signer is not None
-
-    cookie_value = request.cookies.get(SESSION_COOKIE_NAME)
-    if not cookie_value:
-        return None
-
-    session = services.session_signer.loads(cookie_value)
-    if session is None:
-        return None
-
-    user = await services.admin_store.get_user_by_id(session.user_id)
-    if user is None or not user.is_active:
-        return None
-    if user.auth_version != session.auth_version:
-        return None
-    return user
-
-
-def _redirect_with_message(
-    request: Request,
-    route_name: str,
-    *,
-    error: str | None = None,
-    success: str | None = None,
-    **route_params,
-) -> RedirectResponse:
-    """Redirect to a route and carry a simple status message."""
-    url = request.app.url_path_for(route_name, **route_params)
-    params = {}
-    if error:
-        params["error"] = error
-    if success:
-        params["success"] = success
-    if params:
-        url = f"{url}?{urlencode(params)}"
-    return RedirectResponse(url=url, status_code=status.HTTP_303_SEE_OTHER)
+        return redirect_with_message(request, "home", error=str(exc))
+    return redirect_with_message(request, "home", success="Graph deleted.")
 
 
 def _validate_instance_form(
