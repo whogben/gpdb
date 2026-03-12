@@ -8,7 +8,14 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from gpdb.admin.auth import SESSION_COOKIE_NAME, SessionData, hash_password, verify_password
+from gpdb.admin.auth import (
+    SESSION_COOKIE_NAME,
+    SessionData,
+    generate_api_key,
+    hash_api_key_secret,
+    hash_password,
+    verify_password,
+)
 from gpdb.admin.store import (
     GraphAlreadyExistsError,
     InstanceAlreadyExistsError,
@@ -51,6 +58,7 @@ async def home(request: Request) -> HTMLResponse:
         current_user=current_user,
         instances=await services.admin_store.list_instances(),
         graphs=await services.admin_store.list_graphs(),
+        api_keys=await services.admin_store.list_api_keys_for_user(current_user.id),
         error_message=request.query_params.get("error"),
         success_message=request.query_params.get("success"),
     )
@@ -198,6 +206,117 @@ async def logout(request: Request) -> RedirectResponse:
     )
     response.delete_cookie(SESSION_COOKIE_NAME)
     return response
+
+
+@router.get("/apikeys", response_class=HTMLResponse, name="api_keys_page")
+async def api_keys_page(request: Request) -> HTMLResponse:
+    """Render the current user's API key management page."""
+    services = request.app.state.services
+    assert services.admin_store is not None
+
+    current_user = await _require_authenticated_user(request)
+    if isinstance(current_user, RedirectResponse):
+        return current_user
+
+    return _render(
+        request,
+        "pages/api_keys.html",
+        page_title="API Keys",
+        current_user=current_user,
+        api_keys=await services.admin_store.list_api_keys_for_user(current_user.id),
+        revealed_api_key=None,
+        selected_api_key_id=None,
+        error_message=request.query_params.get("error"),
+        success_message=request.query_params.get("success"),
+    )
+
+
+@router.get("/apikeys/{api_key_id}", response_class=HTMLResponse, name="api_key_detail_page")
+async def api_key_detail_page(request: Request, api_key_id: str) -> HTMLResponse:
+    """Render one API key detail view with the full revealable value."""
+    services = request.app.state.services
+    assert services.admin_store is not None
+
+    current_user = await _require_authenticated_user(request)
+    if isinstance(current_user, RedirectResponse):
+        return current_user
+
+    api_key = await services.admin_store.get_api_key_by_id(api_key_id)
+    if api_key is None or api_key.user_id != current_user.id:
+        return _redirect_with_message(request, "api_keys_page", error="API key not found.")
+
+    return _render(
+        request,
+        "pages/api_keys.html",
+        page_title="API Keys",
+        current_user=current_user,
+        api_keys=await services.admin_store.list_api_keys_for_user(current_user.id),
+        revealed_api_key=await services.admin_store.reveal_api_key(api_key_id),
+        selected_api_key_id=api_key_id,
+        error_message=request.query_params.get("error"),
+        success_message=request.query_params.get("success"),
+    )
+
+
+@router.post("/apikeys", name="api_key_create")
+async def api_key_create(
+    request: Request,
+    label: str = Form(...),
+):
+    """Create one API key for the current user."""
+    services = request.app.state.services
+    assert services.admin_store is not None
+
+    current_user = await _require_authenticated_user(request)
+    if isinstance(current_user, RedirectResponse):
+        return current_user
+
+    label = label.strip()
+    if not label:
+        return _render(
+            request,
+            "pages/api_keys.html",
+            page_title="API Keys",
+            current_user=current_user,
+            api_keys=await services.admin_store.list_api_keys_for_user(current_user.id),
+            revealed_api_key=None,
+            selected_api_key_id=None,
+            error_message="Label is required.",
+            success_message=None,
+        )
+
+    generated = generate_api_key()
+    api_key = await services.admin_store.create_api_key(
+        user_id=current_user.id,
+        label=label,
+        key_id=generated.key_id,
+        preview=generated.preview,
+        secret_hash=hash_api_key_secret(generated.secret),
+        key_value=generated.token,
+    )
+    return _redirect_with_message(
+        request,
+        "api_key_detail_page",
+        api_key_id=api_key.id,
+        success="API key created.",
+    )
+
+
+@router.post("/apikeys/{api_key_id}/revoke", name="api_key_revoke")
+async def api_key_revoke(request: Request, api_key_id: str) -> RedirectResponse:
+    """Revoke one API key owned by the current user."""
+    services = request.app.state.services
+    assert services.admin_store is not None
+
+    current_user = await _require_authenticated_user(request)
+    if isinstance(current_user, RedirectResponse):
+        return current_user
+
+    api_key = await services.admin_store.get_api_key_by_id(api_key_id)
+    if api_key is None or api_key.user_id != current_user.id:
+        return _redirect_with_message(request, "api_keys_page", error="API key not found.")
+    await services.admin_store.revoke_api_key(api_key_id)
+    return _redirect_with_message(request, "api_keys_page", success="API key revoked.")
 
 
 @router.get("/instances/new", response_class=HTMLResponse, name="instance_create_page")
@@ -608,17 +727,25 @@ def _render(request: Request, template_name: str, **context) -> HTMLResponse:
 
 async def _require_owner_user(request: Request):
     """Return the signed-in owner or redirect away if unavailable."""
-    current_user = await _current_user(request)
-    if current_user is None:
-        return RedirectResponse(
-            url=request.app.url_path_for("login"),
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
+    current_user = await _require_authenticated_user(request)
+    if isinstance(current_user, RedirectResponse):
+        return current_user
     if not current_user.is_owner:
         return _redirect_with_message(
             request,
             "home",
             error="Only the server owner can manage instances and graphs.",
+        )
+    return current_user
+
+
+async def _require_authenticated_user(request: Request):
+    """Return the signed-in user or redirect to login."""
+    current_user = await _current_user(request)
+    if current_user is None:
+        return RedirectResponse(
+            url=request.app.url_path_for("login"),
+            status_code=status.HTTP_303_SEE_OTHER,
         )
     return current_user
 
@@ -651,9 +778,10 @@ def _redirect_with_message(
     *,
     error: str | None = None,
     success: str | None = None,
+    **route_params,
 ) -> RedirectResponse:
     """Redirect to a route and carry a simple status message."""
-    url = request.app.url_path_for(route_name)
+    url = request.app.url_path_for(route_name, **route_params)
     params = {}
     if error:
         params["error"] = error

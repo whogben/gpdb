@@ -7,12 +7,67 @@ import secrets
 import sys
 
 import uvicorn
-from toolaccess import CLIServer, OpenAPIServer, SSEMCPServer, ServerManager, ToolService
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from fastmcp import FastMCP
+from fastmcp.server.auth import AccessToken, TokenVerifier
+from toolaccess import CLIServer, OpenAPIServer, SSEMCPServer as ToolaccessSSEMCPServer, ServerManager, ToolService
 from toolaccess.toolaccess import MountableApp
 
+from gpdb.admin.auth import extract_bearer_token, verify_api_key_secret
 from gpdb.admin.config import ConfigStore, ResolvedConfig, extract_config_arg
 from gpdb.admin.runtime import AdminServices, create_admin_lifespan
 from gpdb.admin.web import create_web_app
+
+REST_API_PUBLIC_PATHS = frozenset(
+    {
+        "/docs",
+        "/openapi.json",
+        "/redoc",
+        "/docs/oauth2-redirect",
+    }
+)
+
+
+class SSEMCPServer(ToolaccessSSEMCPServer):
+    """Toolaccess-compatible MCP server with optional bearer auth."""
+
+    def __init__(self, name: str = "default", auth_provider: TokenVerifier | None = None):
+        self.name = name
+        self.mcp = FastMCP(name, auth=auth_provider)
+
+
+class _AdminAPIKeyTokenVerifier(TokenVerifier):
+    """FastMCP bearer-token verifier backed by the admin API key store."""
+
+    def __init__(self, services: AdminServices):
+        super().__init__()
+        self._services = services
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        admin_store = self._services.admin_store
+        if admin_store is None:
+            return None
+        authenticated = await admin_store.authenticate_api_key(
+            api_key_token=token,
+            verify_secret=verify_api_key_secret,
+        )
+        if authenticated is None:
+            return None
+        user, api_key = authenticated
+        return AccessToken(
+            token=token,
+            client_id=api_key.key_id,
+            scopes=["gpdb-admin"],
+            claims={
+                "user_id": user.id,
+                "username": user.username,
+                "display_name": user.display_name,
+                "is_owner": user.is_owner,
+                "api_key_id": api_key.id,
+                "api_key_label": api_key.label,
+            },
+        )
 
 
 def status() -> str:
@@ -38,8 +93,9 @@ def create_manager(
 
     rest_api = OpenAPIServer(path_prefix="/api", title="GPDB Admin API")
     rest_api.mount(admin_service)
+    _install_api_key_auth(rest_api, services)
 
-    mcp_server = SSEMCPServer("gpdb")
+    mcp_server = SSEMCPServer("gpdb", auth_provider=_AdminAPIKeyTokenVerifier(services))
     mcp_server.mount(admin_service)
 
     cli = CLIServer("gpdb")
@@ -123,6 +179,37 @@ def _ensure_runtime_config(config_store: ConfigStore) -> ResolvedConfig:
     updated.auth.session_secret = secrets.token_urlsafe(32)
     config_store.save(updated)
     return config_store.load()
+
+
+def _install_api_key_auth(rest_api: OpenAPIServer, services: AdminServices) -> None:
+    """Require bearer API keys for protected REST routes under `/api`."""
+
+    @rest_api.app.middleware("http")
+    async def require_api_key(request: Request, call_next):
+        if request.url.path in REST_API_PUBLIC_PATHS:
+            return await call_next(request)
+        token = extract_bearer_token(request.headers.get("authorization"))
+        if token is None or services.admin_store is None:
+            return _unauthorized_response()
+        authenticated = await services.admin_store.authenticate_api_key(
+            api_key_token=token,
+            verify_secret=verify_api_key_secret,
+        )
+        if authenticated is None:
+            return _unauthorized_response()
+        user, api_key = authenticated
+        request.state.current_user = user
+        request.state.current_api_key = api_key
+        return await call_next(request)
+
+
+def _unauthorized_response() -> JSONResponse:
+    """Return the standard bearer-token auth failure response."""
+    return JSONResponse(
+        {"detail": "Bearer API key required."},
+        status_code=401,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 if __name__ == "__main__":

@@ -7,20 +7,76 @@ import hashlib
 import hmac
 import json
 import os
+import secrets
 from dataclasses import dataclass
 
 
 SESSION_COOKIE_NAME = "gpdb_admin_session"
+API_KEY_PREFIX = "gpdb"
 _PASSWORD_ALGORITHM = "pbkdf2_sha256"
 _PASSWORD_ITERATIONS = 200_000
 
 
 def hash_password(password: str) -> str:
     """Return a salted password hash suitable for storage."""
+    return _hash_pbkdf2_secret(password)
+
+
+def hash_api_key_secret(secret: str) -> str:
+    """Return a salted hash for one API key secret fragment."""
+    return _hash_pbkdf2_secret(secret)
+
+
+def verify_api_key_secret(secret: str, stored_hash: str) -> bool:
+    """Verify an API key secret fragment against a stored hash."""
+    return _verify_pbkdf2_secret(secret, stored_hash)
+
+
+def generate_api_key() -> "GeneratedAPIKey":
+    """Generate a new API key with a stable identifier and secret."""
+    key_id = secrets.token_hex(8)
+    secret = secrets.token_urlsafe(24)
+    token = f"{API_KEY_PREFIX}_{key_id}_{secret}"
+    preview = f"{API_KEY_PREFIX}_{key_id}_{secret[:4]}..."
+    return GeneratedAPIKey(
+        key_id=key_id,
+        secret=secret,
+        token=token,
+        preview=preview,
+    )
+
+
+def parse_api_key(token: str) -> "ParsedAPIKey | None":
+    """Split a GPDB API key into its identifier and secret fragment."""
+    prefix = f"{API_KEY_PREFIX}_"
+    if not token.startswith(prefix):
+        return None
+    remainder = token[len(prefix) :]
+    try:
+        key_id, secret = remainder.split("_", 1)
+    except ValueError:
+        return None
+    if not key_id or not secret:
+        return None
+    return ParsedAPIKey(key_id=key_id, secret=secret)
+
+
+def extract_bearer_token(header_value: str | None) -> str | None:
+    """Return a bearer token from an Authorization header if present."""
+    if not header_value:
+        return None
+    scheme, _, token = header_value.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        return None
+    return token
+
+
+def _hash_pbkdf2_secret(secret: str) -> str:
+    """Return a salted PBKDF2 hash for a secret value."""
     salt = os.urandom(16)
     digest = hashlib.pbkdf2_hmac(
         "sha256",
-        password.encode("utf-8"),
+        secret.encode("utf-8"),
         salt,
         _PASSWORD_ITERATIONS,
     )
@@ -31,6 +87,11 @@ def hash_password(password: str) -> str:
 
 def verify_password(password: str, stored_hash: str) -> bool:
     """Verify a password against a stored PBKDF2 hash."""
+    return _verify_pbkdf2_secret(password, stored_hash)
+
+
+def _verify_pbkdf2_secret(secret: str, stored_hash: str) -> bool:
+    """Verify a secret against a stored PBKDF2 hash."""
     try:
         algorithm, iteration_text, salt_text, digest_text = stored_hash.split("$", 3)
     except ValueError:
@@ -47,11 +108,29 @@ def verify_password(password: str, stored_hash: str) -> bool:
 
     actual_digest = hashlib.pbkdf2_hmac(
         "sha256",
-        password.encode("utf-8"),
+        secret.encode("utf-8"),
         salt,
         iterations,
     )
     return hmac.compare_digest(actual_digest, expected_digest)
+
+
+@dataclass(frozen=True)
+class GeneratedAPIKey:
+    """A newly generated API key that can be stored and shown to the user."""
+
+    key_id: str
+    secret: str
+    token: str
+    preview: str
+
+
+@dataclass(frozen=True)
+class ParsedAPIKey:
+    """The parsed identifier and secret for one API key."""
+
+    key_id: str
+    secret: str
 
 
 @dataclass(frozen=True)

@@ -6,12 +6,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from gpdb import Filter, FilterGroup, GPGraph, Logic, NodeRead, NodeUpsert, SearchQuery
+from gpdb.admin.auth import parse_api_key
 from gpdb.admin.secrets import SecretCipher
 
 
 ADMIN_TABLE_PREFIX = "admin"
 INSTANCE_NODE_TYPE = "instance"
 GRAPH_NODE_TYPE = "graph"
+API_KEY_NODE_TYPE = "api_key"
 DEFAULT_INSTANCE_SLUG = "default"
 DEFAULT_GRAPH_NODE_NAME = "__default__"
 
@@ -83,6 +85,21 @@ class ManagedGraph:
     exists_in_instance: bool
     source: str
     is_default: bool
+
+
+@dataclass(frozen=True)
+class AdminAPIKey:
+    """One revealable API key owned by an admin user."""
+
+    id: str
+    user_id: str
+    label: str
+    key_id: str
+    preview: str
+    created_at: str
+    last_used_at: str | None
+    revoked_at: str | None
+    is_active: bool
 
 
 class AdminStore:
@@ -212,6 +229,131 @@ class AdminStore:
             return None
 
         return _admin_user_from_node(node)
+
+    async def list_api_keys_for_user(self, user_id: str) -> list[AdminAPIKey]:
+        """Return all API keys owned by one user."""
+        nodes = await self._search_nodes(
+            filters=[
+                Filter(field="type", value=API_KEY_NODE_TYPE),
+                Filter(field="parent_id", value=user_id),
+            ],
+            limit=500,
+        )
+        api_keys = [_admin_api_key_from_node(node) for node in nodes]
+        return sorted(
+            api_keys,
+            key=lambda item: (item.created_at, item.label.lower(), item.key_id),
+            reverse=True,
+        )
+
+    async def get_api_key_by_id(self, api_key_id: str) -> AdminAPIKey | None:
+        """Return one API key by its admin node id."""
+        node = await self.db.get_node(api_key_id)
+        if node is None or node.type != API_KEY_NODE_TYPE or not node.parent_id:
+            return None
+        return _admin_api_key_from_node(node)
+
+    async def create_api_key(
+        self,
+        *,
+        user_id: str,
+        label: str,
+        key_id: str,
+        preview: str,
+        secret_hash: str,
+        key_value: str,
+    ) -> AdminAPIKey:
+        """Create and persist one API key for a user."""
+        node = await self.db.set_node(
+            NodeUpsert(
+                type=API_KEY_NODE_TYPE,
+                name=key_id,
+                parent_id=user_id,
+                data={
+                    "label": label,
+                    "key_id": key_id,
+                    "preview": preview,
+                    "secret_hash": secret_hash,
+                    "key_value": self._encrypt_instance_secret(key_value),
+                    "created_at": _timestamp_now(),
+                    "last_used_at": None,
+                    "revoked_at": None,
+                    "is_active": True,
+                },
+            )
+        )
+        return _admin_api_key_from_node(node)
+
+    async def reveal_api_key(self, api_key_id: str) -> str | None:
+        """Return the stored plaintext API key for one key record."""
+        node = await self.db.get_node(api_key_id)
+        if node is None or node.type != API_KEY_NODE_TYPE:
+            return None
+        return self._decrypt_instance_secret(_optional_string(node.data.get("key_value")))
+
+    async def revoke_api_key(self, api_key_id: str) -> AdminAPIKey | None:
+        """Revoke one API key and prevent future authentication."""
+        node = await self.db.get_node(api_key_id)
+        if node is None or node.type != API_KEY_NODE_TYPE or not node.parent_id:
+            return None
+        updated_data = dict(node.data)
+        updated_data["is_active"] = False
+        updated_data["revoked_at"] = updated_data.get("revoked_at") or _timestamp_now()
+        updated = await self.db.set_node(
+            NodeUpsert(
+                id=node.id,
+                type=node.type,
+                name=node.name,
+                parent_id=node.parent_id,
+                data=updated_data,
+            )
+        )
+        return _admin_api_key_from_node(updated)
+
+    async def authenticate_api_key(
+        self,
+        *,
+        api_key_token: str,
+        verify_secret: callable,
+    ) -> tuple[AdminUser, AdminAPIKey] | None:
+        """Return the owning user and API key when a token is valid."""
+        parsed = parse_api_key(api_key_token)
+        if parsed is None:
+            return None
+        node = await self._get_node_by_filters(
+            [
+                Filter(field="type", value=API_KEY_NODE_TYPE),
+                Filter(field="data.key_id", value=parsed.key_id),
+            ]
+        )
+        if node is None or not node.parent_id:
+            return None
+        secret_hash = node.data.get("secret_hash")
+        if not isinstance(secret_hash, str):
+            return None
+        if not bool(node.data.get("is_active", False)):
+            return None
+        if node.data.get("revoked_at"):
+            return None
+        if not verify_secret(parsed.secret, secret_hash):
+            return None
+
+        user = await self.get_user_by_id(node.parent_id)
+        if user is None or not user.is_active:
+            return None
+
+        updated_data = dict(node.data)
+        updated_data["last_used_at"] = _timestamp_now()
+        updated = await self.db.set_node(
+            NodeUpsert(
+                id=node.id,
+                type=node.type,
+                name=node.name,
+                parent_id=node.parent_id,
+                data=updated_data,
+            )
+        )
+        return user, _admin_api_key_from_node(updated)
 
     async def list_instances(self) -> list[ManagedInstance]:
         """Return all managed instance records."""
@@ -746,6 +888,21 @@ def _managed_graph_from_node(node: NodeRead, instance: ManagedInstance) -> Manag
         exists_in_instance=bool(node.data.get("exists_in_instance", False)),
         source=str(node.data.get("source") or "discovered"),
         is_default=table_prefix == "",
+    )
+
+
+def _admin_api_key_from_node(node: NodeRead) -> AdminAPIKey:
+    """Project a GPDB node into one API key management view."""
+    return AdminAPIKey(
+        id=node.id,
+        user_id=str(node.parent_id or ""),
+        label=str(node.data.get("label") or node.data.get("key_id") or node.name or ""),
+        key_id=str(node.data["key_id"]),
+        preview=str(node.data.get("preview") or node.data["key_id"]),
+        created_at=str(node.data.get("created_at") or ""),
+        last_used_at=_optional_string(node.data.get("last_used_at")),
+        revoked_at=_optional_string(node.data.get("revoked_at")),
+        is_active=bool(node.data.get("is_active", True)),
     )
 
 

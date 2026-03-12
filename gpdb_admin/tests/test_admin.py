@@ -1,5 +1,7 @@
+import asyncio
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -239,6 +241,104 @@ def test_instance_and_graph_crud_flow(tmp_path):
         assert "Mirror instance renamed" not in response.text
 
 
+def test_api_key_lifecycle_for_web_rest_and_mcp(tmp_path):
+    """Test API key create, reveal, use, last-used update, and revoke flow."""
+    manager = _create_test_manager(tmp_path)
+
+    with TestClient(manager.app) as client:
+        _bootstrap_owner(client)
+        _login(client)
+
+        response = client.post("/api/status")
+        assert response.status_code == 401
+        assert response.headers["www-authenticate"] == "Bearer"
+
+        response = client.post(
+            "/apikeys",
+            data={"label": "Automation key"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        api_key_detail_path = response.headers["location"]
+        assert api_key_detail_path.startswith("/apikeys/")
+
+        response = client.get(api_key_detail_path)
+        assert response.status_code == 200
+        assert "Automation key" in response.text
+        api_key_value = _extract_revealed_api_key(response.text)
+        assert api_key_value.startswith("gpdb_")
+
+        response = client.get("/apikeys")
+        assert response.status_code == 200
+        assert "Automation key" in response.text
+
+        stored_key = _read_stored_api_key(manager, label="Automation key")
+        assert str(stored_key["key_value"]).startswith("fernet:")
+        assert stored_key["key_value"] != api_key_value
+        assert stored_key["secret_hash"] != api_key_value
+        assert stored_key["last_used_at"] is None
+        assert stored_key["revoked_at"] is None
+
+        response = client.post(
+            "/api/status",
+            headers={"Authorization": "Bearer gpdb_invalid_deadbeef"},
+        )
+        assert response.status_code == 401
+
+        response = client.post(
+            "/api/status",
+            headers={"Authorization": f"Bearer {api_key_value}"},
+        )
+        assert response.status_code == 200
+        assert response.json() == "OK"
+
+        stored_key = _read_stored_api_key(manager, label="Automation key")
+        assert stored_key["last_used_at"] is not None
+
+        assert manager.mcp_servers["gpdb"].auth is not None
+        verified_token = _verify_api_key_with_mcp_verifier(manager, api_key_value)
+        assert verified_token is not None
+        assert verified_token.claims["username"] == "owner"
+        assert verified_token.claims["api_key_label"] == "Automation key"
+
+        api_key_id = api_key_detail_path.split("?", 1)[0].rsplit("/", 1)[-1]
+        response = client.post(
+            f"/apikeys/{api_key_id}/revoke",
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert response.headers["location"].startswith("/apikeys")
+
+        response = client.get(api_key_detail_path)
+        assert response.status_code == 200
+        assert api_key_value in response.text
+        assert "revoked" in response.text
+
+        response = client.post(
+            "/api/status",
+            headers={"Authorization": f"Bearer {api_key_value}"},
+        )
+        assert response.status_code == 401
+        assert _verify_api_key_with_mcp_verifier(manager, api_key_value) is None
+
+
+def test_rest_api_public_docs_and_health_endpoints(tmp_path):
+    """Test that documented public REST endpoints stay accessible without API keys."""
+    manager = _create_test_manager(tmp_path)
+
+    with TestClient(manager.app) as client:
+        for path in sorted(entry.REST_API_PUBLIC_PATHS):
+            response = client.get(f"/api{path}")
+            assert response.status_code == 200
+
+        response = client.get("/health")
+        assert response.status_code == 200
+        assert response.json() == {"mcp_servers": ["gpdb"]}
+
+        response = client.post("/api/status")
+        assert response.status_code == 401
+
+
 def test_startup_requires_session_secret(tmp_path):
     """Test that startup fails clearly when the session secret is missing."""
     config_path = tmp_path / "admin.toml"
@@ -447,6 +547,55 @@ def _extract_instance_action(html: str, instance_name: str, action: str) -> str:
     return match.group(1)
 
 
+def _extract_revealed_api_key(html: str) -> str:
+    match = re.search(r'<input readonly value="([^"]+)"', html)
+    assert match is not None
+    return match.group(1)
+
+
+def _read_stored_api_key(manager, *, label: str) -> dict[str, object]:
+    services = manager.app.state.services
+    assert services.captive_server is not None
+    assert services.resolved_config.auth.session_secret is not None
+
+    async def _load() -> dict[str, object]:
+        store = AdminStore(
+            services.captive_server.get_uri(),
+            instance_secret=services.resolved_config.auth.session_secret,
+        )
+        try:
+            owner = await store.get_user_by_username("owner")
+            assert owner is not None
+            api_keys = await store.list_api_keys_for_user(owner.id)
+            api_key = next(item for item in api_keys if item.label == label)
+            node = await store.db.get_node(api_key.id)
+            assert node is not None
+            return dict(node.data)
+        finally:
+            await store.close()
+
+    return asyncio.run(_load())
+
+
+def _verify_api_key_with_mcp_verifier(manager, api_key_value: str):
+    services = manager.app.state.services
+    assert services.captive_server is not None
+    assert services.resolved_config.auth.session_secret is not None
+
+    async def _verify():
+        store = AdminStore(
+            services.captive_server.get_uri(),
+            instance_secret=services.resolved_config.auth.session_secret,
+        )
+        try:
+            verifier = entry._AdminAPIKeyTokenVerifier(SimpleNamespace(admin_store=store))
+            return await verifier.verify_token(api_key_value)
+        finally:
+            await store.close()
+
+    return asyncio.run(_verify())
+
+
 def _read_stored_instance_password(manager, *, slug: str) -> object:
     services = manager.app.state.services
     assert services.captive_server is not None
@@ -465,7 +614,5 @@ def _read_stored_instance_password(manager, *, slug: str) -> object:
             return node.data["password"]
         finally:
             await store.close()
-
-    import asyncio
 
     return asyncio.run(_load())

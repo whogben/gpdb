@@ -19,6 +19,7 @@
       <a class="button" href="{{ web_app.url_path_for('graph_create_page') }}">Add graph</a>
       <a class="button button-secondary" href="{{ web_app.url_path_for('instance_create_page') }}">Add instance</a>
       {% endif %}
+      <a class="button button-secondary" href="{{ web_app.url_path_for('api_keys_page') }}">Manage API keys</a>
       <form action="{{ web_app.url_path_for('logout') }}" method="post">
         <button class="button button-secondary" type="submit">Sign out</button>
       </form>
@@ -26,6 +27,7 @@
     <ul class="feature-list">
       <li>{{ graphs|length }} graph{{ "" if graphs|length == 1 else "s" }} visible.</li>
       <li>{{ instances|length }} managed instance{{ "" if instances|length == 1 else "s" }} registered.</li>
+      <li>{{ api_keys|length }} API key{{ "" if api_keys|length == 1 else "s" }} for your account.</li>
       <li>Statuses update from live connection checks.</li>
     </ul>
   </div>

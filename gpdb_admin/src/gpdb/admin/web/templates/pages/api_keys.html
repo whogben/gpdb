@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-copy">
+    <p class="eyebrow">Credentials</p>
+    <h1>Manage API keys.</h1>
+    <p class="hero-text">
+      API keys authenticate as <strong>{{ current_user.display_name }}</strong> for REST
+      and MCP access. Keys can be revealed again from this page and revoked
+      individually at any time.
+    </p>
+  </div>
+
+  <div class="hero-panel">
+    <h2>Create key</h2>
+    {% if error_message %}
+    <p class="form-error">{{ error_message }}</p>
+    {% endif %}
+    {% if success_message %}
+    <p class="form-success">{{ success_message }}</p>
+    {% endif %}
+    <form class="auth-form" action="{{ web_app.url_path_for('api_key_create') }}" method="post">
+      <label class="field">
+        <span>Label</span>
+        <input name="label" placeholder="Laptop, CI smoke tests, local script" required>
+      </label>
+      <div class="button-row">
+        <button class="button" type="submit">Create API key</button>
+        <a class="button button-secondary" href="{{ web_app.url_path_for('home') }}">Back home</a>
+      </div>
+    </form>
+  </div>
+</section>
+
+{% if revealed_api_key %}
+<section class="dashboard-section">
+  <div class="resource-card">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Reveal</p>
+        <h2>Full API key</h2>
+      </div>
+    </div>
+    <label class="field">
+      <span>Copyable value</span>
+      <input readonly value="{{ revealed_api_key }}">
+    </label>
+  </div>
+</section>
+{% endif %}
+
+<section class="dashboard-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Current User</p>
+      <h2>API Keys</h2>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    {% for api_key in api_keys %}
+    <article class="resource-card">
+      <div class="resource-header">
+        <div>
+          <h3>{{ api_key.label }}</h3>
+          <p class="resource-subtitle">{{ api_key.preview }}</p>
+        </div>
+        <span class="status-pill status-{{ 'ready' if api_key.is_active else 'offline' }}">
+          {{ 'active' if api_key.is_active else 'revoked' }}
+        </span>
+      </div>
+      <dl class="resource-meta">
+        <div>
+          <dt>Key id</dt>
+          <dd>{{ api_key.key_id }}</dd>
+        </div>
+        <div>
+          <dt>Created</dt>
+          <dd>{{ api_key.created_at }}</dd>
+        </div>
+        <div>
+          <dt>Last used</dt>
+          <dd>{{ api_key.last_used_at or "never" }}</dd>
+        </div>
+        <div>
+          <dt>Selected</dt>
+          <dd>{{ "yes" if selected_api_key_id == api_key.id else "no" }}</dd>
+        </div>
+      </dl>
+      {% if api_key.revoked_at %}
+      <p class="resource-note">Revoked at {{ api_key.revoked_at }}.</p>
+      {% endif %}
+      <div class="button-row">
+        <a class="button button-secondary" href="{{ web_app.url_path_for('api_key_detail_page', api_key_id=api_key.id) }}">Reveal</a>
+        {% if api_key.is_active %}
+        <form action="{{ web_app.url_path_for('api_key_revoke', api_key_id=api_key.id) }}" method="post">
+          <button class="button button-danger" type="submit">Revoke</button>
+        </form>
+        {% endif %}
+      </div>
+    </article>
+    {% else %}
+    <article class="resource-card resource-card-empty">
+      <h3>No API keys yet</h3>
+      <p class="resource-note">
+        Create a key to authenticate to the REST API and MCP SSE endpoint.
+      </p>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
