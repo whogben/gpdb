@@ -1633,6 +1633,345 @@ def test_graph_edge_browse_and_create_vertical_slice_across_surfaces(tmp_path):
         assert mcp_created["edge"]["id"] in response.text
 
 
+def test_graph_edge_update_and_delete_vertical_slice_across_surfaces(tmp_path):
+    """Test edge update/delete flow across web, REST, CLI, and MCP."""
+    manager = _create_test_manager(tmp_path)
+    graph_id = ""
+    api_key_value = ""
+
+    with TestClient(manager.app) as client:
+        _bootstrap_owner(client)
+        _login(client)
+
+        response = client.get("/graphs/new")
+        assert response.status_code == 200
+        default_instance_id = _extract_instance_option_value(response.text, "Default instance")
+
+        response = client.post(
+            "/graphs",
+            data={
+                "instance_id": default_instance_id,
+                "table_prefix": "edge_slice_phase2",
+                "display_name": "Edge Slice Phase 2",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+
+        graph = _read_graph_by_prefix(manager, table_prefix="edge_slice_phase2")
+        assert graph is not None
+        graph_id = graph.id
+        _seed_graph_schema(manager, table_prefix="edge_slice_phase2", schema_name="edge_schema")
+
+        web_source_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice_phase2",
+            type="task",
+            name="web-source",
+            data={"name": "Web source"},
+        )
+        web_target_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice_phase2",
+            type="task",
+            name="web-target",
+            data={"name": "Web target"},
+        )
+        web_new_source_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice_phase2",
+            type="task",
+            name="web-new-source",
+            data={"name": "Web new source"},
+        )
+        web_new_target_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice_phase2",
+            type="task",
+            name="web-new-target",
+            data={"name": "Web new target"},
+        )
+        web_edit_id = _seed_edge_record(
+            manager,
+            table_prefix="edge_slice_phase2",
+            type="depends_on",
+            source_id=web_source_id,
+            target_id=web_target_id,
+            schema_name="edge_schema",
+            data={"name": "Web edit"},
+            tags=["stale"],
+        )
+        web_delete_id = _seed_edge_record(
+            manager,
+            table_prefix="edge_slice_phase2",
+            type="depends_on",
+            source_id=web_target_id,
+            target_id=web_source_id,
+            schema_name="edge_schema",
+            data={"name": "Web delete"},
+            tags=["remove"],
+        )
+
+        rest_source_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice_phase2",
+            type="task",
+            name="rest-source",
+            data={"name": "Rest source"},
+        )
+        rest_target_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice_phase2",
+            type="task",
+            name="rest-target",
+            data={"name": "Rest target"},
+        )
+        rest_new_source_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice_phase2",
+            type="task",
+            name="rest-new-source",
+            data={"name": "Rest new source"},
+        )
+        rest_new_target_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice_phase2",
+            type="task",
+            name="rest-new-target",
+            data={"name": "Rest new target"},
+        )
+        rest_edge_id = _seed_edge_record(
+            manager,
+            table_prefix="edge_slice_phase2",
+            type="depends_on",
+            source_id=rest_source_id,
+            target_id=rest_target_id,
+            schema_name="edge_schema",
+            data={"name": "Rest edit"},
+            tags=["rest"],
+        )
+
+        cli_source_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice_phase2",
+            type="task",
+            name="cli-source",
+            data={"name": "CLI source"},
+        )
+        cli_target_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice_phase2",
+            type="task",
+            name="cli-target",
+            data={"name": "CLI target"},
+        )
+        cli_new_source_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice_phase2",
+            type="task",
+            name="cli-new-source",
+            data={"name": "CLI new source"},
+        )
+        cli_new_target_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice_phase2",
+            type="task",
+            name="cli-new-target",
+            data={"name": "CLI new target"},
+        )
+        cli_edge_id = _seed_edge_record(
+            manager,
+            table_prefix="edge_slice_phase2",
+            type="depends_on",
+            source_id=cli_source_id,
+            target_id=cli_target_id,
+            schema_name="edge_schema",
+            data={"name": "CLI edit"},
+            tags=["cli"],
+        )
+
+        mcp_source_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice_phase2",
+            type="task",
+            name="mcp-source",
+            data={"name": "MCP source"},
+        )
+        mcp_target_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice_phase2",
+            type="task",
+            name="mcp-target",
+            data={"name": "MCP target"},
+        )
+        mcp_new_source_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice_phase2",
+            type="task",
+            name="mcp-new-source",
+            data={"name": "MCP new source"},
+        )
+        mcp_new_target_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice_phase2",
+            type="task",
+            name="mcp-new-target",
+            data={"name": "MCP new target"},
+        )
+        mcp_edge_id = _seed_edge_record(
+            manager,
+            table_prefix="edge_slice_phase2",
+            type="depends_on",
+            source_id=mcp_source_id,
+            target_id=mcp_target_id,
+            schema_name="edge_schema",
+            data={"name": "MCP edit"},
+            tags=["mcp"],
+        )
+
+        response = client.get(f"/graphs/{graph_id}/edges/{web_edit_id}")
+        assert response.status_code == 200
+        assert "Delete removes this relationship immediately." in response.text
+        assert "Edit edge" in response.text
+
+        response = client.get(f"/graphs/{graph_id}/edges/{web_edit_id}/edit")
+        assert response.status_code == 200
+        assert "Update edge" in response.text
+        assert f'value="{web_edit_id}" readonly' in response.text
+
+        response = client.post(
+            f"/graphs/{graph_id}/edges/{web_edit_id}",
+            data={
+                "type": "blocks",
+                "source_id": web_new_source_id,
+                "target_id": web_new_target_id,
+                "schema_name": "edge_schema",
+                "tags": "alpha, beta",
+                "data": json.dumps({"name": "Web edge updated", "status": "active"}),
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+
+        response = client.get(response.headers["location"])
+        assert response.status_code == 200
+        assert web_new_source_id in response.text
+        assert web_new_target_id in response.text
+        assert "Tags: alpha, beta" in response.text
+
+        response = client.post(
+            f"/graphs/{graph_id}/edges/{web_delete_id}/delete",
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert response.headers["location"].startswith(f"/graphs/{graph_id}/edges?success=")
+
+        response = client.post(
+            "/apikeys",
+            data={"label": "Edge phase 2 key"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        api_key_detail_path = response.headers["location"]
+        response = client.get(api_key_detail_path)
+        assert response.status_code == 200
+        api_key_value = _extract_revealed_api_key(response.text)
+
+        response = client.post(
+            "/api/graph_edge_update",
+            params={
+                "graph_id": graph_id,
+                "edge_id": rest_edge_id,
+                "type": "blocks",
+                "source_id": rest_new_source_id,
+                "target_id": rest_new_target_id,
+                "schema_name": "edge_schema",
+                "tags": "rest, updated",
+            },
+            json={"name": "Rest edge updated", "status": "active"},
+            headers={"Authorization": f"Bearer {api_key_value}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["edge"]["type"] == "blocks"
+        assert response.json()["edge"]["source_id"] == rest_new_source_id
+        assert response.json()["edge"]["target_id"] == rest_new_target_id
+        assert response.json()["edge"]["tags"] == ["rest", "updated"]
+
+        response = client.post(
+            "/api/graph_edge_delete",
+            params={"graph_id": graph_id, "edge_id": rest_edge_id},
+            headers={"Authorization": f"Bearer {api_key_value}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["edge"]["id"] == rest_edge_id
+
+    cli_updated = manager.cli(
+        [
+            "gpdb",
+            "graph_edge_update",
+            graph_id,
+            cli_edge_id,
+            "blocks",
+            cli_new_source_id,
+            cli_new_target_id,
+            json.dumps({"name": "CLI edge updated", "status": "ready"}),
+            "--schema-name",
+            "edge_schema",
+            "--tags",
+            "cli, updated",
+        ],
+        standalone_mode=False,
+    )
+    assert cli_updated["edge"]["type"] == "blocks"
+    assert cli_updated["edge"]["source_id"] == cli_new_source_id
+    assert cli_updated["edge"]["target_id"] == cli_new_target_id
+    assert cli_updated["edge"]["tags"] == ["cli", "updated"]
+
+    cli_deleted = manager.cli(
+        ["gpdb", "graph_edge_delete", graph_id, cli_edge_id],
+        standalone_mode=False,
+    )
+    assert cli_deleted["edge"]["id"] == cli_edge_id
+
+    mcp_updated = _call_persisted_authenticated_mcp_tool(
+        manager,
+        api_key_value,
+        "graph_edge_update",
+        {
+            "graph_id": graph_id,
+            "edge_id": mcp_edge_id,
+            "type": "blocks",
+            "source_id": mcp_new_source_id,
+            "target_id": mcp_new_target_id,
+            "schema_name": "edge_schema",
+            "tags": "mcp, updated",
+            "data": {"name": "MCP edge updated", "status": "active"},
+        },
+    )
+    assert mcp_updated["edge"]["type"] == "blocks"
+    assert mcp_updated["edge"]["source_id"] == mcp_new_source_id
+    assert mcp_updated["edge"]["target_id"] == mcp_new_target_id
+    assert mcp_updated["edge"]["tags"] == ["mcp", "updated"]
+
+    mcp_deleted = _call_persisted_authenticated_mcp_tool(
+        manager,
+        api_key_value,
+        "graph_edge_delete",
+        {"graph_id": graph_id, "edge_id": mcp_edge_id},
+    )
+    assert mcp_deleted["edge"]["id"] == mcp_edge_id
+
+    with TestClient(manager.app) as client:
+        _login(client)
+        response = client.get(f"/graphs/{graph_id}/edges")
+        assert response.status_code == 200
+        assert web_edit_id in response.text
+        assert web_delete_id not in response.text
+        assert rest_edge_id not in response.text
+        assert cli_edge_id not in response.text
+        assert mcp_edge_id not in response.text
+
+
 def test_cli_api_key_management_commands(tmp_path):
     """Test trusted local CLI API key management commands."""
     manager = _create_test_manager(tmp_path)

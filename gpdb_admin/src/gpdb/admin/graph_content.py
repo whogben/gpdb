@@ -919,6 +919,95 @@ class GraphContentService:
         finally:
             await db.sqla_engine.dispose()
 
+    async def update_graph_edge(
+        self,
+        *,
+        graph_id: str,
+        edge_id: str,
+        type: str,
+        source_id: str,
+        target_id: str,
+        data: dict[str, Any],
+        current_user: AdminUser | None,
+        allow_local_system: bool = False,
+        schema_name: str | None = None,
+        tags: list[str] | None = None,
+    ) -> GraphEdgeDetail:
+        """Update one edge in a managed graph."""
+        clean_edge_id = self._validate_edge_id(edge_id)
+        clean_type = self._validate_edge_type(type)
+        clean_source_id = self._validate_related_node_id(source_id, field_name="Source")
+        clean_target_id = self._validate_related_node_id(target_id, field_name="Target")
+        clean_schema_name = self._normalize_optional_text(schema_name)
+        normalized_tags = self._normalize_tag_list(tags)
+        self._validate_json_object(data, object_name="Edge data")
+
+        graph, instance, db = await self._open_graph(
+            graph_id=graph_id,
+            current_user=current_user,
+            allow_local_system=allow_local_system,
+            permission_kind="manage_edges",
+        )
+        try:
+            existing = await db.get_edge(clean_edge_id)
+            if existing is None:
+                raise GraphContentNotFoundError(f"Edge '{clean_edge_id}' was not found.")
+            try:
+                edge = await db.set_edge(
+                    EdgeUpsert(
+                        id=clean_edge_id,
+                        type=clean_type,
+                        source_id=clean_source_id,
+                        target_id=clean_target_id,
+                        schema_name=clean_schema_name,
+                        data=data,
+                        tags=normalized_tags,
+                    )
+                )
+            except IntegrityError as exc:
+                raise GraphContentValidationError(
+                    "Source and target nodes must exist before updating an edge."
+                ) from exc
+            except (SchemaNotFoundError, SchemaValidationError, ValueError) as exc:
+                raise GraphContentValidationError(str(exc)) from exc
+            return GraphEdgeDetail(
+                graph=self.serialize_graph(graph),
+                instance=self.serialize_instance(instance),
+                edge_record=self._serialize_edge_record(edge),
+            )
+        finally:
+            await db.sqla_engine.dispose()
+
+    async def delete_graph_edge(
+        self,
+        *,
+        graph_id: str,
+        edge_id: str,
+        current_user: AdminUser | None,
+        allow_local_system: bool = False,
+    ) -> GraphEdgeDetail:
+        """Delete one edge from a managed graph."""
+        clean_edge_id = self._validate_edge_id(edge_id)
+        graph, instance, db = await self._open_graph(
+            graph_id=graph_id,
+            current_user=current_user,
+            allow_local_system=allow_local_system,
+            permission_kind="manage_edges",
+        )
+        try:
+            edge = await db.get_edge(clean_edge_id)
+            if edge is None:
+                raise GraphContentNotFoundError(f"Edge '{clean_edge_id}' was not found.")
+            deleted = GraphEdgeDetail(
+                graph=self.serialize_graph(graph),
+                instance=self.serialize_instance(instance),
+                edge_record=self._serialize_edge_record(edge),
+            )
+            await db.delete_edge(clean_edge_id)
+            return deleted
+        finally:
+            await db.sqla_engine.dispose()
+
     def serialize_graph(self, graph: ManagedGraph) -> dict[str, object]:
         """Project managed graph metadata into a stable admin response shape."""
         return {

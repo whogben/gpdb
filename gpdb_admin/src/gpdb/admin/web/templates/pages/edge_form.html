@@ -4,7 +4,7 @@
 <section class="auth-layout">
   <div class="auth-copy">
     <p class="eyebrow">Edge</p>
-    <h1>Create an edge for {{ overview.graph.display_name }}.</h1>
+    <h1>{% if is_edit %}Edit{% else %}Create{% endif %} an edge for {{ overview.graph.display_name }}.</h1>
     <p class="hero-text">
       Connect two node IDs with a typed relationship and optional schema-validated JSON
       data.
@@ -13,15 +13,25 @@
       <li>Graph: {{ overview.graph.display_name }}.</li>
       <li>Instance: {{ overview.instance.display_name }}.</li>
       <li>Prefix: {{ overview.graph.table_prefix_label }}.</li>
+      {% if is_edit and edge_detail %}
+      <li>Current version: {{ edge_detail.edge.version }}.</li>
+      {% endif %}
     </ul>
   </div>
 
   <div class="auth-card">
-    <h2>New edge</h2>
+    <h2>{% if is_edit %}Update edge{% else %}New edge{% endif %}</h2>
     {% if error_message %}
     <p class="form-error">{{ error_message }}</p>
     {% endif %}
     <form class="auth-form" action="{{ submit_url }}" method="post">
+      {% if is_edit and edge_detail %}
+      <label class="field">
+        <span>Edge ID</span>
+        <input value="{{ edge_detail.edge.id }}" readonly>
+      </label>
+      {% endif %}
+
       <label class="field">
         <span>Type</span>
         <input name="type" value="{{ (form_data or {}).get('type', '') }}" required>
@@ -58,8 +68,8 @@
       </label>
 
       <div class="button-row">
-        <button class="button" type="submit">Create edge</button>
-        <a class="button button-secondary" href="{{ web_app.url_path_for('graph_edge_list_page', graph_id=overview.graph.id) }}">Back</a>
+        <button class="button" type="submit">{% if is_edit %}Save changes{% else %}Create edge{% endif %}</button>
+        <a class="button button-secondary" href="{% if is_edit and edge_detail %}{{ web_app.url_path_for('graph_edge_detail_page', graph_id=overview.graph.id, edge_id=edge_detail.edge.id) }}{% else %}{{ web_app.url_path_for('graph_edge_list_page', graph_id=overview.graph.id) }}{% endif %}">Back</a>
       </div>
     </form>
   </div>

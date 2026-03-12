@@ -511,6 +511,46 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
         )
         return result.model_dump(mode="json", by_alias=True)
 
+    async def graph_edge_update(
+        graph_id: str,
+        edge_id: str,
+        type: str,
+        source_id: str,
+        target_id: str,
+        data: dict[str, object],
+        request: Request,
+        schema_name: str = "",
+        tags: str = "",
+    ) -> dict[str, object]:
+        """Update one graph edge for the authenticated REST user."""
+        current_user = _require_rest_user(request)
+        result = await _require_graph_content(services).update_graph_edge(
+            graph_id=graph_id,
+            edge_id=edge_id,
+            type=type,
+            source_id=source_id,
+            target_id=target_id,
+            schema_name=schema_name,
+            tags=_coerce_tags_argument(tags),
+            data=_coerce_json_object_argument(data, argument_name="data"),
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
+    async def graph_edge_delete(
+        graph_id: str,
+        edge_id: str,
+        request: Request,
+    ) -> dict[str, object]:
+        """Delete one graph edge for the authenticated REST user."""
+        current_user = _require_rest_user(request)
+        result = await _require_graph_content(services).delete_graph_edge(
+            graph_id=graph_id,
+            edge_id=edge_id,
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
     return [
         ToolDefinition(graph_overview, "graph_overview", http_method="GET"),
         ToolDefinition(graph_schema_list, "graph_schema_list", http_method="GET"),
@@ -528,6 +568,8 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
         ToolDefinition(graph_edge_list, "graph_edge_list", http_method="GET"),
         ToolDefinition(graph_edge_get, "graph_edge_get", http_method="GET"),
         ToolDefinition(graph_edge_create, "graph_edge_create"),
+        ToolDefinition(graph_edge_update, "graph_edge_update"),
+        ToolDefinition(graph_edge_delete, "graph_edge_delete"),
     ]
 
 
@@ -785,6 +827,41 @@ def _build_cli_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         )
         return _emit_cli_result(result.model_dump(mode="json", by_alias=True))
 
+    async def graph_edge_update(
+        graph_id: str,
+        edge_id: str,
+        type: str,
+        source_id: str,
+        target_id: str,
+        data: str,
+        schema_name: str = "",
+        tags: str = "",
+    ) -> dict[str, object]:
+        """Update one graph edge for trusted local CLI use."""
+        result = await _require_graph_content(services).update_graph_edge(
+            graph_id=graph_id,
+            edge_id=edge_id,
+            type=type,
+            source_id=source_id,
+            target_id=target_id,
+            schema_name=schema_name,
+            tags=_coerce_tags_argument(tags),
+            data=_coerce_json_object_argument(data, argument_name="data"),
+            current_user=None,
+            allow_local_system=True,
+        )
+        return _emit_cli_result(result.model_dump(mode="json", by_alias=True))
+
+    async def graph_edge_delete(graph_id: str, edge_id: str) -> dict[str, object]:
+        """Delete one graph edge for trusted local CLI use."""
+        result = await _require_graph_content(services).delete_graph_edge(
+            graph_id=graph_id,
+            edge_id=edge_id,
+            current_user=None,
+            allow_local_system=True,
+        )
+        return _emit_cli_result(result.model_dump(mode="json", by_alias=True))
+
     return [
         ToolDefinition(graph_overview, "graph_overview"),
         ToolDefinition(graph_schema_list, "graph_schema_list"),
@@ -802,6 +879,8 @@ def _build_cli_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         ToolDefinition(graph_edge_list, "graph_edge_list"),
         ToolDefinition(graph_edge_get, "graph_edge_get"),
         ToolDefinition(graph_edge_create, "graph_edge_create"),
+        ToolDefinition(graph_edge_update, "graph_edge_update"),
+        ToolDefinition(graph_edge_delete, "graph_edge_delete"),
     ]
 
 
@@ -1084,6 +1163,46 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         )
         return result.model_dump(mode="json", by_alias=True)
 
+    async def graph_edge_update(
+        graph_id: str,
+        edge_id: str,
+        type: str,
+        source_id: str,
+        target_id: str,
+        data: dict[str, object],
+        ctx: Context,
+        schema_name: str = "",
+        tags: str = "",
+    ) -> dict[str, object]:
+        """Update one graph edge for the authenticated MCP user."""
+        current_user = await _require_mcp_user(services, ctx)
+        result = await _require_graph_content(services).update_graph_edge(
+            graph_id=graph_id,
+            edge_id=edge_id,
+            type=type,
+            source_id=source_id,
+            target_id=target_id,
+            schema_name=schema_name,
+            tags=_coerce_tags_argument(tags),
+            data=_coerce_json_object_argument(data, argument_name="data"),
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
+    async def graph_edge_delete(
+        graph_id: str,
+        edge_id: str,
+        ctx: Context,
+    ) -> dict[str, object]:
+        """Delete one graph edge for the authenticated MCP user."""
+        current_user = await _require_mcp_user(services, ctx)
+        result = await _require_graph_content(services).delete_graph_edge(
+            graph_id=graph_id,
+            edge_id=edge_id,
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
     return [
         ToolDefinition(graph_overview, "graph_overview"),
         ToolDefinition(graph_schema_list, "graph_schema_list"),
@@ -1101,6 +1220,8 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         ToolDefinition(graph_edge_list, "graph_edge_list"),
         ToolDefinition(graph_edge_get, "graph_edge_get"),
         ToolDefinition(graph_edge_create, "graph_edge_create"),
+        ToolDefinition(graph_edge_update, "graph_edge_update"),
+        ToolDefinition(graph_edge_delete, "graph_edge_delete"),
     ]
 
 
