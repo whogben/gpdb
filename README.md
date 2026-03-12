@@ -15,11 +15,16 @@ Use gpdb when you need a lightweight graph-like data layer on top of Postgres wi
 
 ## Install
 
-```bash
-pip install gpdb
-```
+Choose the package that matches how you want to use GPDB:
 
-Requires Python 3.9+ and a PostgreSQL database.
+- `pip install gpdb` — core graph database library only
+- `pip install gpdb-admin` — installs the core library plus the `gpdb` admin command, web UI, REST API, and MCP server
+- `pip install gpdb[dev]` — core development dependencies
+- `pip install gpdb-admin[dev]` — full admin + development/test dependencies
+
+Requires Python 3.9+.
+
+The core `gpdb` package uses your PostgreSQL database. The optional `gpdb-admin` package adds an admin runtime on top of the core library.
 
 ## Quick start
 
@@ -43,6 +48,84 @@ result = await db.search_nodes(
 for node in result.items:
     print(node.name, node.data)
 ```
+
+## Admin add-on
+
+`gpdb-admin` is an optional package that layers an admin runtime on top of the core graph library. When installed, it provides:
+
+- the `gpdb` console command
+- a browser-based admin app
+- a REST API under `/api`
+- an MCP server exposed over SSE
+
+### Admin install
+
+```bash
+pip install gpdb-admin
+```
+
+Import the admin module as `gpdb.admin` when `gpdb-admin` is installed.
+
+### Start the admin service
+
+```bash
+gpdb start
+```
+
+By default the admin service listens on `127.0.0.1:8747`. You can override the bind address at startup:
+
+```bash
+gpdb start --host 0.0.0.0 --port 9000
+```
+
+Once the service is running, the current runtime exposes:
+
+- the admin web app at `/`
+- a health endpoint at `/health`
+- the REST status endpoint at `POST /api/status`
+- the MCP SSE endpoint at `/mcp/gpdb/sse`
+
+The CLI also exposes the current status command directly:
+
+```bash
+gpdb status
+```
+
+### First-run setup
+
+On a fresh install, opening the admin web app takes you through initial owner setup. After the first owner account is created, the app requires login and uses an authenticated browser session for access to the admin pages.
+
+### Configuration
+
+`gpdb-admin` resolves its config file in this order:
+
+1. `--config` or `-c`
+2. `GPDB_CONFIG`
+3. the default user config path for `gpdb`
+
+The current file-backed config includes:
+
+- `server.host`
+- `server.port`
+- `runtime.data_dir`
+- `auth.session_secret`
+
+At startup, `gpdb-admin` will generate and persist `auth.session_secret` automatically if it is missing and the selected config file is writable.
+
+### Admin storage model
+
+The admin runtime manages its own local data directory and starts a captive PostgreSQL instance for admin state. Admin identity data is stored using GPDB tables with the `admin` table prefix, separate from the application graph data you manage with the core library.
+
+### Current scope
+
+Today, `gpdb-admin` is an early-stage admin surface. It supports:
+
+- service startup via `gpdb start`
+- a first-run owner bootstrap flow
+- login/logout for the admin web app
+- the `status` command across CLI, REST, and MCP
+
+It does not yet provide a full multi-user administration console or a broad admin API surface.
 
 ## Core concepts
 

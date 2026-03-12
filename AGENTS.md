@@ -1,3 +1,7 @@
+References:
+- Temporary references go in /temp_refs, these aren't checked into Git, use this for plans, notes, etc.
+- Read the README.md so you have project context.
+
 Project Layout:
 - `pip install gpdb` for the main package (graph database only; no admin code, no CLI).
 - `pip install gpdb-admin` for the `gpdb` console command and `gpdb.admin` module (depends on gpdb).
