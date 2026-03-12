@@ -3,24 +3,163 @@
 {% block content %}
 <section class="hero">
   <div class="hero-copy">
-    <p class="eyebrow">Authenticated</p>
-    <h1>Welcome to the GPDB admin web app.</h1>
+    <p class="eyebrow">Graphs</p>
+    <h1>All graphs across all managed instances.</h1>
     <p class="hero-text">
-      You are signed in as <strong>{{ current_user.display_name }}</strong> and the
-      admin runtime has completed its initial bootstrap flow.
+      Signed in as <strong>{{ current_user.display_name }}</strong>. The admin runtime
+      continuously checks managed instances and surfaces each discovered graph as an
+      instance plus exact table prefix.
     </p>
   </div>
 
   <div class="hero-panel">
-    <h2>Current state</h2>
+    <h2>Quick actions</h2>
+    <div class="button-row">
+      {% if current_user.is_owner %}
+      <a class="button" href="{{ web_app.url_path_for('graph_create_page') }}">Add graph</a>
+      <a class="button button-secondary" href="{{ web_app.url_path_for('instance_create_page') }}">Add instance</a>
+      {% endif %}
+      <form action="{{ web_app.url_path_for('logout') }}" method="post">
+        <button class="button button-secondary" type="submit">Sign out</button>
+      </form>
+    </div>
     <ul class="feature-list">
-      <li>Owner setup is complete.</li>
-      <li>Web requests now require an authenticated user session.</li>
-      <li>The captive admin store is ready for the next implementation steps.</li>
+      <li>{{ graphs|length }} graph{{ "" if graphs|length == 1 else "s" }} visible.</li>
+      <li>{{ instances|length }} managed instance{{ "" if instances|length == 1 else "s" }} registered.</li>
+      <li>Statuses update from live connection checks.</li>
     </ul>
-    <form action="{{ web_app.url_path_for('logout') }}" method="post">
-      <button class="button button-secondary" type="submit">Sign out</button>
-    </form>
+  </div>
+</section>
+
+{% if error_message %}
+<p class="form-error">{{ error_message }}</p>
+{% endif %}
+{% if success_message %}
+<p class="form-success">{{ success_message }}</p>
+{% endif %}
+
+<section class="dashboard-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Unified View</p>
+      <h2>Graphs</h2>
+    </div>
+    {% if current_user.is_owner %}
+    <a class="button" href="{{ web_app.url_path_for('graph_create_page') }}">Add graph</a>
+    {% endif %}
+  </div>
+
+  <div class="card-grid">
+    {% for graph in graphs %}
+    <article class="resource-card">
+      <div class="resource-header">
+        <div>
+          <h3>{{ graph.display_name }}</h3>
+          <p class="resource-subtitle">{{ graph.instance_display_name }}</p>
+        </div>
+        <span class="status-pill status-{{ graph.status }}">{{ graph.status }}</span>
+      </div>
+      <dl class="resource-meta">
+        <div>
+          <dt>Prefix</dt>
+          <dd>{{ graph.table_prefix if graph.table_prefix else "(default)" }}</dd>
+        </div>
+        <div>
+          <dt>Instance</dt>
+          <dd>{{ graph.instance_slug }}</dd>
+        </div>
+        <div>
+          <dt>Source</dt>
+          <dd>{{ graph.source }}</dd>
+        </div>
+        <div>
+          <dt>Present</dt>
+          <dd>{{ "yes" if graph.exists_in_instance else "no" }}</dd>
+        </div>
+      </dl>
+      {% if graph.status_message %}
+      <p class="resource-note">{{ graph.status_message }}</p>
+      {% endif %}
+      {% if current_user.is_owner %}
+      <div class="button-row">
+        <a class="button button-secondary" href="{{ web_app.url_path_for('graph_edit_page', graph_id=graph.id) }}">Edit</a>
+        {% if graph.table_prefix %}
+        <form action="{{ web_app.url_path_for('graph_delete', graph_id=graph.id) }}" method="post">
+          <button class="button button-danger" type="submit">Delete</button>
+        </form>
+        {% endif %}
+      </div>
+      {% endif %}
+    </article>
+    {% else %}
+    <article class="resource-card resource-card-empty">
+      <h3>No graphs yet</h3>
+      <p class="resource-note">
+        Managed graphs will appear here once an instance is reachable and its GPDB
+        tables are discovered.
+      </p>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="dashboard-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Connections</p>
+      <h2>Instances</h2>
+    </div>
+    {% if current_user.is_owner %}
+    <a class="button" href="{{ web_app.url_path_for('instance_create_page') }}">Add instance</a>
+    {% endif %}
+  </div>
+
+  <div class="card-grid">
+    {% for instance in instances %}
+    <article class="resource-card">
+      <div class="resource-header">
+        <div>
+          <h3>{{ instance.display_name }}</h3>
+          <p class="resource-subtitle">{{ instance.slug }}</p>
+        </div>
+        <span class="status-pill status-{{ instance.status }}">{{ instance.status }}</span>
+      </div>
+      <dl class="resource-meta">
+        <div>
+          <dt>Mode</dt>
+          <dd>{{ instance.mode }}</dd>
+        </div>
+        <div>
+          <dt>Database</dt>
+          <dd>{{ instance.database or "runtime-managed" }}</dd>
+        </div>
+        <div>
+          <dt>Host</dt>
+          <dd>{{ instance.host or "runtime-managed" }}</dd>
+        </div>
+        <div>
+          <dt>Active</dt>
+          <dd>{{ "yes" if instance.is_active else "no" }}</dd>
+        </div>
+      </dl>
+      {% if instance.description %}
+      <p class="resource-note">{{ instance.description }}</p>
+      {% endif %}
+      {% if instance.status_message %}
+      <p class="resource-note">{{ instance.status_message }}</p>
+      {% endif %}
+      {% if current_user.is_owner %}
+      <div class="button-row">
+        <a class="button button-secondary" href="{{ web_app.url_path_for('instance_edit_page', instance_id=instance.id) }}">Edit</a>
+        {% if not instance.is_builtin %}
+        <form action="{{ web_app.url_path_for('instance_delete', instance_id=instance.id) }}" method="post">
+          <button class="button button-danger" type="submit">Delete</button>
+        </form>
+        {% endif %}
+      </div>
+      {% endif %}
+    </article>
+    {% endfor %}
   </div>
 </section>
 {% endblock %}

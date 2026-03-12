@@ -10,8 +10,10 @@ from typing import Any
 from pixeltable_pgserver import PostgresServer
 from pixeltable_pgserver import postgres_server as postgres_server_module
 
+from gpdb import GPGraph
 from gpdb.admin.auth import SessionSigner
 from gpdb.admin.config import ConfigStore, ResolvedConfig
+from gpdb.admin.instances import ManagedInstanceMonitor
 from gpdb.admin.store import AdminStore
 
 
@@ -24,6 +26,7 @@ class AdminServices:
     admin_store: AdminStore | None = None
     session_signer: SessionSigner | None = None
     captive_server: PostgresServer | None = None
+    instance_monitor: ManagedInstanceMonitor | None = None
 
 
 class _PathSafePostgresServer(PostgresServer):
@@ -129,20 +132,40 @@ def create_admin_lifespan(services: AdminServices):
             server = _PathSafePostgresServer(pgdata)
             stack.enter_context(server)
 
-            admin_store = AdminStore(server.get_uri())
-            await admin_store.initialize()
-
             session_secret = services.resolved_config.auth.session_secret
             if not session_secret:
                 raise RuntimeError(
                     "gpdb-admin requires auth.session_secret before startup"
                 )
 
+            admin_store = AdminStore(server.get_uri(), instance_secret=session_secret)
+            await admin_store.initialize()
+            default_graph = GPGraph(server.get_uri())
+            await default_graph.create_tables()
+            await default_graph.sqla_engine.dispose()
+            builtin_instance = await admin_store.ensure_builtin_instance()
+            await admin_store.upsert_graph_metadata(
+                instance_id=builtin_instance.id,
+                table_prefix="",
+                display_name="Default graph",
+                exists_in_instance=True,
+                source="managed",
+            )
+
+            instance_monitor = ManagedInstanceMonitor(
+                admin_store=admin_store,
+                captive_url_factory=server.get_uri,
+            )
+            await instance_monitor.refresh_all()
+            await instance_monitor.start()
+
             services.captive_server = server
             services.admin_store = admin_store
             services.session_signer = SessionSigner(session_secret)
+            services.instance_monitor = instance_monitor
             app.state.services = services
             yield
+            await instance_monitor.stop()
             await admin_store.close()
 
     return lifespan

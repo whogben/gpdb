@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="auth-layout">
+  <div class="auth-copy">
+    <p class="eyebrow">Graph</p>
+    <h1>{% if mode == "create" %}Add a graph.{% else %}Edit graph metadata.{% endif %}</h1>
+    <p class="hero-text">
+      Each graph is one managed instance plus one exact table prefix. The dashboard
+      shows graphs across every reachable instance in a single list.
+    </p>
+  </div>
+
+  <div class="auth-card">
+    <h2>{% if mode == "create" %}New graph{% else %}{{ graph.display_name }}{% endif %}</h2>
+    {% if error_message %}
+    <p class="form-error">{{ error_message }}</p>
+    {% endif %}
+    <form class="auth-form" action="{{ submit_url }}" method="post">
+      {% if mode == "create" %}
+      <label class="field">
+        <span>Instance</span>
+        <select name="instance_id" required>
+          <option value="">Choose an instance</option>
+          {% for instance in instances %}
+          <option
+            value="{{ instance.id }}"
+            {% if (form_data or {}).get('instance_id') == instance.id %}selected{% endif %}
+          >
+            {{ instance.display_name }} ({{ instance.slug }})
+          </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field">
+        <span>Table prefix</span>
+        <input name="table_prefix" value="{{ (form_data or {}).get('table_prefix', '') }}" required>
+      </label>
+      {% else %}
+      <label class="field">
+        <span>Instance</span>
+        <input value="{{ graph.instance_display_name }} ({{ graph.instance_slug }})" disabled>
+      </label>
+      <label class="field">
+        <span>Table prefix</span>
+        <input value="{{ graph.table_prefix if graph.table_prefix else '(default)' }}" disabled>
+      </label>
+      {% endif %}
+
+      <label class="field">
+        <span>Display name</span>
+        <input name="display_name" value="{{ (form_data or {}).get('display_name', '') }}">
+      </label>
+
+      <div class="button-row">
+        <button class="button" type="submit">{% if mode == "create" %}Create graph{% else %}Save changes{% endif %}</button>
+        <a class="button button-secondary" href="{{ web_app.url_path_for('home') }}">Back</a>
+      </div>
+    </form>
+  </div>
+</section>
+{% endblock %}

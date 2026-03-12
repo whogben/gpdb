@@ -1,6 +1,9 @@
 References:
 - Temporary references go in /temp_refs, these aren't checked into Git, use this for plans, notes, etc.
+
+Working on the Project:
 - Read the README.md so you have project context.
+- Study the project's existing code to understand and maintain the established patterns.
 
 Project Layout:
 - `pip install gpdb` for the main package (graph database only; no admin code, no CLI).

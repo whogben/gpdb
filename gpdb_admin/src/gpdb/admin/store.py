@@ -1,13 +1,19 @@
-"""Persistence helpers for admin identity data."""
+"""Persistence helpers for admin identity and managed graph data."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from gpdb import Filter, FilterGroup, GPGraph, Logic, NodeRead, NodeUpsert, SearchQuery
+from gpdb.admin.secrets import SecretCipher
 
 
 ADMIN_TABLE_PREFIX = "admin"
+INSTANCE_NODE_TYPE = "instance"
+GRAPH_NODE_TYPE = "graph"
+DEFAULT_INSTANCE_SLUG = "default"
+DEFAULT_GRAPH_NODE_NAME = "__default__"
 
 
 class OwnerAlreadyExistsError(RuntimeError):
@@ -16,6 +22,14 @@ class OwnerAlreadyExistsError(RuntimeError):
 
 class UserAlreadyExistsError(RuntimeError):
     """Raised when creating a user with a duplicate username."""
+
+
+class InstanceAlreadyExistsError(RuntimeError):
+    """Raised when a managed instance slug already exists."""
+
+
+class GraphAlreadyExistsError(RuntimeError):
+    """Raised when a managed graph prefix already exists for an instance."""
 
 
 @dataclass(frozen=True)
@@ -30,11 +44,55 @@ class AdminUser:
     auth_version: int
 
 
-class AdminStore:
-    """Access admin users stored in the captive admin GPDB instance."""
+@dataclass(frozen=True)
+class ManagedInstance:
+    """Managed GPDB connection metadata stored in the captive admin DB."""
 
-    def __init__(self, url: str):
+    id: str
+    slug: str
+    display_name: str
+    description: str
+    mode: str
+    is_builtin: bool
+    is_default: bool
+    is_active: bool
+    connection_kind: str
+    host: str | None
+    port: int | None
+    database: str | None
+    username: str | None
+    password: str | None
+    status: str
+    status_message: str | None
+    last_checked_at: str | None
+
+
+@dataclass(frozen=True)
+class ManagedGraph:
+    """Managed graph metadata scoped to one instance and table prefix."""
+
+    id: str
+    instance_id: str
+    instance_slug: str
+    instance_display_name: str
+    display_name: str
+    table_prefix: str
+    status: str
+    status_message: str | None
+    last_checked_at: str | None
+    exists_in_instance: bool
+    source: str
+    is_default: bool
+
+
+class AdminStore:
+    """Access admin users and managed graph metadata in the captive admin DB."""
+
+    def __init__(self, url: str, *, instance_secret: str | None = None):
         self.db = GPGraph(url, table_prefix=ADMIN_TABLE_PREFIX)
+        self._instance_secret_cipher = (
+            SecretCipher(instance_secret) if instance_secret else None
+        )
 
     async def initialize(self) -> None:
         """Create required admin tables if they do not exist."""
@@ -155,6 +213,484 @@ class AdminStore:
 
         return _admin_user_from_node(node)
 
+    async def list_instances(self) -> list[ManagedInstance]:
+        """Return all managed instance records."""
+        nodes = await self._search_nodes(
+            filters=[Filter(field="type", value=INSTANCE_NODE_TYPE)],
+            limit=500,
+        )
+        instances = [self._managed_instance_from_node(node) for node in nodes]
+        return sorted(
+            instances,
+            key=lambda item: (
+                not item.is_builtin,
+                item.display_name.lower(),
+                item.slug.lower(),
+            ),
+        )
+
+    async def get_instance_by_id(self, instance_id: str) -> ManagedInstance | None:
+        """Return one managed instance by node id."""
+        node = await self.db.get_node(instance_id)
+        if node is None or node.type != INSTANCE_NODE_TYPE:
+            return None
+        return self._managed_instance_from_node(node)
+
+    async def get_instance_by_slug(self, slug: str) -> ManagedInstance | None:
+        """Return one managed instance by slug."""
+        node = await self._get_node_by_filters(
+            [
+                Filter(field="type", value=INSTANCE_NODE_TYPE),
+                Filter(field="data.slug", value=slug),
+            ]
+        )
+        if node is None:
+            return None
+        return self._managed_instance_from_node(node)
+
+    async def ensure_builtin_instance(
+        self,
+        *,
+        display_name: str = "Default instance",
+        description: str = "Built-in captive GPDB instance managed by gpdb-admin.",
+    ) -> ManagedInstance:
+        """Create or refresh the built-in captive instance metadata."""
+        existing = await self._get_node_by_filters(
+            [
+                Filter(field="type", value=INSTANCE_NODE_TYPE),
+                Filter(field="data.is_builtin", value=True),
+            ]
+        )
+        payload = {
+            "slug": DEFAULT_INSTANCE_SLUG,
+            "display_name": display_name,
+            "description": description,
+            "mode": "captive",
+            "is_builtin": True,
+            "is_default": True,
+            "is_active": True,
+            "connection_kind": "postgres",
+            "host": None,
+            "port": None,
+            "database": None,
+            "username": None,
+            "password": None,
+            "status": existing.data.get("status", "checking") if existing else "checking",
+            "status_message": existing.data.get("status_message") if existing else None,
+            "last_checked_at": existing.data.get("last_checked_at") if existing else None,
+        }
+        node = await self.db.set_node(
+            NodeUpsert(
+                id=existing.id if existing else None,
+                type=INSTANCE_NODE_TYPE,
+                name=DEFAULT_INSTANCE_SLUG,
+                data=payload,
+            )
+        )
+        return self._managed_instance_from_node(node)
+
+    async def create_instance(
+        self,
+        *,
+        slug: str,
+        display_name: str,
+        description: str,
+        host: str,
+        port: int | None,
+        database: str,
+        username: str,
+        password: str | None,
+    ) -> ManagedInstance:
+        """Create a new external managed instance."""
+        if await self.get_instance_by_slug(slug):
+            raise InstanceAlreadyExistsError(f"Instance '{slug}' already exists")
+
+        node = await self.db.set_node(
+            NodeUpsert(
+                type=INSTANCE_NODE_TYPE,
+                name=slug,
+                data={
+                    "slug": slug,
+                    "display_name": display_name,
+                    "description": description,
+                    "mode": "external",
+                    "is_builtin": False,
+                    "is_default": False,
+                    "is_active": True,
+                    "connection_kind": "postgres",
+                    "host": host,
+                    "port": port,
+                    "database": database,
+                    "username": username,
+                    "password": self._encrypt_instance_secret(password),
+                    "status": "checking",
+                    "status_message": None,
+                    "last_checked_at": None,
+                },
+            )
+        )
+        return self._managed_instance_from_node(node)
+
+    async def update_instance(
+        self,
+        *,
+        instance_id: str,
+        display_name: str,
+        description: str,
+        is_active: bool,
+        host: str | None = None,
+        port: int | None = None,
+        database: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+    ) -> ManagedInstance | None:
+        """Update one managed instance's metadata and connection fields."""
+        node = await self.db.get_node(instance_id)
+        if node is None or node.type != INSTANCE_NODE_TYPE:
+            return None
+
+        updated_data = dict(node.data)
+        updated_data["display_name"] = display_name
+        updated_data["description"] = description
+        updated_data["is_active"] = is_active
+
+        if updated_data.get("mode") == "external":
+            updated_data["host"] = host or ""
+            updated_data["port"] = port
+            updated_data["database"] = database or ""
+            updated_data["username"] = username or ""
+            if password is None:
+                updated_data["password"] = self._encrypt_instance_secret(
+                    self._decrypt_instance_secret(_optional_string(updated_data.get("password")))
+                )
+            else:
+                updated_data["password"] = self._encrypt_instance_secret(password)
+
+        updated = await self.db.set_node(
+            NodeUpsert(
+                id=node.id,
+                type=node.type,
+                name=node.name,
+                parent_id=node.parent_id,
+                data=updated_data,
+            )
+        )
+        return self._managed_instance_from_node(updated)
+
+    async def delete_instance(self, instance_id: str) -> None:
+        """Delete an external managed instance and its graph metadata."""
+        instance = await self.get_instance_by_id(instance_id)
+        if instance is None:
+            return
+        if instance.is_builtin:
+            raise ValueError("The built-in instance cannot be deleted")
+
+        graphs = await self.list_graphs_for_instance(instance_id)
+        for graph in graphs:
+            await self.db.delete_node(graph.id)
+        await self.db.delete_node(instance_id)
+
+    async def update_instance_status(
+        self,
+        instance_id: str,
+        *,
+        status: str,
+        status_message: str | None,
+    ) -> ManagedInstance | None:
+        """Persist the latest instance health status."""
+        node = await self.db.get_node(instance_id)
+        if node is None or node.type != INSTANCE_NODE_TYPE:
+            return None
+
+        updated_data = dict(node.data)
+        updated_data["status"] = status
+        updated_data["status_message"] = status_message
+        updated_data["last_checked_at"] = _timestamp_now()
+        updated = await self.db.set_node(
+            NodeUpsert(
+                id=node.id,
+                type=node.type,
+                name=node.name,
+                parent_id=node.parent_id,
+                data=updated_data,
+            )
+        )
+        return self._managed_instance_from_node(updated)
+
+    async def list_graphs(self) -> list[ManagedGraph]:
+        """Return all managed graph records across all instances."""
+        instances = {item.id: item for item in await self.list_instances()}
+        nodes = await self._search_nodes(
+            filters=[Filter(field="type", value=GRAPH_NODE_TYPE)],
+            limit=2000,
+        )
+        graphs: list[ManagedGraph] = []
+        for node in nodes:
+            instance = instances.get(node.parent_id or "")
+            if instance is None:
+                continue
+            graphs.append(_managed_graph_from_node(node, instance))
+        return sorted(
+            graphs,
+            key=lambda item: (
+                item.display_name.lower(),
+                item.instance_display_name.lower(),
+                item.table_prefix.lower(),
+            ),
+        )
+
+    async def list_graphs_for_instance(self, instance_id: str) -> list[ManagedGraph]:
+        """Return all managed graph records for one instance."""
+        instance = await self.get_instance_by_id(instance_id)
+        if instance is None:
+            return []
+        nodes = await self._search_nodes(
+            filters=[
+                Filter(field="type", value=GRAPH_NODE_TYPE),
+                Filter(field="parent_id", value=instance_id),
+            ],
+            limit=1000,
+        )
+        graphs = [_managed_graph_from_node(node, instance) for node in nodes]
+        return sorted(
+            graphs,
+            key=lambda item: (
+                item.display_name.lower(),
+                item.table_prefix.lower(),
+            ),
+        )
+
+    async def get_graph_by_id(self, graph_id: str) -> ManagedGraph | None:
+        """Return one managed graph by node id."""
+        node = await self.db.get_node(graph_id)
+        if node is None or node.type != GRAPH_NODE_TYPE or not node.parent_id:
+            return None
+        instance = await self.get_instance_by_id(node.parent_id)
+        if instance is None:
+            return None
+        return _managed_graph_from_node(node, instance)
+
+    async def get_graph_by_scope(
+        self,
+        instance_id: str,
+        table_prefix: str,
+    ) -> ManagedGraph | None:
+        """Return one managed graph by its `(instance, table_prefix)` scope."""
+        instance = await self.get_instance_by_id(instance_id)
+        if instance is None:
+            return None
+        node = await self._get_node_by_filters(
+            [
+                Filter(field="type", value=GRAPH_NODE_TYPE),
+                Filter(field="parent_id", value=instance_id),
+                Filter(field="data.table_prefix", value=table_prefix),
+            ]
+        )
+        if node is None:
+            return None
+        return _managed_graph_from_node(node, instance)
+
+    async def update_graph(
+        self,
+        *,
+        graph_id: str,
+        display_name: str,
+    ) -> ManagedGraph | None:
+        """Update one managed graph's display name."""
+        node = await self.db.get_node(graph_id)
+        if node is None or node.type != GRAPH_NODE_TYPE or not node.parent_id:
+            return None
+        instance = await self.get_instance_by_id(node.parent_id)
+        if instance is None:
+            return None
+
+        updated_data = dict(node.data)
+        updated_data["display_name"] = display_name
+        updated = await self.db.set_node(
+            NodeUpsert(
+                id=node.id,
+                type=node.type,
+                name=node.name,
+                parent_id=node.parent_id,
+                data=updated_data,
+            )
+        )
+        return _managed_graph_from_node(updated, instance)
+
+    async def delete_graph(self, graph_id: str) -> None:
+        """Delete one managed graph metadata node."""
+        await self.db.delete_node(graph_id)
+
+    async def upsert_graph_metadata(
+        self,
+        *,
+        instance_id: str,
+        table_prefix: str,
+        display_name: str | None = None,
+        status: str | None = None,
+        status_message: str | None = None,
+        exists_in_instance: bool | None = None,
+        source: str | None = None,
+    ) -> ManagedGraph:
+        """Create or update graph metadata for one `(instance, table_prefix)` scope."""
+        instance = await self.get_instance_by_id(instance_id)
+        if instance is None:
+            raise ValueError("Managed instance was not found")
+
+        existing_node = await self._get_node_by_filters(
+            [
+                Filter(field="type", value=GRAPH_NODE_TYPE),
+                Filter(field="parent_id", value=instance_id),
+                Filter(field="data.table_prefix", value=table_prefix),
+            ]
+        )
+        graph_name = _graph_node_name(table_prefix)
+        if existing_node is None:
+            sibling = await self._get_node_by_filters(
+                [
+                    Filter(field="type", value=GRAPH_NODE_TYPE),
+                    Filter(field="parent_id", value=instance_id),
+                    Filter(field="name", value=graph_name),
+                ]
+            )
+            if sibling is not None:
+                raise GraphAlreadyExistsError(
+                    f"Graph '{table_prefix or 'default'}' already exists"
+                )
+
+        current_data = dict(existing_node.data) if existing_node else {}
+        node = await self.db.set_node(
+            NodeUpsert(
+                id=existing_node.id if existing_node else None,
+                type=GRAPH_NODE_TYPE,
+                name=graph_name,
+                parent_id=instance_id,
+                data={
+                    "table_prefix": table_prefix,
+                    "display_name": display_name
+                    or current_data.get("display_name")
+                    or _default_graph_display_name(table_prefix, instance.display_name),
+                    "status": status or current_data.get("status", "checking"),
+                    "status_message": status_message
+                    if status_message is not None
+                    else current_data.get("status_message"),
+                    "last_checked_at": _timestamp_now(),
+                    "exists_in_instance": (
+                        exists_in_instance
+                        if exists_in_instance is not None
+                        else current_data.get("exists_in_instance", False)
+                    ),
+                    "source": source or current_data.get("source", "discovered"),
+                },
+            )
+        )
+        return _managed_graph_from_node(node, instance)
+
+    async def sync_graph_snapshot(
+        self,
+        instance_id: str,
+        *,
+        discovered_prefixes: set[str] | None,
+        instance_status: str,
+        instance_status_message: str | None,
+    ) -> None:
+        """Sync graph metadata against the latest discovery snapshot."""
+        instance = await self.get_instance_by_id(instance_id)
+        if instance is None:
+            return
+
+        existing_graphs = {
+            graph.table_prefix: graph
+            for graph in await self.list_graphs_for_instance(instance_id)
+        }
+        if discovered_prefixes is not None:
+            for table_prefix in discovered_prefixes:
+                if table_prefix in existing_graphs:
+                    continue
+                graph = await self.upsert_graph_metadata(
+                    instance_id=instance_id,
+                    table_prefix=table_prefix,
+                    exists_in_instance=True,
+                    source="discovered",
+                )
+                existing_graphs[table_prefix] = graph
+
+        for table_prefix, graph in existing_graphs.items():
+            exists_in_instance = (
+                graph.exists_in_instance
+                if discovered_prefixes is None
+                else table_prefix in discovered_prefixes
+            )
+            if instance_status == "online":
+                status = "ready" if exists_in_instance else "missing_tables"
+            else:
+                status = instance_status
+
+            await self.upsert_graph_metadata(
+                instance_id=instance_id,
+                table_prefix=table_prefix,
+                display_name=graph.display_name,
+                status=status,
+                status_message=instance_status_message,
+                exists_in_instance=exists_in_instance,
+                source=graph.source,
+            )
+
+    async def _search_nodes(
+        self,
+        *,
+        filters: list[Filter],
+        limit: int,
+    ) -> list[NodeRead]:
+        page = await self.db.search_nodes(
+            SearchQuery(
+                filter=FilterGroup(logic=Logic.AND, filters=filters),
+                limit=limit,
+            )
+        )
+        return list(page.items)
+
+    async def _get_node_by_filters(self, filters: list[Filter]) -> NodeRead | None:
+        nodes = await self._search_nodes(filters=filters, limit=1)
+        if not nodes:
+            return None
+        return nodes[0]
+
+    def _managed_instance_from_node(self, node: NodeRead) -> ManagedInstance:
+        """Project a GPDB node into a managed instance view."""
+        instance = _managed_instance_from_node(node)
+        return ManagedInstance(
+            id=instance.id,
+            slug=instance.slug,
+            display_name=instance.display_name,
+            description=instance.description,
+            mode=instance.mode,
+            is_builtin=instance.is_builtin,
+            is_default=instance.is_default,
+            is_active=instance.is_active,
+            connection_kind=instance.connection_kind,
+            host=instance.host,
+            port=instance.port,
+            database=instance.database,
+            username=instance.username,
+            password=self._decrypt_instance_secret(instance.password),
+            status=instance.status,
+            status_message=instance.status_message,
+            last_checked_at=instance.last_checked_at,
+        )
+
+    def _encrypt_instance_secret(self, value: str | None) -> str | None:
+        """Encrypt one stored connection secret when a cipher is configured."""
+        if self._instance_secret_cipher is None:
+            return value
+        return self._instance_secret_cipher.encrypt(value)
+
+    def _decrypt_instance_secret(self, value: str | None) -> str | None:
+        """Decrypt one stored connection secret when a cipher is configured."""
+        if self._instance_secret_cipher is None:
+            return value
+        return self._instance_secret_cipher.decrypt(value)
+
 
 def _admin_user_from_node(node: NodeRead) -> AdminUser:
     """Project a GPDB node into the minimal auth-facing user model."""
@@ -166,3 +702,79 @@ def _admin_user_from_node(node: NodeRead) -> AdminUser:
         is_active=bool(node.data.get("is_active", False)),
         auth_version=int(node.data.get("auth_version", 1)),
     )
+
+
+def _managed_instance_from_node(node: NodeRead) -> ManagedInstance:
+    """Project a GPDB node into a managed instance view."""
+    return ManagedInstance(
+        id=node.id,
+        slug=str(node.data["slug"]),
+        display_name=str(node.data.get("display_name") or node.data["slug"]),
+        description=str(node.data.get("description") or ""),
+        mode=str(node.data.get("mode") or "external"),
+        is_builtin=bool(node.data.get("is_builtin", False)),
+        is_default=bool(node.data.get("is_default", False)),
+        is_active=bool(node.data.get("is_active", True)),
+        connection_kind=str(node.data.get("connection_kind") or "postgres"),
+        host=_optional_string(node.data.get("host")),
+        port=_optional_int(node.data.get("port")),
+        database=_optional_string(node.data.get("database")),
+        username=_optional_string(node.data.get("username")),
+        password=_optional_string(node.data.get("password")),
+        status=str(node.data.get("status") or "checking"),
+        status_message=_optional_string(node.data.get("status_message")),
+        last_checked_at=_optional_string(node.data.get("last_checked_at")),
+    )
+
+
+def _managed_graph_from_node(node: NodeRead, instance: ManagedInstance) -> ManagedGraph:
+    """Project a GPDB node into a managed graph view."""
+    table_prefix = str(node.data.get("table_prefix") or "")
+    return ManagedGraph(
+        id=node.id,
+        instance_id=instance.id,
+        instance_slug=instance.slug,
+        instance_display_name=instance.display_name,
+        display_name=str(
+            node.data.get("display_name")
+            or _default_graph_display_name(table_prefix, instance.display_name)
+        ),
+        table_prefix=table_prefix,
+        status=str(node.data.get("status") or "checking"),
+        status_message=_optional_string(node.data.get("status_message")),
+        last_checked_at=_optional_string(node.data.get("last_checked_at")),
+        exists_in_instance=bool(node.data.get("exists_in_instance", False)),
+        source=str(node.data.get("source") or "discovered"),
+        is_default=table_prefix == "",
+    )
+
+
+def _default_graph_display_name(table_prefix: str, instance_display_name: str) -> str:
+    """Return a default display name for one graph scope."""
+    if not table_prefix:
+        return f"{instance_display_name} default graph"
+    return table_prefix
+
+
+def _graph_node_name(table_prefix: str) -> str:
+    """Return the node name used for one graph metadata record."""
+    if not table_prefix:
+        return DEFAULT_GRAPH_NODE_NAME
+    return table_prefix
+
+
+def _optional_string(value: object) -> str | None:
+    if value is None or value == "":
+        return None
+    return str(value)
+
+
+def _optional_int(value: object) -> int | None:
+    if value is None or value == "":
+        return None
+    return int(value)
+
+
+def _timestamp_now() -> str:
+    """Return the current UTC timestamp for admin metadata writes."""
+    return datetime.now(tz=UTC).isoformat()
