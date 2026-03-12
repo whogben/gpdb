@@ -13,6 +13,7 @@
       <a class="button button-secondary" href="{{ web_app.url_path_for('graph_node_list_page', graph_id=node_detail.graph.id) }}">Back to nodes</a>
       <a class="button button-secondary" href="{{ web_app.url_path_for('graph_overview_page', graph_id=node_detail.graph.id) }}">Graph overview</a>
       {% if current_user.is_owner %}
+      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_node_edit_page', graph_id=node_detail.graph.id, node_id=node_detail.node.id) }}">Edit node</a>
       <a class="button" href="{{ web_app.url_path_for('graph_node_create_page', graph_id=node_detail.graph.id) }}">Create node</a>
       {% endif %}
     </div>
@@ -96,6 +97,33 @@
       {% else %}
       <p class="resource-note">No binary payload is stored on this node.</p>
       {% endif %}
+      {% if current_user.is_owner %}
+      <div class="button-row">
+        <a class="button button-secondary" href="{{ web_app.url_path_for('graph_node_edit_page', graph_id=node_detail.graph.id, node_id=node_detail.node.id) }}">Edit node</a>
+        <form class="inline-form" action="{{ web_app.url_path_for('graph_node_delete', graph_id=node_detail.graph.id, node_id=node_detail.node.id) }}" method="post">
+          <button class="button button-danger" type="submit" {% if not node_detail.delete_blockers.can_delete %}disabled{% endif %}>Delete node</button>
+        </form>
+      </div>
+      <p class="resource-note">
+        {% if node_detail.delete_blockers.can_delete %}
+        Delete is available because this node has no child or edge blockers.
+        {% else %}
+        Delete is blocked until child nodes and incident edges are removed.
+        {% endif %}
+      </p>
+      {% if node_detail.delete_blockers.child_count %}
+      <p class="resource-note">Child nodes: {{ node_detail.delete_blockers.child_count }}.</p>
+      {% endif %}
+      {% if node_detail.delete_blockers.incident_edge_count %}
+      <p class="resource-note">Incident edges: {{ node_detail.delete_blockers.incident_edge_count }}.</p>
+      {% endif %}
+      {% if node_detail.delete_blockers.sample_child_ids %}
+      <p class="resource-note">Sample child IDs: {{ node_detail.delete_blockers.sample_child_ids | join(", ") }}</p>
+      {% endif %}
+      {% if node_detail.delete_blockers.sample_edge_ids %}
+      <p class="resource-note">Sample edge IDs: {{ node_detail.delete_blockers.sample_edge_ids | join(", ") }}</p>
+      {% endif %}
+      {% endif %}
     </article>
 
     <article class="resource-card">
@@ -106,6 +134,58 @@
         </div>
       </div>
       <pre class="code-block">{{ node_json }}</pre>
+    </article>
+  </div>
+</section>
+
+<section class="dashboard-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Payload</p>
+      <h2>Binary payload</h2>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    <article class="resource-card">
+      <div class="resource-header">
+        <div>
+          <h3>Stored payload</h3>
+          <p class="resource-subtitle">Upload, replace, and download</p>
+        </div>
+      </div>
+      <dl class="resource-meta">
+        <div>
+          <dt>Size</dt>
+          <dd>{{ node_detail.node.payload_size }} bytes</dd>
+        </div>
+        <div>
+          <dt>MIME</dt>
+          <dd>{{ node_detail.node.payload_mime or "application/octet-stream" }}</dd>
+        </div>
+        <div>
+          <dt>Hash</dt>
+          <dd>{{ node_detail.node.payload_hash or "none" }}</dd>
+        </div>
+      </dl>
+      {% if current_user.is_owner %}
+      <form class="auth-form" action="{{ web_app.url_path_for('graph_node_payload_upload', graph_id=node_detail.graph.id, node_id=node_detail.node.id) }}" method="post" enctype="multipart/form-data">
+        <label class="field">
+          <span>Payload file</span>
+          <input type="file" name="payload_file" required>
+        </label>
+        <label class="field">
+          <span>MIME override</span>
+          <input name="mime" value="{{ node_detail.node.payload_mime or '' }}" placeholder="text/plain">
+        </label>
+        <div class="button-row">
+          <button class="button" type="submit">{% if node_detail.node.has_payload %}Replace payload{% else %}Upload payload{% endif %}</button>
+          {% if node_detail.node.has_payload %}
+          <a class="button button-secondary" href="{{ web_app.url_path_for('graph_node_payload_download', graph_id=node_detail.graph.id, node_id=node_detail.node.id) }}">Download payload</a>
+          {% endif %}
+        </div>
+      </form>
+      {% endif %}
     </article>
   </div>
 </section>

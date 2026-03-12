@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import re
 from pathlib import Path
@@ -1021,6 +1022,617 @@ def test_graph_node_browse_and_create_vertical_slice_across_surfaces(tmp_path):
         assert "mcp-node" in response.text
 
 
+def test_graph_node_update_delete_and_payload_vertical_slice_across_surfaces(tmp_path):
+    """Test node update/delete/payload flow, blockers, and downloads across surfaces."""
+    manager = _create_test_manager(tmp_path)
+    graph_id = ""
+    api_key_value = ""
+
+    with TestClient(manager.app) as client:
+        _bootstrap_owner(client)
+        _login(client)
+
+        response = client.get("/graphs/new")
+        assert response.status_code == 200
+        default_instance_id = _extract_instance_option_value(response.text, "Default instance")
+
+        response = client.post(
+            "/graphs",
+            data={
+                "instance_id": default_instance_id,
+                "table_prefix": "node_slice_phase2",
+                "display_name": "Node Slice Phase 2",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+
+        graph = _read_graph_by_prefix(manager, table_prefix="node_slice_phase2")
+        assert graph is not None
+        graph_id = graph.id
+        _seed_graph_schema(manager, table_prefix="node_slice_phase2", schema_name="task_schema")
+
+        blocked_id = _seed_node_record(
+            manager,
+            table_prefix="node_slice_phase2",
+            type="task",
+            name="blocked-root",
+            schema_name="task_schema",
+            data={"name": "Blocked root"},
+        )
+        _seed_node_record(
+            manager,
+            table_prefix="node_slice_phase2",
+            type="task",
+            name="blocked-child",
+            data={"name": "Blocked child"},
+            parent_id=blocked_id,
+        )
+        blocked_target_id = _seed_node_record(
+            manager,
+            table_prefix="node_slice_phase2",
+            type="task",
+            name="blocked-target",
+            data={"name": "Blocked target"},
+        )
+        _seed_edge_record(
+            manager,
+            table_prefix="node_slice_phase2",
+            type="depends_on",
+            source_id=blocked_id,
+            target_id=blocked_target_id,
+            data={"kind": "blocker"},
+        )
+        web_edit_id = _seed_node_record(
+            manager,
+            table_prefix="node_slice_phase2",
+            type="task",
+            name="web-edit",
+            schema_name="task_schema",
+            data={"name": "Web edit"},
+            tags=["before"],
+        )
+        web_delete_id = _seed_node_record(
+            manager,
+            table_prefix="node_slice_phase2",
+            type="task",
+            name="web-delete",
+            data={"name": "Web delete"},
+        )
+        rest_node_id = _seed_node_record(
+            manager,
+            table_prefix="node_slice_phase2",
+            type="task",
+            name="rest-edit",
+            data={"name": "Rest edit"},
+        )
+        cli_node_id = _seed_node_record(
+            manager,
+            table_prefix="node_slice_phase2",
+            type="task",
+            name="cli-edit",
+            data={"name": "CLI edit"},
+        )
+        mcp_node_id = _seed_node_record(
+            manager,
+            table_prefix="node_slice_phase2",
+            type="task",
+            name="mcp-edit",
+            data={"name": "MCP edit"},
+        )
+
+        response = client.get(f"/graphs/{graph_id}/nodes/{blocked_id}")
+        assert response.status_code == 200
+        assert "Delete is blocked until child nodes and incident edges are removed." in response.text
+        assert "Child nodes: 1." in response.text
+        assert "Incident edges: 1." in response.text
+        assert "Sample child IDs:" in response.text
+        assert "Sample edge IDs:" in response.text
+
+        response = client.post(
+            f"/graphs/{graph_id}/nodes/{blocked_id}/delete",
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert (
+            "Node &#39;{node_id}&#39; cannot be deleted because it still has 1 child node and 1 incident edge.".format(
+                node_id=blocked_id
+            )
+            in response.text
+        )
+
+        response = client.get(f"/graphs/{graph_id}/nodes/{web_edit_id}/edit")
+        assert response.status_code == 200
+        assert "Update node" in response.text
+
+        response = client.post(
+            f"/graphs/{graph_id}/nodes/{web_edit_id}",
+            data={
+                "type": "task",
+                "name": "web-edit-renamed",
+                "schema_name": "task_schema",
+                "owner_id": "owner-1",
+                "parent_id": "",
+                "tags": "alpha, beta",
+                "data": json.dumps({"name": "Web edit updated", "status": "active"}),
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+
+        response = client.get(response.headers["location"])
+        assert response.status_code == 200
+        assert "web-edit-renamed" in response.text
+        assert "Tags: alpha, beta" in response.text
+        assert "owner-1" in response.text
+
+        response = client.post(
+            f"/graphs/{graph_id}/nodes/{web_edit_id}/payload",
+            data={"mime": "text/plain"},
+            files={"payload_file": ("web.txt", b"web payload", "text/plain")},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+
+        response = client.get(response.headers["location"])
+        assert response.status_code == 200
+        assert "A binary payload is stored on this node." in response.text
+        assert "11 bytes" in response.text
+        assert "Download payload" in response.text
+
+        response = client.get(f"/graphs/{graph_id}/nodes/{web_edit_id}/payload")
+        assert response.status_code == 200
+        assert response.content == b"web payload"
+        assert response.headers["content-type"].startswith("text/plain")
+        assert "attachment;" in response.headers["content-disposition"]
+
+        response = client.post(
+            f"/graphs/{graph_id}/nodes/{web_delete_id}/delete",
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert response.headers["location"].startswith(f"/graphs/{graph_id}/nodes?success=")
+
+        response = client.post(
+            "/apikeys",
+            data={"label": "Node phase 2 key"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        api_key_detail_path = response.headers["location"]
+        response = client.get(api_key_detail_path)
+        assert response.status_code == 200
+        api_key_value = _extract_revealed_api_key(response.text)
+
+        response = client.post(
+            "/api/graph_node_update",
+            params={
+                "graph_id": graph_id,
+                "node_id": rest_node_id,
+                "type": "task",
+                "name": "rest-edit-renamed",
+                "schema_name": "task_schema",
+                "tags": "rest, updated",
+            },
+            json={"name": "Rest edit updated", "status": "active"},
+            headers={"Authorization": f"Bearer {api_key_value}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["node"]["name"] == "rest-edit-renamed"
+        assert response.json()["node"]["schema_name"] == "task_schema"
+        assert response.json()["node"]["tags"] == ["rest", "updated"]
+
+        response = client.post(
+            "/api/graph_node_payload_set",
+            params={
+                "graph_id": graph_id,
+                "node_id": rest_node_id,
+                "payload_base64": base64.b64encode(b"rest payload").decode("ascii"),
+                "mime": "text/plain",
+            },
+            headers={"Authorization": f"Bearer {api_key_value}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["node"]["payload_size"] == 12
+
+        response = client.get(
+            "/api/graph_node_payload_get",
+            params={"graph_id": graph_id, "node_id": rest_node_id},
+            headers={"Authorization": f"Bearer {api_key_value}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["payload_base64"] == base64.b64encode(b"rest payload").decode("ascii")
+        assert response.json()["node"]["payload_mime"] == "text/plain"
+
+        response = client.post(
+            "/api/graph_node_delete",
+            params={"graph_id": graph_id, "node_id": rest_node_id},
+            headers={"Authorization": f"Bearer {api_key_value}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["node"]["id"] == rest_node_id
+
+    cli_updated = manager.cli(
+        [
+            "gpdb",
+            "graph_node_update",
+            graph_id,
+            cli_node_id,
+            "task",
+            json.dumps({"name": "CLI edit updated", "status": "ready"}),
+            "--name",
+            "cli-edit-renamed",
+        ],
+        standalone_mode=False,
+    )
+    assert cli_updated["node"]["name"] == "cli-edit-renamed"
+    assert cli_updated["node"]["data"] == {"name": "CLI edit updated", "status": "ready"}
+
+    cli_payload_set = manager.cli(
+        [
+            "gpdb",
+            "graph_node_payload_set",
+            graph_id,
+            cli_node_id,
+            base64.b64encode(b"cli payload").decode("ascii"),
+            "--mime",
+            "text/plain",
+        ],
+        standalone_mode=False,
+    )
+    assert cli_payload_set["node"]["payload_size"] == 11
+
+    cli_payload_get = manager.cli(
+        ["gpdb", "graph_node_payload_get", graph_id, cli_node_id],
+        standalone_mode=False,
+    )
+    assert cli_payload_get["payload_base64"] == base64.b64encode(b"cli payload").decode("ascii")
+    assert cli_payload_get["node"]["payload_mime"] == "text/plain"
+
+    cli_deleted = manager.cli(
+        ["gpdb", "graph_node_delete", graph_id, cli_node_id],
+        standalone_mode=False,
+    )
+    assert cli_deleted["node"]["id"] == cli_node_id
+
+    mcp_updated = _call_persisted_authenticated_mcp_tool(
+        manager,
+        api_key_value,
+        "graph_node_update",
+        {
+            "graph_id": graph_id,
+            "node_id": mcp_node_id,
+            "type": "task",
+            "name": "mcp-edit-renamed",
+            "schema_name": "task_schema",
+            "tags": "mcp, updated",
+            "data": {"name": "MCP edit updated", "status": "active"},
+        },
+    )
+    assert mcp_updated["node"]["name"] == "mcp-edit-renamed"
+    assert mcp_updated["node"]["tags"] == ["mcp", "updated"]
+
+    mcp_payload_set = _call_persisted_authenticated_mcp_tool(
+        manager,
+        api_key_value,
+        "graph_node_payload_set",
+        {
+            "graph_id": graph_id,
+            "node_id": mcp_node_id,
+            "payload_base64": base64.b64encode(b"mcp payload").decode("ascii"),
+            "mime": "text/plain",
+        },
+    )
+    assert mcp_payload_set["node"]["payload_size"] == 11
+
+    mcp_payload_get = _call_persisted_authenticated_mcp_tool(
+        manager,
+        api_key_value,
+        "graph_node_payload_get",
+        {"graph_id": graph_id, "node_id": mcp_node_id},
+    )
+    assert mcp_payload_get["payload_base64"] == base64.b64encode(b"mcp payload").decode("ascii")
+    assert mcp_payload_get["node"]["payload_mime"] == "text/plain"
+
+    mcp_deleted = _call_persisted_authenticated_mcp_tool(
+        manager,
+        api_key_value,
+        "graph_node_delete",
+        {"graph_id": graph_id, "node_id": mcp_node_id},
+    )
+    assert mcp_deleted["node"]["id"] == mcp_node_id
+
+    with TestClient(manager.app) as client:
+        _login(client)
+        response = client.get(f"/graphs/{graph_id}/nodes")
+        assert response.status_code == 200
+        assert "web-edit-renamed" in response.text
+        assert "web-delete" not in response.text
+        assert "rest-edit-renamed" not in response.text
+        assert "cli-edit-renamed" not in response.text
+        assert "mcp-edit-renamed" not in response.text
+
+
+def test_graph_edge_browse_and_create_vertical_slice_across_surfaces(tmp_path):
+    """Test edge browse/create flow across web, REST, CLI, and MCP."""
+    manager = _create_test_manager(tmp_path)
+    graph_id = ""
+    api_key_value = ""
+
+    with TestClient(manager.app) as client:
+        _bootstrap_owner(client)
+        _login(client)
+
+        response = client.get("/graphs/new")
+        assert response.status_code == 200
+        default_instance_id = _extract_instance_option_value(response.text, "Default instance")
+
+        response = client.post(
+            "/graphs",
+            data={
+                "instance_id": default_instance_id,
+                "table_prefix": "edge_slice",
+                "display_name": "Edge Slice",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+
+        graph = _read_graph_by_prefix(manager, table_prefix="edge_slice")
+        assert graph is not None
+        graph_id = graph.id
+        _seed_graph_schema(manager, table_prefix="edge_slice", schema_name="edge_schema")
+
+        seeded_source_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice",
+            type="task",
+            name="seeded-source",
+            data={"name": "Seeded source"},
+        )
+        seeded_target_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice",
+            type="task",
+            name="seeded-target",
+            data={"name": "Seeded target"},
+        )
+        seeded_edge_id = _seed_edge_record(
+            manager,
+            table_prefix="edge_slice",
+            type="depends_on",
+            source_id=seeded_source_id,
+            target_id=seeded_target_id,
+            schema_name="edge_schema",
+            data={"name": "Seeded edge"},
+            tags=["seeded"],
+        )
+
+        web_source_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice",
+            type="task",
+            name="web-source",
+            data={"name": "Web source"},
+        )
+        web_target_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice",
+            type="task",
+            name="web-target",
+            data={"name": "Web target"},
+        )
+        rest_source_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice",
+            type="task",
+            name="rest-source",
+            data={"name": "Rest source"},
+        )
+        rest_target_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice",
+            type="task",
+            name="rest-target",
+            data={"name": "Rest target"},
+        )
+        cli_source_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice",
+            type="task",
+            name="cli-source",
+            data={"name": "CLI source"},
+        )
+        cli_target_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice",
+            type="task",
+            name="cli-target",
+            data={"name": "CLI target"},
+        )
+        mcp_source_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice",
+            type="task",
+            name="mcp-source",
+            data={"name": "MCP source"},
+        )
+        mcp_target_id = _seed_node_record(
+            manager,
+            table_prefix="edge_slice",
+            type="task",
+            name="mcp-target",
+            data={"name": "MCP target"},
+        )
+
+        response = client.get(f"/graphs/{graph_id}/edges/new")
+        assert response.status_code == 200
+        assert "Create an edge for Edge Slice." in response.text
+        assert '<option value="edge_schema"' in response.text
+
+        response = client.post(
+            f"/graphs/{graph_id}/edges",
+            data={
+                "type": "depends_on",
+                "source_id": web_source_id,
+                "target_id": web_target_id,
+                "schema_name": "edge_schema",
+                "tags": "alpha, beta",
+                "data": json.dumps({"name": "Web edge"}),
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert response.headers["location"].startswith(f"/graphs/{graph_id}/edges/")
+        web_edge_id = response.headers["location"].split("?", 1)[0].rsplit("/", 1)[-1]
+
+        response = client.get(response.headers["location"])
+        assert response.status_code == 200
+        assert web_edge_id in response.text
+        assert web_source_id in response.text
+        assert web_target_id in response.text
+        assert "Tags: alpha, beta" in response.text
+
+        response = client.get(f"/graphs/{graph_id}/edges", params={"type": "depends_on", "limit": 1})
+        assert response.status_code == 200
+        assert "Next page" in response.text
+
+        response = client.post(
+            "/apikeys",
+            data={"label": "Edge slice key"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        api_key_detail_path = response.headers["location"]
+        response = client.get(api_key_detail_path)
+        assert response.status_code == 200
+        api_key_value = _extract_revealed_api_key(response.text)
+
+        response = client.post(
+            "/api/graph_edge_create",
+            params={
+                "graph_id": graph_id,
+                "type": "depends_on",
+                "source_id": rest_source_id,
+                "target_id": rest_target_id,
+                "schema_name": "edge_schema",
+                "tags": "rest",
+            },
+            json={"name": "Rest edge"},
+            headers={"Authorization": f"Bearer {api_key_value}"},
+        )
+        assert response.status_code == 200
+        rest_created = response.json()
+        assert rest_created["edge"]["type"] == "depends_on"
+        assert rest_created["edge"]["schema_name"] == "edge_schema"
+        assert rest_created["edge"]["tags"] == ["rest"]
+
+        response = client.get(
+            "/api/graph_edge_list",
+            params={"graph_id": graph_id, "type": "depends_on", "limit": 10},
+            headers={"Authorization": f"Bearer {api_key_value}"},
+        )
+        assert response.status_code == 200
+        edge_list_payload = response.json()
+        assert edge_list_payload["total"] == 3
+        assert {item["id"] for item in edge_list_payload["items"]} == {
+            seeded_edge_id,
+            web_edge_id,
+            rest_created["edge"]["id"],
+        }
+
+        response = client.get(
+            "/api/graph_edge_get",
+            params={"graph_id": graph_id, "edge_id": web_edge_id},
+            headers={"Authorization": f"Bearer {api_key_value}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["edge"]["source_id"] == web_source_id
+        assert response.json()["edge"]["target_id"] == web_target_id
+
+    cli_created = manager.cli(
+        [
+            "gpdb",
+            "graph_edge_create",
+            graph_id,
+            "depends_on",
+            cli_source_id,
+            cli_target_id,
+            json.dumps({"name": "CLI edge"}),
+            "--schema-name",
+            "edge_schema",
+            "--tags",
+            "cli, linked",
+        ],
+        standalone_mode=False,
+    )
+    assert cli_created["edge"]["schema_name"] == "edge_schema"
+    assert cli_created["edge"]["tags"] == ["cli", "linked"]
+
+    cli_get = manager.cli(
+        ["gpdb", "graph_edge_get", graph_id, cli_created["edge"]["id"]],
+        standalone_mode=False,
+    )
+    assert cli_get["edge"]["source_id"] == cli_source_id
+    assert cli_get["edge"]["target_id"] == cli_target_id
+
+    cli_list = manager.cli(
+        ["gpdb", "graph_edge_list", graph_id],
+        standalone_mode=False,
+    )
+    assert cli_list["total"] == 4
+
+    mcp_created = _call_persisted_authenticated_mcp_tool(
+        manager,
+        api_key_value,
+        "graph_edge_create",
+        {
+            "graph_id": graph_id,
+            "type": "depends_on",
+            "source_id": mcp_source_id,
+            "target_id": mcp_target_id,
+            "schema_name": "edge_schema",
+            "tags": "mcp, final",
+            "data": {"name": "MCP edge"},
+        },
+    )
+    assert mcp_created["edge"]["schema_name"] == "edge_schema"
+    assert mcp_created["edge"]["tags"] == ["mcp", "final"]
+
+    mcp_get = _call_persisted_authenticated_mcp_tool(
+        manager,
+        api_key_value,
+        "graph_edge_get",
+        {
+            "graph_id": graph_id,
+            "edge_id": mcp_created["edge"]["id"],
+        },
+    )
+    assert mcp_get["edge"]["source_id"] == mcp_source_id
+
+    mcp_list = _call_persisted_authenticated_mcp_tool(
+        manager,
+        api_key_value,
+        "graph_edge_list",
+        {
+            "graph_id": graph_id,
+            "type": "depends_on",
+            "limit": 10,
+        },
+    )
+    assert mcp_list["total"] == 5
+
+    with TestClient(manager.app) as client:
+        _login(client)
+        response = client.get(f"/graphs/{graph_id}/edges")
+        assert response.status_code == 200
+        assert seeded_source_id in response.text
+        assert web_edge_id in response.text
+        assert rest_created["edge"]["id"] in response.text
+        assert cli_created["edge"]["id"] in response.text
+        assert mcp_created["edge"]["id"] in response.text
+
+
 def test_cli_api_key_management_commands(tmp_path):
     """Test trusted local CLI API key management commands."""
     manager = _create_test_manager(tmp_path)
@@ -1562,7 +2174,7 @@ def _seed_graph_content(manager, *, table_prefix: str) -> None:
         finally:
             await db.sqla_engine.dispose()
 
-    asyncio.run(_seed())
+    return asyncio.run(_seed())
 
 
 def _seed_schema_usage(manager, *, table_prefix: str, schema_name: str) -> None:
@@ -1599,7 +2211,7 @@ def _seed_schema_usage(manager, *, table_prefix: str, schema_name: str) -> None:
         finally:
             await db.sqla_engine.dispose()
 
-    asyncio.run(_seed())
+    return asyncio.run(_seed())
 
 
 def _seed_graph_schema(manager, *, table_prefix: str, schema_name: str) -> None:
@@ -1616,7 +2228,7 @@ def _seed_graph_schema(manager, *, table_prefix: str, schema_name: str) -> None:
         finally:
             await db.sqla_engine.dispose()
 
-    asyncio.run(_seed())
+    return asyncio.run(_seed())
 
 
 def _seed_node_record(
@@ -1628,26 +2240,63 @@ def _seed_node_record(
     data: dict[str, object],
     schema_name: str | None = None,
     tags: list[str] | None = None,
-) -> None:
+    parent_id: str | None = None,
+) -> str:
     services = manager.app.state.services
     assert services.captive_server is not None
 
-    async def _seed() -> None:
+    async def _seed() -> str:
         db = GPGraph(services.captive_server.get_uri(), table_prefix=table_prefix)
         try:
-            await db.set_node(
+            node = await db.set_node(
                 NodeUpsert(
                     type=type,
                     name=name,
+                    parent_id=parent_id,
                     schema_name=schema_name,
                     data=data,
                     tags=list(tags or []),
                 )
             )
+            return node.id
         finally:
             await db.sqla_engine.dispose()
 
-    asyncio.run(_seed())
+    return asyncio.run(_seed())
+
+
+def _seed_edge_record(
+    manager,
+    *,
+    table_prefix: str,
+    type: str,
+    source_id: str,
+    target_id: str,
+    data: dict[str, object],
+    schema_name: str | None = None,
+    tags: list[str] | None = None,
+) -> str:
+    services = manager.app.state.services
+    assert services.captive_server is not None
+
+    async def _seed() -> str:
+        db = GPGraph(services.captive_server.get_uri(), table_prefix=table_prefix)
+        try:
+            edge = await db.set_edge(
+                EdgeUpsert(
+                    type=type,
+                    source_id=source_id,
+                    target_id=target_id,
+                    schema_name=schema_name,
+                    data=data,
+                    tags=list(tags or []),
+                )
+            )
+            return edge.id
+        finally:
+            await db.sqla_engine.dispose()
+
+    return asyncio.run(_seed())
 
 
 def _schema_definition(

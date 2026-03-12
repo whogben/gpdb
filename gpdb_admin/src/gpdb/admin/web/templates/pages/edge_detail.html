@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-copy">
+    <p class="eyebrow">Edge Detail</p>
+    <h1>{{ edge_detail.edge.type }}</h1>
+    <p class="hero-text">
+      Relationship <strong>{{ edge_detail.edge.id }}</strong> on
+      <strong>{{ edge_detail.graph.display_name }}</strong>.
+    </p>
+    <div class="button-row">
+      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_edge_list_page', graph_id=edge_detail.graph.id) }}">Back to edges</a>
+      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_overview_page', graph_id=edge_detail.graph.id) }}">Graph overview</a>
+      {% if current_user.is_owner %}
+      <a class="button" href="{{ web_app.url_path_for('graph_edge_create_page', graph_id=edge_detail.graph.id) }}">Create edge</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="hero-panel">
+    <h2>Summary</h2>
+    <ul class="feature-list">
+      <li>Schema: {{ edge_detail.edge.schema_name or "none" }}.</li>
+      <li>Source: {{ edge_detail.edge.source_id }}.</li>
+      <li>Target: {{ edge_detail.edge.target_id }}.</li>
+      <li>Tags: {{ edge_detail.edge.tags | length }}.</li>
+    </ul>
+  </div>
+</section>
+
+{% if error_message %}
+<p class="form-error">{{ error_message }}</p>
+{% endif %}
+{% if success_message %}
+<p class="form-success">{{ success_message }}</p>
+{% endif %}
+
+<section class="dashboard-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Record</p>
+      <h2>Metadata</h2>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    <article class="resource-card">
+      <div class="resource-header">
+        <div>
+          <h3>{{ edge_detail.edge.type }}</h3>
+          <p class="resource-subtitle">{{ edge_detail.edge.id }}</p>
+        </div>
+      </div>
+      <dl class="resource-meta">
+        <div>
+          <dt>Edge ID</dt>
+          <dd>{{ edge_detail.edge.id }}</dd>
+        </div>
+        <div>
+          <dt>Source ID</dt>
+          <dd>{{ edge_detail.edge.source_id }}</dd>
+        </div>
+        <div>
+          <dt>Target ID</dt>
+          <dd>{{ edge_detail.edge.target_id }}</dd>
+        </div>
+        <div>
+          <dt>Schema</dt>
+          <dd>{{ edge_detail.edge.schema_name or "none" }}</dd>
+        </div>
+        <div>
+          <dt>Version</dt>
+          <dd>{{ edge_detail.edge.version }}</dd>
+        </div>
+        <div>
+          <dt>Created</dt>
+          <dd>{{ edge_detail.edge.created_at }}</dd>
+        </div>
+        <div>
+          <dt>Updated</dt>
+          <dd>{{ edge_detail.edge.updated_at }}</dd>
+        </div>
+      </dl>
+      {% if edge_detail.edge.tags %}
+      <p class="resource-note">Tags: {{ edge_detail.edge.tags | join(", ") }}</p>
+      {% else %}
+      <p class="resource-note">No tags are currently stored on this edge.</p>
+      {% endif %}
+    </article>
+
+    <article class="resource-card">
+      <div class="resource-header">
+        <div>
+          <h3>JSON Data</h3>
+          <p class="resource-subtitle">Stored edge body</p>
+        </div>
+      </div>
+      <pre class="code-block">{{ edge_json }}</pre>
+    </article>
+  </div>
+</section>
+{% endblock %}

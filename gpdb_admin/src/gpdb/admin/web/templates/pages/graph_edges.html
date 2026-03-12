@@ -3,17 +3,17 @@
 {% block content %}
 <section class="hero">
   <div class="hero-copy">
-    <p class="eyebrow">Nodes</p>
-    <h1>{{ node_list.graph.display_name }}</h1>
+    <p class="eyebrow">Edges</p>
+    <h1>{{ edge_list.graph.display_name }}</h1>
     <p class="hero-text">
-      Browse nodes in this graph, inspect stored metadata, and create new records with
-      schema-validated JSON data.
+      Browse relationships in this graph, inspect connected node IDs, and create new
+      edges with schema-validated JSON data.
     </p>
     <div class="button-row">
-      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_overview_page', graph_id=node_list.graph.id) }}">Back to overview</a>
-      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_schema_list_page', graph_id=node_list.graph.id) }}">Schemas</a>
+      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_overview_page', graph_id=edge_list.graph.id) }}">Back to overview</a>
+      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_node_list_page', graph_id=edge_list.graph.id) }}">Nodes</a>
       {% if current_user.is_owner %}
-      <a class="button" href="{{ web_app.url_path_for('graph_node_create_page', graph_id=node_list.graph.id) }}">New node</a>
+      <a class="button" href="{{ web_app.url_path_for('graph_edge_create_page', graph_id=edge_list.graph.id) }}">New edge</a>
       {% endif %}
     </div>
   </div>
@@ -21,10 +21,10 @@
   <div class="hero-panel">
     <h2>Browse summary</h2>
     <ul class="feature-list">
-      <li>{{ node_list.total }} node{{ "" if node_list.total == 1 else "s" }} matched.</li>
-      <li>Instance: {{ node_list.instance.display_name }}.</li>
-      <li>Prefix: {{ node_list.graph.table_prefix_label }}.</li>
-      <li>Showing {{ node_list.offset + 1 if node_list.total else 0 }}-{{ [node_list.offset + node_list.limit, node_list.total] | min }}.</li>
+      <li>{{ edge_list.total }} edge{{ "" if edge_list.total == 1 else "s" }} matched.</li>
+      <li>Instance: {{ edge_list.instance.display_name }}.</li>
+      <li>Prefix: {{ edge_list.graph.table_prefix_label }}.</li>
+      <li>Showing {{ edge_list.offset + 1 if edge_list.total else 0 }}-{{ [edge_list.offset + edge_list.limit, edge_list.total] | min }}.</li>
     </ul>
   </div>
 </section>
@@ -45,7 +45,7 @@
   </div>
 
   <article class="resource-card">
-    <form class="auth-form" action="{{ web_app.url_path_for('graph_node_list_page', graph_id=node_list.graph.id) }}" method="get">
+    <form class="auth-form" action="{{ web_app.url_path_for('graph_edge_list_page', graph_id=edge_list.graph.id) }}" method="get">
       <label class="field">
         <span>Type</span>
         <input name="type" value="{{ filter_form.type }}">
@@ -57,8 +57,13 @@
       </label>
 
       <label class="field">
-        <span>Parent ID</span>
-        <input name="parent_id" value="{{ filter_form.parent_id }}">
+        <span>Source ID</span>
+        <input name="source_id" value="{{ filter_form.source_id }}">
+      </label>
+
+      <label class="field">
+        <span>Target ID</span>
+        <input name="target_id" value="{{ filter_form.target_id }}">
       </label>
 
       <label class="field">
@@ -93,55 +98,52 @@
   <div class="section-heading">
     <div>
       <p class="eyebrow">Results</p>
-      <h2>Node list</h2>
+      <h2>Edge list</h2>
     </div>
     {% if current_user.is_owner %}
-    <a class="button" href="{{ web_app.url_path_for('graph_node_create_page', graph_id=node_list.graph.id) }}">New node</a>
+    <a class="button" href="{{ web_app.url_path_for('graph_edge_create_page', graph_id=edge_list.graph.id) }}">New edge</a>
     {% endif %}
   </div>
 
   <div class="card-grid">
-    {% for node in node_list["items"] %}
+    {% for edge in edge_list["items"] %}
     <article class="resource-card">
       <div class="resource-header">
         <div>
-          <h3>{{ node.name or node.id }}</h3>
-          <p class="resource-subtitle">{{ node.type }}</p>
+          <h3>{{ edge.type }}</h3>
+          <p class="resource-subtitle">{{ edge.id }}</p>
         </div>
       </div>
       <dl class="resource-meta">
         <div>
+          <dt>Source</dt>
+          <dd>{{ edge.source_id }}</dd>
+        </div>
+        <div>
+          <dt>Target</dt>
+          <dd>{{ edge.target_id }}</dd>
+        </div>
+        <div>
           <dt>Schema</dt>
-          <dd>{{ node.schema_name or "none" }}</dd>
-        </div>
-        <div>
-          <dt>Parent</dt>
-          <dd>{{ node.parent_id or "none" }}</dd>
-        </div>
-        <div>
-          <dt>Payload</dt>
-          <dd>{{ node.payload_size }} bytes</dd>
+          <dd>{{ edge.schema_name or "none" }}</dd>
         </div>
         <div>
           <dt>Version</dt>
-          <dd>{{ node.version }}</dd>
+          <dd>{{ edge.version }}</dd>
         </div>
       </dl>
-      {% if node.tags %}
-      <p class="resource-note">Tags: {{ node.tags | join(", ") }}</p>
+      {% if edge.tags %}
+      <p class="resource-note">Tags: {{ edge.tags | join(", ") }}</p>
       {% endif %}
       <div class="button-row">
-        <a class="button button-secondary" href="{{ web_app.url_path_for('graph_node_detail_page', graph_id=node_list.graph.id, node_id=node.id) }}">Open</a>
-        {% if current_user.is_owner %}
-        <a class="button button-secondary" href="{{ web_app.url_path_for('graph_node_edit_page', graph_id=node_list.graph.id, node_id=node.id) }}">Edit</a>
-        {% endif %}
+        <a class="button button-secondary" href="{{ web_app.url_path_for('graph_edge_detail_page', graph_id=edge_list.graph.id, edge_id=edge.id) }}">Open</a>
       </div>
     </article>
     {% else %}
     <article class="resource-card resource-card-empty">
-      <h3>No nodes matched</h3>
+      <h3>No edges matched</h3>
       <p class="resource-note">
-        Adjust the current filters or create the first node for this graph.
+        Adjust the current filters or create the first edge for this graph.
       </p>
     </article>
     {% endfor %}

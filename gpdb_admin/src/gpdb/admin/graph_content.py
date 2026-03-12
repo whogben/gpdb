@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Callable
 from typing import Any
 
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 
 from gpdb import (
+    EdgeUpsert,
     Filter,
     FilterGroup,
     GPGraph,
@@ -153,11 +156,90 @@ class GraphNodeDetail(BaseModel):
     graph: dict[str, object]
     instance: dict[str, object]
     node_record: GraphNodeRecord = Field(serialization_alias="node")
+    delete_blockers: "GraphNodeDeleteBlockers" = Field(
+        default_factory=lambda: GraphNodeDeleteBlockers()
+    )
 
     @property
     def node(self) -> GraphNodeRecord:
         """Backwards-compatible accessor for the node payload."""
         return self.node_record
+
+
+class GraphNodeDeleteBlockers(BaseModel):
+    """Delete preflight summary for one graph node."""
+
+    child_count: int = 0
+    incident_edge_count: int = 0
+    sample_child_ids: list[str] = Field(default_factory=list)
+    sample_edge_ids: list[str] = Field(default_factory=list)
+    can_delete: bool = True
+
+
+class GraphNodePayload(BaseModel):
+    """Stable payload response for one graph node."""
+
+    graph: dict[str, object]
+    instance: dict[str, object]
+    node_record: GraphNodeRecord = Field(serialization_alias="node")
+    payload_base64: str
+    encoding: str = "base64"
+    filename: str
+
+    @property
+    def node(self) -> GraphNodeRecord:
+        """Backwards-compatible accessor for the node payload."""
+        return self.node_record
+
+
+class GraphEdgeFilters(BaseModel):
+    """Current edge list filters echoed back to callers."""
+
+    type: str | None = None
+    schema_name: str | None = None
+    source_id: str | None = None
+    target_id: str | None = None
+    sort: str = "created_at_desc"
+
+
+class GraphEdgeRecord(BaseModel):
+    """Stable edge payload returned by admin graph-content APIs."""
+
+    id: str
+    type: str
+    source_id: str
+    target_id: str
+    schema_name: str | None = None
+    data: dict[str, Any] = Field(default_factory=dict)
+    tags: list[str] = Field(default_factory=list)
+    created_at: str
+    updated_at: str
+    version: int
+
+
+class GraphEdgeList(BaseModel):
+    """List response for graph edges."""
+
+    graph: dict[str, object]
+    instance: dict[str, object]
+    items: list[GraphEdgeRecord] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+    filters: GraphEdgeFilters = Field(default_factory=GraphEdgeFilters)
+
+
+class GraphEdgeDetail(BaseModel):
+    """Detail response for one graph edge."""
+
+    graph: dict[str, object]
+    instance: dict[str, object]
+    edge_record: GraphEdgeRecord = Field(serialization_alias="edge")
+
+    @property
+    def edge(self) -> GraphEdgeRecord:
+        """Backwards-compatible accessor for the edge payload."""
+        return self.edge_record
 
 
 class GraphContentService:
@@ -474,6 +556,7 @@ class GraphContentService:
                 graph=self.serialize_graph(graph),
                 instance=self.serialize_instance(instance),
                 node_record=self._serialize_node_record(node),
+                delete_blockers=await self._inspect_node_delete_blockers(db, clean_node_id),
             )
         finally:
             await db.sqla_engine.dispose()
@@ -526,6 +609,312 @@ class GraphContentService:
                 graph=self.serialize_graph(graph),
                 instance=self.serialize_instance(instance),
                 node_record=self._serialize_node_record(node),
+                delete_blockers=GraphNodeDeleteBlockers(),
+            )
+        finally:
+            await db.sqla_engine.dispose()
+
+    async def update_graph_node(
+        self,
+        *,
+        graph_id: str,
+        node_id: str,
+        type: str,
+        data: dict[str, Any],
+        current_user: AdminUser | None,
+        allow_local_system: bool = False,
+        name: str | None = None,
+        schema_name: str | None = None,
+        owner_id: str | None = None,
+        parent_id: str | None = None,
+        tags: list[str] | None = None,
+    ) -> GraphNodeDetail:
+        """Update one node in a managed graph."""
+        clean_node_id = self._validate_node_id(node_id)
+        clean_type = self._validate_node_type(type)
+        clean_name = self._normalize_optional_text(name)
+        clean_schema_name = self._normalize_optional_text(schema_name)
+        clean_owner_id = self._normalize_optional_text(owner_id)
+        clean_parent_id = self._normalize_optional_text(parent_id)
+        normalized_tags = self._normalize_tag_list(tags)
+        self._validate_json_object(data, object_name="Node data")
+
+        graph, instance, db = await self._open_graph(
+            graph_id=graph_id,
+            current_user=current_user,
+            allow_local_system=allow_local_system,
+            permission_kind="manage_nodes",
+        )
+        try:
+            existing = await db.get_node(clean_node_id)
+            if existing is None:
+                raise GraphContentNotFoundError(f"Node '{clean_node_id}' was not found.")
+            try:
+                node = await db.set_node(
+                    NodeUpsert(
+                        id=clean_node_id,
+                        type=clean_type,
+                        name=clean_name,
+                        owner_id=clean_owner_id,
+                        parent_id=clean_parent_id,
+                        schema_name=clean_schema_name,
+                        data=data,
+                        tags=normalized_tags,
+                    )
+                )
+            except (SchemaNotFoundError, SchemaValidationError, ValueError) as exc:
+                raise GraphContentValidationError(str(exc)) from exc
+            return GraphNodeDetail(
+                graph=self.serialize_graph(graph),
+                instance=self.serialize_instance(instance),
+                node_record=self._serialize_node_record(node),
+                delete_blockers=await self._inspect_node_delete_blockers(db, clean_node_id),
+            )
+        finally:
+            await db.sqla_engine.dispose()
+
+    async def delete_graph_node(
+        self,
+        *,
+        graph_id: str,
+        node_id: str,
+        current_user: AdminUser | None,
+        allow_local_system: bool = False,
+    ) -> GraphNodeDetail:
+        """Delete one graph node when it has no child or edge blockers."""
+        clean_node_id = self._validate_node_id(node_id)
+        graph, instance, db = await self._open_graph(
+            graph_id=graph_id,
+            current_user=current_user,
+            allow_local_system=allow_local_system,
+            permission_kind="manage_nodes",
+        )
+        try:
+            node = await db.get_node(clean_node_id)
+            if node is None:
+                raise GraphContentNotFoundError(f"Node '{clean_node_id}' was not found.")
+            blockers = await self._inspect_node_delete_blockers(db, clean_node_id)
+            deleted = GraphNodeDetail(
+                graph=self.serialize_graph(graph),
+                instance=self.serialize_instance(instance),
+                node_record=self._serialize_node_record(node),
+                delete_blockers=blockers,
+            )
+            try:
+                await db.delete_node(clean_node_id)
+            except IntegrityError as exc:
+                blockers = await self._inspect_node_delete_blockers(db, clean_node_id)
+                raise GraphContentConflictError(
+                    self._format_node_delete_blocker_message(clean_node_id, blockers)
+                ) from exc
+            return deleted
+        finally:
+            await db.sqla_engine.dispose()
+
+    async def set_graph_node_payload(
+        self,
+        *,
+        graph_id: str,
+        node_id: str,
+        payload: bytes,
+        current_user: AdminUser | None,
+        allow_local_system: bool = False,
+        mime: str | None = None,
+    ) -> GraphNodeDetail:
+        """Upload or replace one graph node payload."""
+        clean_node_id = self._validate_node_id(node_id)
+        clean_mime = self._normalize_optional_text(mime)
+        if not payload:
+            raise GraphContentValidationError("Payload bytes are required.")
+
+        graph, instance, db = await self._open_graph(
+            graph_id=graph_id,
+            current_user=current_user,
+            allow_local_system=allow_local_system,
+            permission_kind="manage_nodes",
+        )
+        try:
+            try:
+                node = await db.set_node_payload(
+                    clean_node_id,
+                    payload,
+                    mime=clean_mime,
+                )
+            except ValueError as exc:
+                raise GraphContentNotFoundError(f"Node '{clean_node_id}' was not found.") from exc
+            return GraphNodeDetail(
+                graph=self.serialize_graph(graph),
+                instance=self.serialize_instance(instance),
+                node_record=self._serialize_node_record(node),
+                delete_blockers=await self._inspect_node_delete_blockers(db, clean_node_id),
+            )
+        finally:
+            await db.sqla_engine.dispose()
+
+    async def get_graph_node_payload(
+        self,
+        *,
+        graph_id: str,
+        node_id: str,
+        current_user: AdminUser | None,
+        allow_local_system: bool = False,
+    ) -> GraphNodePayload:
+        """Return one node payload encoded for JSON-based admin surfaces."""
+        clean_node_id = self._validate_node_id(node_id)
+        graph, instance, db = await self._open_graph(
+            graph_id=graph_id,
+            current_user=current_user,
+            allow_local_system=allow_local_system,
+            permission_kind="view",
+        )
+        try:
+            node = await db.get_node_with_payload(clean_node_id)
+            if node is None:
+                raise GraphContentNotFoundError(f"Node '{clean_node_id}' was not found.")
+            if node.payload is None:
+                raise GraphContentConflictError(
+                    f"Node '{clean_node_id}' does not have a payload."
+                )
+            node_record = self._serialize_node_record(node)
+            return GraphNodePayload(
+                graph=self.serialize_graph(graph),
+                instance=self.serialize_instance(instance),
+                node_record=node_record,
+                payload_base64=base64.b64encode(node.payload).decode("ascii"),
+                filename=self._build_node_payload_filename(node_record),
+            )
+        finally:
+            await db.sqla_engine.dispose()
+
+    async def list_graph_edges(
+        self,
+        *,
+        graph_id: str,
+        current_user: AdminUser | None,
+        allow_local_system: bool = False,
+        type: str | None = None,
+        schema_name: str | None = None,
+        source_id: str | None = None,
+        target_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        sort: str = "created_at_desc",
+    ) -> GraphEdgeList:
+        """Return paginated edge records for one managed graph."""
+        graph, instance, db = await self._open_graph(
+            graph_id=graph_id,
+            current_user=current_user,
+            allow_local_system=allow_local_system,
+            permission_kind="view",
+        )
+        try:
+            query = SearchQuery(
+                filter=self._build_edge_filter(
+                    type=type,
+                    schema_name=schema_name,
+                    source_id=source_id,
+                    target_id=target_id,
+                ),
+                sort=[self._parse_edge_sort(sort)],
+                limit=self._validate_page_limit(limit),
+                offset=self._validate_page_offset(offset),
+            )
+            page = await db.search_edges(query)
+            return GraphEdgeList(
+                graph=self.serialize_graph(graph),
+                instance=self.serialize_instance(instance),
+                items=[self._serialize_edge_record(item) for item in page.items],
+                total=page.total,
+                limit=page.limit,
+                offset=page.offset,
+                filters=GraphEdgeFilters(
+                    type=self._normalize_optional_text(type),
+                    schema_name=self._normalize_optional_text(schema_name),
+                    source_id=self._normalize_optional_text(source_id),
+                    target_id=self._normalize_optional_text(target_id),
+                    sort=sort,
+                ),
+            )
+        finally:
+            await db.sqla_engine.dispose()
+
+    async def get_graph_edge(
+        self,
+        *,
+        graph_id: str,
+        edge_id: str,
+        current_user: AdminUser | None,
+        allow_local_system: bool = False,
+    ) -> GraphEdgeDetail:
+        """Return one graph edge plus metadata."""
+        clean_edge_id = self._validate_edge_id(edge_id)
+        graph, instance, db = await self._open_graph(
+            graph_id=graph_id,
+            current_user=current_user,
+            allow_local_system=allow_local_system,
+            permission_kind="view",
+        )
+        try:
+            edge = await db.get_edge(clean_edge_id)
+            if edge is None:
+                raise GraphContentNotFoundError(f"Edge '{clean_edge_id}' was not found.")
+            return GraphEdgeDetail(
+                graph=self.serialize_graph(graph),
+                instance=self.serialize_instance(instance),
+                edge_record=self._serialize_edge_record(edge),
+            )
+        finally:
+            await db.sqla_engine.dispose()
+
+    async def create_graph_edge(
+        self,
+        *,
+        graph_id: str,
+        type: str,
+        source_id: str,
+        target_id: str,
+        data: dict[str, Any],
+        current_user: AdminUser | None,
+        allow_local_system: bool = False,
+        schema_name: str | None = None,
+        tags: list[str] | None = None,
+    ) -> GraphEdgeDetail:
+        """Create one edge in a managed graph."""
+        clean_type = self._validate_edge_type(type)
+        clean_source_id = self._validate_related_node_id(source_id, field_name="Source")
+        clean_target_id = self._validate_related_node_id(target_id, field_name="Target")
+        clean_schema_name = self._normalize_optional_text(schema_name)
+        normalized_tags = self._normalize_tag_list(tags)
+        self._validate_json_object(data, object_name="Edge data")
+
+        graph, instance, db = await self._open_graph(
+            graph_id=graph_id,
+            current_user=current_user,
+            allow_local_system=allow_local_system,
+            permission_kind="manage_edges",
+        )
+        try:
+            try:
+                edge = await db.set_edge(
+                    EdgeUpsert(
+                        type=clean_type,
+                        source_id=clean_source_id,
+                        target_id=clean_target_id,
+                        schema_name=clean_schema_name,
+                        data=data,
+                        tags=normalized_tags,
+                    )
+                )
+            except IntegrityError as exc:
+                raise GraphContentValidationError(
+                    "Source and target nodes must exist before creating an edge."
+                ) from exc
+            except (SchemaNotFoundError, SchemaValidationError, ValueError) as exc:
+                raise GraphContentValidationError(str(exc)) from exc
+            return GraphEdgeDetail(
+                graph=self.serialize_graph(graph),
+                instance=self.serialize_instance(instance),
+                edge_record=self._serialize_edge_record(edge),
             )
         finally:
             await db.sqla_engine.dispose()
@@ -604,6 +993,21 @@ class GraphContentService:
             has_payload=bool(node.payload_size or node.payload_hash),
         )
 
+    def _serialize_edge_record(self, edge: Any) -> GraphEdgeRecord:
+        """Project one core edge record into a stable admin response."""
+        return GraphEdgeRecord(
+            id=str(edge.id),
+            type=str(edge.type),
+            source_id=str(edge.source_id),
+            target_id=str(edge.target_id),
+            schema_name=edge.schema_name,
+            data=dict(edge.data or {}),
+            tags=list(edge.tags or []),
+            created_at=edge.created_at.isoformat(),
+            updated_at=edge.updated_at.isoformat(),
+            version=int(edge.version),
+        )
+
     def _validate_schema_name(self, name: str) -> str:
         clean_name = name.strip()
         if not clean_name:
@@ -633,6 +1037,24 @@ class GraphContentService:
         clean_value = value.strip()
         if not clean_value:
             raise GraphContentValidationError("Node id is required.")
+        return clean_value
+
+    def _validate_edge_id(self, value: str) -> str:
+        clean_value = value.strip()
+        if not clean_value:
+            raise GraphContentValidationError("Edge id is required.")
+        return clean_value
+
+    def _validate_edge_type(self, value: str) -> str:
+        clean_value = value.strip()
+        if not clean_value:
+            raise GraphContentValidationError("Edge type is required.")
+        return clean_value
+
+    def _validate_related_node_id(self, value: str, *, field_name: str) -> str:
+        clean_value = value.strip()
+        if not clean_value:
+            raise GraphContentValidationError(f"{field_name} node id is required.")
         return clean_value
 
     def _normalize_optional_text(self, value: str | None) -> str | None:
@@ -679,6 +1101,22 @@ class GraphContentService:
             )
         return allowed[sort]
 
+    def _parse_edge_sort(self, sort: str) -> Sort:
+        allowed = {
+            "created_at_desc": Sort(field="created_at", desc=True),
+            "created_at_asc": Sort(field="created_at", desc=False),
+            "updated_at_desc": Sort(field="updated_at", desc=True),
+            "updated_at_asc": Sort(field="updated_at", desc=False),
+            "type_asc": Sort(field="type", desc=False),
+            "type_desc": Sort(field="type", desc=True),
+        }
+        if sort not in allowed:
+            raise GraphContentValidationError(
+                "Sort must be one of: created_at_desc, created_at_asc, "
+                "updated_at_desc, updated_at_asc, type_asc, type_desc."
+            )
+        return allowed[sort]
+
     def _build_node_filter(
         self,
         *,
@@ -696,6 +1134,33 @@ class GraphContentService:
             filters.append(Filter(field="schema_name", value=clean_schema_name))
         if clean_parent_id:
             filters.append(Filter(field="parent_id", value=clean_parent_id))
+        if not filters:
+            return None
+        if len(filters) == 1:
+            return filters[0]
+        return FilterGroup(logic=Logic.AND, filters=filters)
+
+    def _build_edge_filter(
+        self,
+        *,
+        type: str | None,
+        schema_name: str | None,
+        source_id: str | None,
+        target_id: str | None,
+    ) -> FilterGroup | Filter | None:
+        filters: list[Filter] = []
+        clean_type = self._normalize_optional_text(type)
+        clean_schema_name = self._normalize_optional_text(schema_name)
+        clean_source_id = self._normalize_optional_text(source_id)
+        clean_target_id = self._normalize_optional_text(target_id)
+        if clean_type:
+            filters.append(Filter(field="type", value=clean_type))
+        if clean_schema_name:
+            filters.append(Filter(field="schema_name", value=clean_schema_name))
+        if clean_source_id:
+            filters.append(Filter(field="source_id", value=clean_source_id))
+        if clean_target_id:
+            filters.append(Filter(field="target_id", value=clean_target_id))
         if not filters:
             return None
         if len(filters) == 1:
@@ -720,6 +1185,32 @@ class GraphContentService:
             return f"Schema '{schema_name}' cannot be deleted."
         joined = " and ".join(blockers)
         return f"Schema '{schema_name}' cannot be deleted because it is still referenced by {joined}."
+
+    def _format_node_delete_blocker_message(
+        self,
+        node_id: str,
+        blockers: GraphNodeDeleteBlockers,
+    ) -> str:
+        parts: list[str] = []
+        if blockers.child_count:
+            parts.append(
+                f"{blockers.child_count} child node{'s' if blockers.child_count != 1 else ''}"
+            )
+        if blockers.incident_edge_count:
+            parts.append(
+                f"{blockers.incident_edge_count} incident edge{'s' if blockers.incident_edge_count != 1 else ''}"
+            )
+        if not parts:
+            return f"Node '{node_id}' cannot be deleted."
+        return (
+            f"Node '{node_id}' cannot be deleted because it still has "
+            f"{' and '.join(parts)}."
+        )
+
+    def _build_node_payload_filename(self, node: GraphNodeRecord) -> str:
+        base_name = (node.name or node.id).strip() or node.id
+        safe_name = base_name.replace("/", "_")
+        return safe_name
 
     def _authorize_graph_access(
         self,
@@ -820,3 +1311,38 @@ class GraphContentService:
             usage.sample_node_ids = [item.id for item in node_page.items[:sample_limit]]
             usage.sample_edge_ids = [item.id for item in edge_page.items[:sample_limit]]
         return usage
+
+    async def _inspect_node_delete_blockers(
+        self,
+        db: GPGraph,
+        node_id: str,
+        *,
+        sample_limit: int = 3,
+    ) -> GraphNodeDeleteBlockers:
+        child_page = await db.search_nodes(
+            SearchQuery(
+                filter=Filter(field="parent_id", value=node_id),
+                limit=max(1, sample_limit),
+            )
+        )
+        edge_page = await db.search_edges(
+            SearchQuery(
+                filter=FilterGroup(
+                    logic=Logic.OR,
+                    filters=[
+                        Filter(field="source_id", value=node_id),
+                        Filter(field="target_id", value=node_id),
+                    ],
+                ),
+                limit=max(1, sample_limit),
+            )
+        )
+        blockers = GraphNodeDeleteBlockers(
+            child_count=child_page.total,
+            incident_edge_count=edge_page.total,
+        )
+        if sample_limit > 0:
+            blockers.sample_child_ids = [item.id for item in child_page.items[:sample_limit]]
+            blockers.sample_edge_ids = [item.id for item in edge_page.items[:sample_limit]]
+        blockers.can_delete = not (blockers.child_count or blockers.incident_edge_count)
+        return blockers

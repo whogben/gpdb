@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from gpdb.admin.graph_content import GraphContentError
 from gpdb.admin.web.routes.common import (
@@ -207,6 +208,124 @@ async def graph_node_create(
 
 
 @router.get(
+    "/graphs/{graph_id}/nodes/{node_id}/edit",
+    response_class=HTMLResponse,
+    name="graph_node_edit_page",
+)
+async def graph_node_edit_page(
+    request: Request,
+    graph_id: str,
+    node_id: str,
+) -> HTMLResponse:
+    """Render the edit-node form for one managed graph."""
+    current_user = await require_authenticated_user(request)
+    if isinstance(current_user, RedirectResponse):
+        return current_user
+
+    try:
+        detail = await require_graph_content_service(request).get_graph_node(
+            graph_id=graph_id,
+            node_id=node_id,
+            current_user=current_user,
+        )
+    except GraphContentError as exc:
+        return redirect_with_message(
+            request,
+            "graph_node_list_page",
+            graph_id=graph_id,
+            error=str(exc),
+        )
+
+    return await _render_graph_node_form(
+        request,
+        graph_id=graph_id,
+        current_user=current_user,
+        form_data={
+            "type": detail.node.type,
+            "name": detail.node.name or "",
+            "schema_name": detail.node.schema_name or "",
+            "owner_id": detail.node.owner_id or "",
+            "parent_id": detail.node.parent_id or "",
+            "tags": ", ".join(detail.node.tags),
+            "data": json.dumps(detail.node.data, indent=2, sort_keys=True),
+        },
+        node_id=detail.node.id,
+        node_detail=detail.model_dump(mode="json", by_alias=True),
+    )
+
+
+@router.post("/graphs/{graph_id}/nodes/{node_id}", name="graph_node_update")
+async def graph_node_update(
+    request: Request,
+    graph_id: str,
+    node_id: str,
+    type: str = Form(...),
+    name: str = Form(""),
+    schema_name: str = Form(""),
+    owner_id: str = Form(""),
+    parent_id: str = Form(""),
+    tags: str = Form(""),
+    data: str = Form(...),
+):
+    """Update one node in a managed graph."""
+    current_user = await require_authenticated_user(request)
+    if isinstance(current_user, RedirectResponse):
+        return current_user
+
+    form_data = {
+        "type": type.strip(),
+        "name": name.strip(),
+        "schema_name": schema_name.strip(),
+        "owner_id": owner_id.strip(),
+        "parent_id": parent_id.strip(),
+        "tags": tags.strip(),
+        "data": data.strip(),
+    }
+    try:
+        parsed_data = _parse_node_data_text(form_data["data"])
+    except ValueError as exc:
+        return await _render_graph_node_form(
+            request,
+            graph_id=graph_id,
+            current_user=current_user,
+            form_data=form_data,
+            node_id=node_id,
+            error_message=str(exc),
+        )
+
+    try:
+        updated = await require_graph_content_service(request).update_graph_node(
+            graph_id=graph_id,
+            node_id=node_id,
+            type=form_data["type"],
+            name=form_data["name"],
+            schema_name=form_data["schema_name"],
+            owner_id=form_data["owner_id"],
+            parent_id=form_data["parent_id"],
+            tags=_parse_tags_text(form_data["tags"]),
+            data=parsed_data,
+            current_user=current_user,
+        )
+    except GraphContentError as exc:
+        return await _render_graph_node_form(
+            request,
+            graph_id=graph_id,
+            current_user=current_user,
+            form_data=form_data,
+            node_id=node_id,
+            error_message=str(exc),
+        )
+
+    return redirect_with_message(
+        request,
+        "graph_node_detail_page",
+        graph_id=graph_id,
+        node_id=updated.node.id,
+        success=f"Node '{updated.node.name or updated.node.id}' updated.",
+    )
+
+
+@router.get(
     "/graphs/{graph_id}/nodes/{node_id}",
     response_class=HTMLResponse,
     name="graph_node_detail_page",
@@ -248,21 +367,167 @@ async def graph_node_detail_page(
     )
 
 
+@router.post("/graphs/{graph_id}/nodes/{node_id}/delete", name="graph_node_delete")
+async def graph_node_delete(
+    request: Request,
+    graph_id: str,
+    node_id: str,
+):
+    """Delete one node when it is not blocked by related records."""
+    current_user = await require_authenticated_user(request)
+    if isinstance(current_user, RedirectResponse):
+        return current_user
+
+    try:
+        deleted = await require_graph_content_service(request).delete_graph_node(
+            graph_id=graph_id,
+            node_id=node_id,
+            current_user=current_user,
+        )
+    except GraphContentError as exc:
+        return redirect_with_message(
+            request,
+            "graph_node_detail_page",
+            graph_id=graph_id,
+            node_id=node_id,
+            error=str(exc),
+        )
+
+    return redirect_with_message(
+        request,
+        "graph_node_list_page",
+        graph_id=graph_id,
+        success=f"Node '{deleted.node.name or deleted.node.id}' deleted.",
+    )
+
+
+@router.post("/graphs/{graph_id}/nodes/{node_id}/payload", name="graph_node_payload_upload")
+async def graph_node_payload_upload(
+    request: Request,
+    graph_id: str,
+    node_id: str,
+    payload_file: UploadFile | None = File(None),
+    mime: str = Form(""),
+):
+    """Upload or replace a node payload from the browser."""
+    current_user = await require_authenticated_user(request)
+    if isinstance(current_user, RedirectResponse):
+        return current_user
+
+    if payload_file is None:
+        return redirect_with_message(
+            request,
+            "graph_node_detail_page",
+            graph_id=graph_id,
+            node_id=node_id,
+            error="Choose a file to upload.",
+        )
+    payload_bytes = await payload_file.read()
+    if not payload_bytes:
+        return redirect_with_message(
+            request,
+            "graph_node_detail_page",
+            graph_id=graph_id,
+            node_id=node_id,
+            error="Uploaded payload files cannot be empty.",
+        )
+
+    try:
+        updated = await require_graph_content_service(request).set_graph_node_payload(
+            graph_id=graph_id,
+            node_id=node_id,
+            payload=payload_bytes,
+            mime=mime,
+            current_user=current_user,
+        )
+    except GraphContentError as exc:
+        return redirect_with_message(
+            request,
+            "graph_node_detail_page",
+            graph_id=graph_id,
+            node_id=node_id,
+            error=str(exc),
+        )
+
+    return redirect_with_message(
+        request,
+        "graph_node_detail_page",
+        graph_id=graph_id,
+        node_id=node_id,
+        success=(
+            f"Payload updated for node '{updated.node.name or updated.node.id}'."
+        ),
+    )
+
+
+@router.get(
+    "/graphs/{graph_id}/nodes/{node_id}/payload",
+    name="graph_node_payload_download",
+)
+async def graph_node_payload_download(
+    request: Request,
+    graph_id: str,
+    node_id: str,
+):
+    """Download one node payload from the browser."""
+    current_user = await require_authenticated_user(request)
+    if isinstance(current_user, RedirectResponse):
+        return current_user
+
+    try:
+        payload = await require_graph_content_service(request).get_graph_node_payload(
+            graph_id=graph_id,
+            node_id=node_id,
+            current_user=current_user,
+        )
+    except GraphContentError as exc:
+        return redirect_with_message(
+            request,
+            "graph_node_detail_page",
+            graph_id=graph_id,
+            node_id=node_id,
+            error=str(exc),
+        )
+
+    return Response(
+        content=base64.b64decode(payload.payload_base64),
+        media_type=payload.node.payload_mime or "application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{payload.filename}"',
+        },
+    )
+
+
 async def _render_graph_node_form(
     request: Request,
     *,
     graph_id: str,
     current_user,
     form_data: dict[str, str],
+    node_id: str | None = None,
+    node_detail: dict[str, object] | None = None,
     error_message: str | None = None,
 ) -> HTMLResponse | RedirectResponse:
-    """Render the create-node form with live graph and schema context."""
+    """Render the create or edit node form with live graph context."""
     try:
         graph_content = require_graph_content_service(request)
-        overview = await graph_content.get_graph_overview(
-            graph_id=graph_id,
-            current_user=current_user,
-        )
+        if node_id is None:
+            overview = await graph_content.get_graph_overview(
+                graph_id=graph_id,
+                current_user=current_user,
+            )
+            overview_payload = overview.model_dump(mode="json")
+        else:
+            detail = await graph_content.get_graph_node(
+                graph_id=graph_id,
+                node_id=node_id,
+                current_user=current_user,
+            )
+            overview_payload = {
+                "graph": detail.graph,
+                "instance": detail.instance,
+            }
+            node_detail = detail.model_dump(mode="json", by_alias=True)
         schema_list = await graph_content.list_graph_schemas(
             graph_id=graph_id,
             current_user=current_user,
@@ -270,15 +535,26 @@ async def _render_graph_node_form(
     except GraphContentError as exc:
         return redirect_with_message(request, "home", error=str(exc))
 
+    is_edit = node_id is not None
     return render(
         request,
         "pages/node_form.html",
-        page_title="Create Node",
+        page_title="Edit Node" if is_edit else "Create Node",
         current_user=current_user,
-        overview=overview.model_dump(mode="json"),
+        overview=overview_payload,
+        node_detail=node_detail,
         form_data=form_data,
         schema_names=[item.name for item in schema_list.items],
-        submit_url=request.app.url_path_for("graph_node_create", graph_id=graph_id),
+        is_edit=is_edit,
+        submit_url=(
+            request.app.url_path_for(
+                "graph_node_update",
+                graph_id=graph_id,
+                node_id=node_id,
+            )
+            if is_edit
+            else request.app.url_path_for("graph_node_create", graph_id=graph_id)
+        ),
         error_message=error_message,
     )
 

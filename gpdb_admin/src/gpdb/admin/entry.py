@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import secrets
 import sys
@@ -372,6 +373,144 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
         )
         return result.model_dump(mode="json", by_alias=True)
 
+    async def graph_node_update(
+        graph_id: str,
+        node_id: str,
+        type: str,
+        data: dict[str, object],
+        request: Request,
+        name: str = "",
+        schema_name: str = "",
+        owner_id: str = "",
+        parent_id: str = "",
+        tags: str = "",
+    ) -> dict[str, object]:
+        """Update one graph node for the authenticated REST user."""
+        current_user = _require_rest_user(request)
+        result = await _require_graph_content(services).update_graph_node(
+            graph_id=graph_id,
+            node_id=node_id,
+            type=type,
+            name=name,
+            schema_name=schema_name,
+            owner_id=owner_id,
+            parent_id=parent_id,
+            tags=_coerce_tags_argument(tags),
+            data=_coerce_json_object_argument(data, argument_name="data"),
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
+    async def graph_node_delete(
+        graph_id: str,
+        node_id: str,
+        request: Request,
+    ) -> dict[str, object]:
+        """Delete one graph node for the authenticated REST user."""
+        current_user = _require_rest_user(request)
+        result = await _require_graph_content(services).delete_graph_node(
+            graph_id=graph_id,
+            node_id=node_id,
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
+    async def graph_node_payload_get(
+        graph_id: str,
+        node_id: str,
+        request: Request,
+    ) -> dict[str, object]:
+        """Return one graph node payload for the authenticated REST user."""
+        current_user = _require_rest_user(request)
+        result = await _require_graph_content(services).get_graph_node_payload(
+            graph_id=graph_id,
+            node_id=node_id,
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
+    async def graph_node_payload_set(
+        graph_id: str,
+        node_id: str,
+        payload_base64: str,
+        request: Request,
+        mime: str = "",
+    ) -> dict[str, object]:
+        """Set one graph node payload for the authenticated REST user."""
+        current_user = _require_rest_user(request)
+        result = await _require_graph_content(services).set_graph_node_payload(
+            graph_id=graph_id,
+            node_id=node_id,
+            payload=_coerce_payload_base64_argument(payload_base64),
+            mime=mime,
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
+    async def graph_edge_list(
+        graph_id: str,
+        request: Request,
+        type: str = "",
+        schema_name: str = "",
+        source_id: str = "",
+        target_id: str = "",
+        limit: int = 50,
+        offset: int = 0,
+        sort: str = "created_at_desc",
+    ) -> dict[str, object]:
+        """List graph edges for the authenticated REST user."""
+        current_user = _require_rest_user(request)
+        result = await _require_graph_content(services).list_graph_edges(
+            graph_id=graph_id,
+            current_user=current_user,
+            type=type,
+            schema_name=schema_name,
+            source_id=source_id,
+            target_id=target_id,
+            limit=limit,
+            offset=offset,
+            sort=sort,
+        )
+        return result.model_dump(mode="json")
+
+    async def graph_edge_get(
+        graph_id: str,
+        edge_id: str,
+        request: Request,
+    ) -> dict[str, object]:
+        """Return one graph edge for the authenticated REST user."""
+        current_user = _require_rest_user(request)
+        result = await _require_graph_content(services).get_graph_edge(
+            graph_id=graph_id,
+            edge_id=edge_id,
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
+    async def graph_edge_create(
+        graph_id: str,
+        type: str,
+        source_id: str,
+        target_id: str,
+        data: dict[str, object],
+        request: Request,
+        schema_name: str = "",
+        tags: str = "",
+    ) -> dict[str, object]:
+        """Create one graph edge for the authenticated REST user."""
+        current_user = _require_rest_user(request)
+        result = await _require_graph_content(services).create_graph_edge(
+            graph_id=graph_id,
+            type=type,
+            source_id=source_id,
+            target_id=target_id,
+            schema_name=schema_name,
+            tags=_coerce_tags_argument(tags),
+            data=_coerce_json_object_argument(data, argument_name="data"),
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
     return [
         ToolDefinition(graph_overview, "graph_overview", http_method="GET"),
         ToolDefinition(graph_schema_list, "graph_schema_list", http_method="GET"),
@@ -382,6 +521,13 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
         ToolDefinition(graph_node_list, "graph_node_list", http_method="GET"),
         ToolDefinition(graph_node_get, "graph_node_get", http_method="GET"),
         ToolDefinition(graph_node_create, "graph_node_create"),
+        ToolDefinition(graph_node_update, "graph_node_update"),
+        ToolDefinition(graph_node_delete, "graph_node_delete"),
+        ToolDefinition(graph_node_payload_get, "graph_node_payload_get", http_method="GET"),
+        ToolDefinition(graph_node_payload_set, "graph_node_payload_set"),
+        ToolDefinition(graph_edge_list, "graph_edge_list", http_method="GET"),
+        ToolDefinition(graph_edge_get, "graph_edge_get", http_method="GET"),
+        ToolDefinition(graph_edge_create, "graph_edge_create"),
     ]
 
 
@@ -517,6 +663,128 @@ def _build_cli_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         )
         return _emit_cli_result(result.model_dump(mode="json", by_alias=True))
 
+    async def graph_node_update(
+        graph_id: str,
+        node_id: str,
+        type: str,
+        data: str,
+        name: str = "",
+        schema_name: str = "",
+        owner_id: str = "",
+        parent_id: str = "",
+        tags: str = "",
+    ) -> dict[str, object]:
+        """Update one graph node for trusted local CLI use."""
+        result = await _require_graph_content(services).update_graph_node(
+            graph_id=graph_id,
+            node_id=node_id,
+            type=type,
+            name=name,
+            schema_name=schema_name,
+            owner_id=owner_id,
+            parent_id=parent_id,
+            tags=_coerce_tags_argument(tags),
+            data=_coerce_json_object_argument(data, argument_name="data"),
+            current_user=None,
+            allow_local_system=True,
+        )
+        return _emit_cli_result(result.model_dump(mode="json", by_alias=True))
+
+    async def graph_node_delete(graph_id: str, node_id: str) -> dict[str, object]:
+        """Delete one graph node for trusted local CLI use."""
+        result = await _require_graph_content(services).delete_graph_node(
+            graph_id=graph_id,
+            node_id=node_id,
+            current_user=None,
+            allow_local_system=True,
+        )
+        return _emit_cli_result(result.model_dump(mode="json", by_alias=True))
+
+    async def graph_node_payload_get(graph_id: str, node_id: str) -> dict[str, object]:
+        """Return one graph node payload for trusted local CLI use."""
+        result = await _require_graph_content(services).get_graph_node_payload(
+            graph_id=graph_id,
+            node_id=node_id,
+            current_user=None,
+            allow_local_system=True,
+        )
+        return _emit_cli_result(result.model_dump(mode="json", by_alias=True))
+
+    async def graph_node_payload_set(
+        graph_id: str,
+        node_id: str,
+        payload_base64: str,
+        mime: str = "",
+    ) -> dict[str, object]:
+        """Set one graph node payload for trusted local CLI use."""
+        result = await _require_graph_content(services).set_graph_node_payload(
+            graph_id=graph_id,
+            node_id=node_id,
+            payload=_coerce_payload_base64_argument(payload_base64),
+            mime=mime,
+            current_user=None,
+            allow_local_system=True,
+        )
+        return _emit_cli_result(result.model_dump(mode="json", by_alias=True))
+
+    async def graph_edge_list(
+        graph_id: str,
+        type: str = "",
+        schema_name: str = "",
+        source_id: str = "",
+        target_id: str = "",
+        limit: int = 50,
+        offset: int = 0,
+        sort: str = "created_at_desc",
+    ) -> dict[str, object]:
+        """List graph edges for trusted local CLI use."""
+        result = await _require_graph_content(services).list_graph_edges(
+            graph_id=graph_id,
+            current_user=None,
+            allow_local_system=True,
+            type=type,
+            schema_name=schema_name,
+            source_id=source_id,
+            target_id=target_id,
+            limit=limit,
+            offset=offset,
+            sort=sort,
+        )
+        return _emit_cli_result(result.model_dump(mode="json"))
+
+    async def graph_edge_get(graph_id: str, edge_id: str) -> dict[str, object]:
+        """Return one graph edge for trusted local CLI use."""
+        result = await _require_graph_content(services).get_graph_edge(
+            graph_id=graph_id,
+            edge_id=edge_id,
+            current_user=None,
+            allow_local_system=True,
+        )
+        return _emit_cli_result(result.model_dump(mode="json", by_alias=True))
+
+    async def graph_edge_create(
+        graph_id: str,
+        type: str,
+        source_id: str,
+        target_id: str,
+        data: str,
+        schema_name: str = "",
+        tags: str = "",
+    ) -> dict[str, object]:
+        """Create one graph edge for trusted local CLI use."""
+        result = await _require_graph_content(services).create_graph_edge(
+            graph_id=graph_id,
+            type=type,
+            source_id=source_id,
+            target_id=target_id,
+            schema_name=schema_name,
+            tags=_coerce_tags_argument(tags),
+            data=_coerce_json_object_argument(data, argument_name="data"),
+            current_user=None,
+            allow_local_system=True,
+        )
+        return _emit_cli_result(result.model_dump(mode="json", by_alias=True))
+
     return [
         ToolDefinition(graph_overview, "graph_overview"),
         ToolDefinition(graph_schema_list, "graph_schema_list"),
@@ -527,6 +795,13 @@ def _build_cli_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         ToolDefinition(graph_node_list, "graph_node_list"),
         ToolDefinition(graph_node_get, "graph_node_get"),
         ToolDefinition(graph_node_create, "graph_node_create"),
+        ToolDefinition(graph_node_update, "graph_node_update"),
+        ToolDefinition(graph_node_delete, "graph_node_delete"),
+        ToolDefinition(graph_node_payload_get, "graph_node_payload_get"),
+        ToolDefinition(graph_node_payload_set, "graph_node_payload_set"),
+        ToolDefinition(graph_edge_list, "graph_edge_list"),
+        ToolDefinition(graph_edge_get, "graph_edge_get"),
+        ToolDefinition(graph_edge_create, "graph_edge_create"),
     ]
 
 
@@ -671,6 +946,144 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         )
         return result.model_dump(mode="json", by_alias=True)
 
+    async def graph_node_update(
+        graph_id: str,
+        node_id: str,
+        type: str,
+        data: dict[str, object],
+        ctx: Context,
+        name: str = "",
+        schema_name: str = "",
+        owner_id: str = "",
+        parent_id: str = "",
+        tags: str = "",
+    ) -> dict[str, object]:
+        """Update one graph node for the authenticated MCP user."""
+        current_user = await _require_mcp_user(services, ctx)
+        result = await _require_graph_content(services).update_graph_node(
+            graph_id=graph_id,
+            node_id=node_id,
+            type=type,
+            name=name,
+            schema_name=schema_name,
+            owner_id=owner_id,
+            parent_id=parent_id,
+            tags=_coerce_tags_argument(tags),
+            data=_coerce_json_object_argument(data, argument_name="data"),
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
+    async def graph_node_delete(
+        graph_id: str,
+        node_id: str,
+        ctx: Context,
+    ) -> dict[str, object]:
+        """Delete one graph node for the authenticated MCP user."""
+        current_user = await _require_mcp_user(services, ctx)
+        result = await _require_graph_content(services).delete_graph_node(
+            graph_id=graph_id,
+            node_id=node_id,
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
+    async def graph_node_payload_get(
+        graph_id: str,
+        node_id: str,
+        ctx: Context,
+    ) -> dict[str, object]:
+        """Return one graph node payload for the authenticated MCP user."""
+        current_user = await _require_mcp_user(services, ctx)
+        result = await _require_graph_content(services).get_graph_node_payload(
+            graph_id=graph_id,
+            node_id=node_id,
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
+    async def graph_node_payload_set(
+        graph_id: str,
+        node_id: str,
+        payload_base64: str,
+        ctx: Context,
+        mime: str = "",
+    ) -> dict[str, object]:
+        """Set one graph node payload for the authenticated MCP user."""
+        current_user = await _require_mcp_user(services, ctx)
+        result = await _require_graph_content(services).set_graph_node_payload(
+            graph_id=graph_id,
+            node_id=node_id,
+            payload=_coerce_payload_base64_argument(payload_base64),
+            mime=mime,
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
+    async def graph_edge_list(
+        graph_id: str,
+        ctx: Context,
+        type: str = "",
+        schema_name: str = "",
+        source_id: str = "",
+        target_id: str = "",
+        limit: int = 50,
+        offset: int = 0,
+        sort: str = "created_at_desc",
+    ) -> dict[str, object]:
+        """List graph edges for the authenticated MCP user."""
+        current_user = await _require_mcp_user(services, ctx)
+        result = await _require_graph_content(services).list_graph_edges(
+            graph_id=graph_id,
+            current_user=current_user,
+            type=type,
+            schema_name=schema_name,
+            source_id=source_id,
+            target_id=target_id,
+            limit=limit,
+            offset=offset,
+            sort=sort,
+        )
+        return result.model_dump(mode="json")
+
+    async def graph_edge_get(
+        graph_id: str,
+        edge_id: str,
+        ctx: Context,
+    ) -> dict[str, object]:
+        """Return one graph edge for the authenticated MCP user."""
+        current_user = await _require_mcp_user(services, ctx)
+        result = await _require_graph_content(services).get_graph_edge(
+            graph_id=graph_id,
+            edge_id=edge_id,
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
+    async def graph_edge_create(
+        graph_id: str,
+        type: str,
+        source_id: str,
+        target_id: str,
+        data: dict[str, object],
+        ctx: Context,
+        schema_name: str = "",
+        tags: str = "",
+    ) -> dict[str, object]:
+        """Create one graph edge for the authenticated MCP user."""
+        current_user = await _require_mcp_user(services, ctx)
+        result = await _require_graph_content(services).create_graph_edge(
+            graph_id=graph_id,
+            type=type,
+            source_id=source_id,
+            target_id=target_id,
+            schema_name=schema_name,
+            tags=_coerce_tags_argument(tags),
+            data=_coerce_json_object_argument(data, argument_name="data"),
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
     return [
         ToolDefinition(graph_overview, "graph_overview"),
         ToolDefinition(graph_schema_list, "graph_schema_list"),
@@ -681,6 +1094,13 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         ToolDefinition(graph_node_list, "graph_node_list"),
         ToolDefinition(graph_node_get, "graph_node_get"),
         ToolDefinition(graph_node_create, "graph_node_create"),
+        ToolDefinition(graph_node_update, "graph_node_update"),
+        ToolDefinition(graph_node_delete, "graph_node_delete"),
+        ToolDefinition(graph_node_payload_get, "graph_node_payload_get"),
+        ToolDefinition(graph_node_payload_set, "graph_node_payload_set"),
+        ToolDefinition(graph_edge_list, "graph_edge_list"),
+        ToolDefinition(graph_edge_get, "graph_edge_get"),
+        ToolDefinition(graph_edge_create, "graph_edge_create"),
     ]
 
 
@@ -911,6 +1331,19 @@ def _coerce_tags_argument(raw_value) -> list[str]:
             return []
         return [item.strip() for item in text.split(",") if item.strip()]
     raise ValueError("tags must be blank, comma-delimited text, or a list of strings.")
+
+
+def _coerce_payload_base64_argument(raw_value) -> bytes:
+    """Accept a base64-encoded payload body and return decoded bytes."""
+    if not isinstance(raw_value, str):
+        raise ValueError("payload_base64 must be a base64 string.")
+    text = raw_value.strip()
+    if not text:
+        raise ValueError("payload_base64 is required.")
+    try:
+        return base64.b64decode(text, validate=True)
+    except ValueError as exc:
+        raise ValueError("payload_base64 must be valid base64.") from exc
 
 
 if __name__ == "__main__":

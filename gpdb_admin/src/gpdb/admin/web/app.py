@@ -9,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 from gpdb.admin.config import ConfigStore, ResolvedConfig
 from gpdb.admin.runtime import AdminServices
 
+from .routes.graph_edges import router as graph_edges_router
 from .routes.graph_overview import router as graph_overview_router
 from .routes.graph_nodes import router as graph_nodes_router
 from .routes.graph_schemas import router as graph_schemas_router
@@ -45,5 +46,6 @@ def create_web_app(
     app.include_router(graph_overview_router)
     app.include_router(graph_schemas_router)
     app.include_router(graph_nodes_router)
+    app.include_router(graph_edges_router)
     app.mount("/static", StaticFiles(directory=str(WEB_ROOT / "static")), name="static")
     return app
