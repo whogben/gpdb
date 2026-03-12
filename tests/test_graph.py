@@ -1,9 +1,5 @@
 import pytest
 import pytest_asyncio
-import shutil
-import tempfile
-from pathlib import Path
-from pixeltable_pgserver import PostgresServer
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.exc import StaleDataError
 from gpdb import (
@@ -15,34 +11,6 @@ from gpdb import (
     EdgeRead,
     SearchQuery,
 )
-
-# --- Fixtures ---
-
-
-@pytest.fixture(scope="session")
-def pg_server():
-    """
-    Starts a temporary PostgreSQL server for the test session.
-    """
-    # Create a temporary directory for pgdata
-    try:
-        # Try standard temp dir first
-        pgdata_str = tempfile.mkdtemp()
-        pgdata = Path(pgdata_str)
-    except OSError:
-        # Fallback to local directory if system temp is not accessible
-        pgdata = Path("./.test_pgdata").resolve()
-        if pgdata.exists():
-            shutil.rmtree(pgdata)
-        pgdata.mkdir(parents=True, exist_ok=True)
-
-    server = PostgresServer(pgdata)
-    with server:
-        yield server
-
-    # Cleanup data directory
-    if pgdata.exists():
-        shutil.rmtree(pgdata)
 
 
 @pytest_asyncio.fixture

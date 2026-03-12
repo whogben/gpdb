@@ -228,14 +228,6 @@ async def graph_edge_edit_page(
             edge_id=edge_id,
             current_user=current_user,
         )
-        schema_json = None
-        if detail.edge.schema_name:
-            schema_detail = await graph_content.get_graph_schema(
-                graph_id=graph_id,
-                name=detail.edge.schema_name,
-                current_user=current_user,
-            )
-            schema_json = schema_detail.schema.json_schema
     except GraphContentError as exc:
         return redirect_with_message(
             request,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from collections.abc import Callable
+import logging
 
 from sqlalchemy import text
 from sqlalchemy.engine import URL
@@ -154,7 +155,7 @@ class ManagedInstanceMonitor:
                 await self.refresh_all()
             except Exception:
                 # Keep monitoring alive even if one refresh cycle fails.
-                pass
+                logging.exception("Managed instance monitor refresh loop failed")
             try:
                 await asyncio.wait_for(
                     self._stop_event.wait(),

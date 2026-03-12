@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -284,6 +285,10 @@ class GraphContentService:
                 edge_count=edge_page.total,
             )
         except Exception as exc:
+            logging.exception(
+                "Failed to load live graph content counts",
+                extra={"graph_id": graph_id, "instance_id": instance.id},
+            )
             overview.content_status = "unavailable"
             overview.content_error = f"Could not load live graph content counts: {exc}"
         finally:
@@ -570,12 +575,16 @@ class GraphContentService:
         try:
             node = await db.get_node(clean_node_id)
             if node is None:
-                raise GraphContentNotFoundError(f"Node '{clean_node_id}' was not found.")
+                raise GraphContentNotFoundError(
+                    f"Node '{clean_node_id}' was not found."
+                )
             return GraphNodeDetail(
                 graph=self.serialize_graph(graph),
                 instance=self.serialize_instance(instance),
                 node_record=self._serialize_node_record(node),
-                delete_blockers=await self._inspect_node_delete_blockers(db, clean_node_id),
+                delete_blockers=await self._inspect_node_delete_blockers(
+                    db, clean_node_id
+                ),
             )
         finally:
             await db.sqla_engine.dispose()
@@ -690,7 +699,9 @@ class GraphContentService:
         try:
             existing = await db.get_node(clean_node_id)
             if existing is None:
-                raise GraphContentNotFoundError(f"Node '{clean_node_id}' was not found.")
+                raise GraphContentNotFoundError(
+                    f"Node '{clean_node_id}' was not found."
+                )
             try:
                 async with db.transaction():
                     node = await db.set_node(
@@ -716,7 +727,9 @@ class GraphContentService:
                 graph=self.serialize_graph(graph),
                 instance=self.serialize_instance(instance),
                 node_record=self._serialize_node_record(node),
-                delete_blockers=await self._inspect_node_delete_blockers(db, clean_node_id),
+                delete_blockers=await self._inspect_node_delete_blockers(
+                    db, clean_node_id
+                ),
             )
         finally:
             await db.sqla_engine.dispose()
@@ -740,7 +753,9 @@ class GraphContentService:
         try:
             node = await db.get_node(clean_node_id)
             if node is None:
-                raise GraphContentNotFoundError(f"Node '{clean_node_id}' was not found.")
+                raise GraphContentNotFoundError(
+                    f"Node '{clean_node_id}' was not found."
+                )
             blockers = await self._inspect_node_delete_blockers(db, clean_node_id)
             deleted = GraphNodeDetail(
                 graph=self.serialize_graph(graph),
@@ -790,12 +805,16 @@ class GraphContentService:
                     filename=clean_payload_filename,
                 )
             except ValueError as exc:
-                raise GraphContentNotFoundError(f"Node '{clean_node_id}' was not found.") from exc
+                raise GraphContentNotFoundError(
+                    f"Node '{clean_node_id}' was not found."
+                ) from exc
             return GraphNodeDetail(
                 graph=self.serialize_graph(graph),
                 instance=self.serialize_instance(instance),
                 node_record=self._serialize_node_record(node),
-                delete_blockers=await self._inspect_node_delete_blockers(db, clean_node_id),
+                delete_blockers=await self._inspect_node_delete_blockers(
+                    db, clean_node_id
+                ),
             )
         finally:
             await db.sqla_engine.dispose()
@@ -819,7 +838,9 @@ class GraphContentService:
         try:
             node = await db.get_node_with_payload(clean_node_id)
             if node is None:
-                raise GraphContentNotFoundError(f"Node '{clean_node_id}' was not found.")
+                raise GraphContentNotFoundError(
+                    f"Node '{clean_node_id}' was not found."
+                )
             if node.payload is None:
                 raise GraphContentConflictError(
                     f"Node '{clean_node_id}' does not have a payload."
@@ -906,7 +927,9 @@ class GraphContentService:
         try:
             edge = await db.get_edge(clean_edge_id)
             if edge is None:
-                raise GraphContentNotFoundError(f"Edge '{clean_edge_id}' was not found.")
+                raise GraphContentNotFoundError(
+                    f"Edge '{clean_edge_id}' was not found."
+                )
             return GraphEdgeDetail(
                 graph=self.serialize_graph(graph),
                 instance=self.serialize_instance(instance),
@@ -1000,7 +1023,9 @@ class GraphContentService:
         try:
             existing = await db.get_edge(clean_edge_id)
             if existing is None:
-                raise GraphContentNotFoundError(f"Edge '{clean_edge_id}' was not found.")
+                raise GraphContentNotFoundError(
+                    f"Edge '{clean_edge_id}' was not found."
+                )
             try:
                 edge = await db.set_edge(
                     EdgeUpsert(
@@ -1046,7 +1071,9 @@ class GraphContentService:
         try:
             edge = await db.get_edge(clean_edge_id)
             if edge is None:
-                raise GraphContentNotFoundError(f"Edge '{clean_edge_id}' was not found.")
+                raise GraphContentNotFoundError(
+                    f"Edge '{clean_edge_id}' was not found."
+                )
             deleted = GraphEdgeDetail(
                 graph=self.serialize_graph(graph),
                 instance=self.serialize_instance(instance),
@@ -1506,7 +1533,11 @@ class GraphContentService:
             incident_edge_count=edge_page.total,
         )
         if sample_limit > 0:
-            blockers.sample_child_ids = [item.id for item in child_page.items[:sample_limit]]
-            blockers.sample_edge_ids = [item.id for item in edge_page.items[:sample_limit]]
+            blockers.sample_child_ids = [
+                item.id for item in child_page.items[:sample_limit]
+            ]
+            blockers.sample_edge_ids = [
+                item.id for item in edge_page.items[:sample_limit]
+            ]
         blockers.can_delete = not (blockers.child_count or blockers.incident_edge_count)
         return blockers

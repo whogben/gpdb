@@ -239,14 +239,6 @@ async def graph_node_edit_page(
             node_id=node_id,
             current_user=current_user,
         )
-        schema_json = None
-        if detail.node.schema_name:
-            schema_detail = await graph_content.get_graph_schema(
-                graph_id=graph_id,
-                name=detail.node.schema_name,
-                current_user=current_user,
-            )
-            schema_json = schema_detail.schema.json_schema
     except GraphContentError as exc:
         return redirect_with_message(
             request,
