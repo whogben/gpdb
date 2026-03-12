@@ -5,6 +5,14 @@ Working on the Project:
 - Read the README.md so you have project context.
 - Study the project's existing code to understand and maintain the established patterns.
 
+`gpdb_admin/src/gpdb/admin/entry.py`:
+- When adding new admin graph tools, follow the existing pattern:
+  - Put the core behavior in the shared services (for example `graph_content.py`).
+  - In `entry.py`, expose three thin wrappers per operation (REST, CLI, MCP) that:
+    - handle auth/context (`Request`, CLI trust, MCP `Context`),
+    - then delegate into shared helpers like `_call_graph_content(...)`,
+    - and keep the REST/OpenAPI, CLI, and MCP signatures and return types stable.
+
 Project Layout:
 - `pip install gpdb` for the main package (graph database only; no admin code, no CLI).
 - `pip install gpdb-admin` for the `gpdb` console command and `gpdb.admin` module (depends on gpdb).
