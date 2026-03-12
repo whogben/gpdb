@@ -82,6 +82,7 @@ class GraphSchemaRecord(BaseModel):
     """Stable schema payload returned by admin graph-content APIs."""
 
     name: str
+    kind: str
     version: str
     json_schema: dict[str, Any] | None = None
     usage: GraphSchemaUsage = Field(default_factory=GraphSchemaUsage)
@@ -295,6 +296,7 @@ class GraphContentService:
         graph_id: str,
         current_user: AdminUser | None,
         allow_local_system: bool = False,
+        kind: str | None = None,
     ) -> GraphSchemaList:
         """Return the current schema registry for one managed graph."""
         graph, instance, db = await self._open_graph(
@@ -305,7 +307,8 @@ class GraphContentService:
         )
         try:
             items: list[GraphSchemaRecord] = []
-            for schema_name in sorted(await db.list_schemas()):
+            clean_kind = self._normalize_optional_schema_kind(kind)
+            for schema_name in sorted(await db.list_schemas(kind=clean_kind)):
                 schema = await db.get_schema(schema_name)
                 if schema is None:
                     continue
@@ -367,10 +370,12 @@ class GraphContentService:
         name: str,
         json_schema: dict[str, Any],
         current_user: AdminUser | None,
+        kind: str = "node",
         allow_local_system: bool = False,
     ) -> GraphSchemaDetail:
         """Create one schema in a managed graph."""
         clean_name = self._validate_schema_name(name)
+        clean_kind = self._validate_schema_kind(kind)
         self._validate_json_schema(json_schema)
 
         graph, instance, db = await self._open_graph(
@@ -385,8 +390,12 @@ class GraphContentService:
                     f"Schema '{clean_name}' already exists."
                 )
             try:
-                schema = await db.register_schema(clean_name, json_schema)
-            except SchemaBreakingChangeError as exc:
+                schema = await db.register_schema(
+                    clean_name,
+                    json_schema,
+                    kind=clean_kind,
+                )
+            except (SchemaBreakingChangeError, ValueError) as exc:
                 raise GraphContentValidationError(str(exc)) from exc
             return GraphSchemaDetail(
                 graph=self.serialize_graph(graph),
@@ -407,10 +416,12 @@ class GraphContentService:
         name: str,
         json_schema: dict[str, Any],
         current_user: AdminUser | None,
+        kind: str = "node",
         allow_local_system: bool = False,
     ) -> GraphSchemaDetail:
         """Update one schema in a managed graph when the change is non-breaking."""
         clean_name = self._validate_schema_name(name)
+        clean_kind = self._validate_schema_kind(kind)
         self._validate_json_schema(json_schema)
 
         graph, instance, db = await self._open_graph(
@@ -424,12 +435,18 @@ class GraphContentService:
             if existing is None:
                 raise GraphContentNotFoundError(f"Schema '{clean_name}' was not found.")
             try:
-                schema = await db.register_schema(clean_name, json_schema)
+                schema = await db.register_schema(
+                    clean_name,
+                    json_schema,
+                    kind=clean_kind,
+                )
             except SchemaBreakingChangeError as exc:
                 raise GraphContentValidationError(
                     "Breaking schema changes are not supported here yet. "
                     f"Use a migration workflow for schema '{clean_name}'."
                 ) from exc
+            except ValueError as exc:
+                raise GraphContentValidationError(str(exc)) from exc
             return GraphSchemaDetail(
                 graph=self.serialize_graph(graph),
                 instance=self.serialize_instance(instance),
@@ -1057,6 +1074,7 @@ class GraphContentService:
         """Project one core schema record into a stable admin response."""
         return GraphSchemaRecord(
             name=str(schema.name),
+            kind=self._schema_kind_from_record(schema),
             version=str(schema.version),
             json_schema=schema.json_schema if include_json_schema else None,
             usage=usage or GraphSchemaUsage(),
@@ -1107,6 +1125,22 @@ class GraphContentService:
         if not isinstance(json_schema, dict):
             raise GraphContentValidationError("Schema JSON must be a JSON object.")
 
+    def _validate_schema_kind(self, kind: str) -> str:
+        clean_kind = kind.strip().lower()
+        if clean_kind not in {"node", "edge"}:
+            raise GraphContentValidationError(
+                "Schema kind must be either 'node' or 'edge'."
+            )
+        return clean_kind
+
+    def _normalize_optional_schema_kind(self, kind: str | None) -> str | None:
+        if kind is None:
+            return None
+        clean_kind = kind.strip()
+        if not clean_kind:
+            return None
+        return self._validate_schema_kind(clean_kind)
+
     def _validate_json_object(
         self,
         value: dict[str, Any],
@@ -1151,6 +1185,14 @@ class GraphContentService:
             return None
         clean_value = value.strip()
         return clean_value or None
+
+    def _schema_kind_from_record(self, schema: Any) -> str:
+        kind = (schema.json_schema or {}).get("x-gpdb-kind")
+        if kind not in {"node", "edge"}:
+            raise GraphContentValidationError(
+                f"Schema '{schema.name}' is missing valid kind metadata."
+            )
+        return str(kind)
 
     def _normalize_tag_list(self, tags: list[str] | None) -> list[str]:
         if not tags:

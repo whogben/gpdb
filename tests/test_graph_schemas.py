@@ -12,6 +12,10 @@ from pydantic import BaseModel
 # --- Fixtures ---
 
 
+def _schema_with_kind(schema: dict, kind: str = "node") -> dict:
+    return {**schema, "x-gpdb-kind": kind}
+
+
 @pytest.fixture(scope="session")
 def pg_server():
     """
@@ -103,7 +107,7 @@ async def test_basic_schema_registration(db: GPGraph):
         assert schema_record is not None
         assert schema_record.name == "person"
         assert schema_record.version == "1.0.0"
-        assert schema_record.json_schema == person_schema
+        assert schema_record.json_schema == _schema_with_kind(person_schema)
         assert schema_record.created_at is not None
 
 
@@ -154,7 +158,7 @@ async def test_retrieve_registered_schema(db: GPGraph):
     assert retrieved is not None
     assert retrieved.name == "address"
     assert retrieved.version == "1.0.0"
-    assert retrieved.json_schema == address_schema
+    assert retrieved.json_schema == _schema_with_kind(address_schema)
 
 
 @pytest.mark.asyncio
@@ -356,7 +360,11 @@ async def test_edge_validation(db: GPGraph):
         },
         "required": ["weight"],
     }
-    await db.register_schema(name="relationship", schema=relationship_schema)
+    await db.register_schema(
+        name="relationship",
+        schema=relationship_schema,
+        kind="edge",
+    )
 
     # Create two nodes
     node1 = NodeUpsert(type="test", data={"label": "A"})
@@ -376,6 +384,61 @@ async def test_edge_validation(db: GPGraph):
 
     assert edge_result is not None
     assert edge_result.schema_name == "relationship"
+
+
+@pytest.mark.asyncio
+async def test_node_cannot_use_edge_schema(db: GPGraph):
+    from gpdb import SchemaKindMismatchError
+
+    relationship_schema = {
+        "type": "object",
+        "properties": {
+            "weight": {"type": "number"},
+        },
+        "required": ["weight"],
+    }
+    await db.register_schema(
+        name="edge_only_relationship",
+        schema=relationship_schema,
+        kind="edge",
+    )
+
+    with pytest.raises(SchemaKindMismatchError):
+        await db.set_node(
+            NodeUpsert(
+                type="test",
+                schema_name="edge_only_relationship",
+                data={"weight": 0.5},
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_edge_cannot_use_node_schema(db: GPGraph):
+    from gpdb import SchemaKindMismatchError
+
+    person_schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+        },
+        "required": ["name"],
+    }
+    await db.register_schema(name="node_only_person", schema=person_schema, kind="node")
+
+    node1 = await db.set_node(NodeUpsert(type="test", data={"label": "A"}))
+    node2 = await db.set_node(NodeUpsert(type="test", data={"label": "B"}))
+
+    with pytest.raises(SchemaKindMismatchError):
+        await db.set_edge(
+            EdgeUpsert(
+                source_id=node1.id,
+                target_id=node2.id,
+                type="connected",
+                schema_name="node_only_person",
+                data={"name": "invalid"},
+            )
+        )
 
 
 @pytest.mark.asyncio
@@ -808,7 +871,11 @@ async def test_delete_schema_blocked_when_referenced_by_edge(db: GPGraph):
         },
         "required": ["weight"],
     }
-    await db.register_schema(name="relationship_delete", schema=relationship_schema)
+    await db.register_schema(
+        name="relationship_delete",
+        schema=relationship_schema,
+        kind="edge",
+    )
 
     # Create two nodes
     node1 = NodeUpsert(type="test", data={"label": "A"})
@@ -919,12 +986,16 @@ async def test_list_schemas(db: GPGraph):
 
     # List all schemas
     schemas = await db.list_schemas()
+    node_schemas = await db.list_schemas(kind="node")
+    edge_schemas = await db.list_schemas(kind="edge")
 
     # Verify all schemas are returned
     assert isinstance(schemas, list)
     assert "schema1" in schemas
     assert "schema2" in schemas
     assert "schema3" in schemas
+    assert set(node_schemas) == {"schema1", "schema2", "schema3"}
+    assert edge_schemas == []
 
 
 @pytest.mark.asyncio
@@ -996,7 +1067,11 @@ async def test_edge_schema_validation_persistence(db: GPGraph):
         },
         "required": ["weight"],
     }
-    await db.register_schema(name="relationship_persist", schema=relationship_schema)
+    await db.register_schema(
+        name="relationship_persist",
+        schema=relationship_schema,
+        kind="edge",
+    )
 
     # Create two nodes
     node1 = NodeUpsert(type="test", data={"label": "A"})

@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, Generic, List, Optional, TypeVar, Union
+from typing import Any, Dict, Generic, List, Literal, Optional, TypeVar, Union, cast
 from uuid import uuid4
 
 import jsonschema
@@ -68,6 +68,12 @@ class SchemaValidationError(Exception):
     pass
 
 
+class SchemaKindMismatchError(SchemaValidationError):
+    """Raised when a schema is attached to the wrong graph record kind."""
+
+    pass
+
+
 class SchemaBreakingChangeError(Exception):
     """Raised when a schema update contains breaking changes."""
 
@@ -78,6 +84,35 @@ class SchemaInUseError(Exception):
     """Raised when attempting to delete a schema that is still referenced by nodes or edges."""
 
     pass
+
+
+SchemaKind = Literal["node", "edge"]
+_SCHEMA_KIND_FIELD = "x-gpdb-kind"
+_SCHEMA_KIND_VALUES = {"node", "edge"}
+
+
+def _normalize_schema_kind(kind: str) -> SchemaKind:
+    clean_kind = kind.strip().lower()
+    if clean_kind not in _SCHEMA_KIND_VALUES:
+        raise ValueError("Schema kind must be either 'node' or 'edge'.")
+    return cast(SchemaKind, clean_kind)
+
+
+def _extract_schema_kind(
+    json_schema: Dict[str, Any], *, required: bool = True
+) -> SchemaKind | None:
+    raw_kind = json_schema.get(_SCHEMA_KIND_FIELD)
+    if raw_kind is None:
+        if required:
+            raise ValueError(
+                f"Schema JSON must include '{_SCHEMA_KIND_FIELD}' with value 'node' or 'edge'."
+            )
+        return None
+    if not isinstance(raw_kind, str):
+        raise ValueError(
+            f"Schema field '{_SCHEMA_KIND_FIELD}' must be a string with value 'node' or 'edge'."
+        )
+    return _normalize_schema_kind(raw_kind)
 
 
 class Op(str, Enum):
@@ -740,6 +775,7 @@ class GPGraph:
         )
         self._session_ctx = ContextVar(f"session_{id(self)}", default=None)
         self._validators: Dict[str, Any] = {}
+        self._schema_kinds: Dict[str, SchemaKind] = {}
 
         # Create dynamic models if prefix specified, else use defaults
         if table_prefix:
@@ -990,10 +1026,54 @@ class GPGraph:
 
         return result
 
+    def _schema_kind_from_record(self, schema: Any) -> SchemaKind:
+        try:
+            return _extract_schema_kind(schema.json_schema)
+        except ValueError as exc:
+            raise SchemaValidationError(
+                f"Schema '{schema.name}' is missing valid kind metadata. "
+                "Re-register it as a node or edge schema."
+            ) from exc
+
+    def _prepare_schema_registration(
+        self,
+        schema: Union[Dict[str, Any], type[BaseModel]],
+        *,
+        kind: str | None,
+        existing: Any | None = None,
+    ) -> tuple[Dict[str, Any], SchemaKind]:
+        """Normalize a schema payload and resolve the schema kind."""
+        if isinstance(schema, type) and issubclass(schema, BaseModel):
+            json_schema = schema.model_json_schema()
+        else:
+            json_schema = copy.deepcopy(schema)
+
+        json_schema = self._inline_refs(json_schema)
+
+        embedded_kind = _extract_schema_kind(json_schema, required=False)
+        resolved_kind = embedded_kind
+        if kind is not None:
+            requested_kind = _normalize_schema_kind(kind)
+            if embedded_kind is not None and embedded_kind != requested_kind:
+                raise ValueError(
+                    "Schema kind does not match the JSON schema metadata field "
+                    f"'{_SCHEMA_KIND_FIELD}'."
+                )
+            resolved_kind = requested_kind
+
+        if resolved_kind is None and existing is not None:
+            resolved_kind = self._schema_kind_from_record(existing)
+        if resolved_kind is None:
+            resolved_kind = "node"
+
+        json_schema[_SCHEMA_KIND_FIELD] = resolved_kind
+        return json_schema, resolved_kind
+
     async def register_schema(
         self,
         name: str,
         schema: Union[Dict[str, Any], type[BaseModel]],
+        kind: str = "node",
     ):
         """
         Register a JSON schema in the schema registry.
@@ -1006,6 +1086,7 @@ class GPGraph:
         Args:
             name: Unique name for the schema
             schema: JSON schema dictionary or Pydantic model class
+            kind: Schema compatibility target, either "node" or "edge"
 
         Raises:
             SchemaBreakingChangeError: If breaking changes are detected
@@ -1013,19 +1094,21 @@ class GPGraph:
         Returns:
             The schema ORM object with updated version
         """
-        # Convert Pydantic model to JSON schema if needed
-        if isinstance(schema, type) and issubclass(schema, BaseModel):
-            json_schema = schema.model_json_schema()
-        else:
-            json_schema = schema
-
-        # Inline $ref references to make schema standalone
-        json_schema = self._inline_refs(json_schema)
-
         async with self._get_session() as session:
             # Check if schema already exists
             existing = await session.get(self._Schema, name)
+            json_schema, resolved_kind = self._prepare_schema_registration(
+                schema,
+                kind=kind,
+                existing=existing,
+            )
             if existing:
+                existing_kind = self._schema_kind_from_record(existing)
+                if resolved_kind != existing_kind:
+                    raise SchemaBreakingChangeError(
+                        f"Schema '{name}' cannot change kind from "
+                        f"'{existing_kind}' to '{resolved_kind}'."
+                    )
                 # Detect type of change
                 change_type = self._detect_semver_change(
                     existing.json_schema, json_schema
@@ -1044,6 +1127,7 @@ class GPGraph:
                 existing.json_schema = json_schema
                 existing.version = new_version
                 self._validators.pop(name, None)  # invalidate cache for updated schema
+                self._schema_kinds.pop(name, None)
                 await session.flush()
                 await session.refresh(existing)
                 return existing
@@ -1053,6 +1137,7 @@ class GPGraph:
                 name=name, json_schema=json_schema, version="1.0.0"
             )
             session.add(new_schema)
+            self._schema_kinds.pop(name, None)
             await session.flush()
             await session.refresh(new_schema)
             return new_schema
@@ -1101,18 +1186,29 @@ class GPGraph:
             schema = await session.get(self._Schema, name)
             if schema is not None:
                 await session.delete(schema)
+                self._validators.pop(name, None)
+                self._schema_kinds.pop(name, None)
 
-    async def list_schemas(self) -> List[str]:
+    async def list_schemas(self, kind: str | None = None) -> List[str]:
         """
         List all registered schema names.
+
+        Args:
+            kind: Optional compatibility filter ("node" or "edge")
 
         Returns:
             List of schema names
         """
+        resolved_kind = _normalize_schema_kind(kind) if kind is not None else None
         async with self._get_session() as session:
-            stmt = select(self._Schema.name)
+            stmt = select(self._Schema)
             result = await session.execute(stmt)
-            return list(result.scalars().all())
+            names: List[str] = []
+            for schema in result.scalars().all():
+                schema_kind = self._schema_kind_from_record(schema)
+                if resolved_kind is None or schema_kind == resolved_kind:
+                    names.append(str(schema.name))
+            return names
 
     def _check_breaking_changes(
         self, old_schema: Dict[str, Any], new_schema: Dict[str, Any], name: str
@@ -1167,6 +1263,7 @@ class GPGraph:
         name: str,
         migration_func: callable,
         new_schema: Union[Dict[str, Any], type[BaseModel]],
+        kind: str | None = None,
     ):
         """
         Migrate all nodes/edges using a schema to a new schema version.
@@ -1180,21 +1277,27 @@ class GPGraph:
             name: Schema name to migrate
             migration_func: Function that transforms old data to new data: (old_data) -> new_data
             new_schema: New JSON schema or Pydantic model class
+            kind: Optional schema kind override. Must match the existing kind.
         """
-        # Convert Pydantic model to JSON schema if needed
-        if isinstance(new_schema, type) and issubclass(new_schema, BaseModel):
-            json_schema = new_schema.model_json_schema()
-        else:
-            json_schema = new_schema
-
-        # Inline $ref references to make schema standalone
-        json_schema = self._inline_refs(json_schema)
-
-        # Create validator for new schema directly (not from cache since schema not yet registered)
-        validator = jsonschema.Draft7Validator(json_schema)
-
         async with self.sqla_sessionmaker() as session:
             async with session.begin():
+                existing = await session.get(self._Schema, name)
+                json_schema, resolved_kind = self._prepare_schema_registration(
+                    new_schema,
+                    kind=kind,
+                    existing=existing,
+                )
+                if existing is not None:
+                    existing_kind = self._schema_kind_from_record(existing)
+                    if resolved_kind != existing_kind:
+                        raise SchemaBreakingChangeError(
+                            f"Schema '{name}' cannot change kind from "
+                            f"'{existing_kind}' to '{resolved_kind}'."
+                        )
+
+                # Create validator for new schema directly (not from cache since schema not yet registered)
+                validator = jsonschema.Draft7Validator(json_schema)
+
                 # Get all nodes with this schema
                 stmt = select(self._Node).where(self._Node.schema_name == name)
                 result = await session.execute(stmt)
@@ -1228,7 +1331,6 @@ class GPGraph:
                     edge.data = new_data
 
                 # Update schema with new version (bump major for breaking changes)
-                existing = await session.get(self._Schema, name)
                 if existing:
                     # Detect change type and bump version
                     change_type = self._detect_semver_change(
@@ -1243,6 +1345,20 @@ class GPGraph:
                     )
                     session.add(new_schema_record)
                 self._validators.pop(name, None)  # invalidate cache for updated schema
+                self._schema_kinds.pop(name, None)
+
+    async def _get_registered_schema_kind(self, schema_name: str) -> SchemaKind:
+        """Return the registered kind for one schema."""
+        if schema_name in self._schema_kinds:
+            return self._schema_kinds[schema_name]
+
+        schema = await self.get_schema(schema_name)
+        if schema is None:
+            raise SchemaNotFoundError(f"Schema '{schema_name}' not found")
+
+        kind = self._schema_kind_from_record(schema)
+        self._schema_kinds[schema_name] = kind
+        return kind
 
     async def _get_validator(self, schema_name: str) -> Any:
         """
@@ -1268,18 +1384,31 @@ class GPGraph:
         self._validators[schema_name] = validator
         return validator
 
-    async def _validate_data(self, schema_name: str, data: Dict[str, Any]):
+    async def _validate_data(
+        self,
+        schema_name: str,
+        data: Dict[str, Any],
+        *,
+        expected_kind: SchemaKind,
+    ):
         """
         Validate data against a registered schema.
 
         Args:
             schema_name: Name of the schema to validate against
             data: Data to validate
+            expected_kind: Graph record kind the schema must be compatible with
 
         Raises:
             SchemaNotFoundError: If schema is not found
             SchemaValidationError: If validation fails
         """
+        actual_kind = await self._get_registered_schema_kind(schema_name)
+        if actual_kind != expected_kind:
+            raise SchemaKindMismatchError(
+                f"Schema '{schema_name}' is a {actual_kind} schema and cannot be "
+                f"attached to a {expected_kind}."
+            )
         validator = await self._get_validator(schema_name)
         errors = list(validator.iter_errors(data))
         if errors:
@@ -1309,7 +1438,11 @@ class GPGraph:
 
         # Validate data against schema if schema_name is provided
         if schema_to_validate:
-            await self._validate_data(schema_to_validate, node.data)
+            await self._validate_data(
+                schema_to_validate,
+                node.data,
+                expected_kind="node",
+            )
 
         async with self._get_session() as session:
             # Check if node exists (for update)
@@ -1451,7 +1584,11 @@ class GPGraph:
 
         # Validate data against schema if schema_name is provided
         if schema_to_validate:
-            await self._validate_data(schema_to_validate, edge.data)
+            await self._validate_data(
+                schema_to_validate,
+                edge.data,
+                expected_kind="edge",
+            )
 
         async with self._get_session() as session:
             # Check if edge exists (for update)
@@ -1960,8 +2097,10 @@ def _parse_expr(tokens: List[Any], pos: int) -> tuple[Union[Filter, FilterGroup]
 
 __all__ = [
     # Exceptions
+    "SchemaKind",
     "SchemaNotFoundError",
     "SchemaValidationError",
+    "SchemaKindMismatchError",
     "SchemaBreakingChangeError",
     "SchemaInUseError",
     # Pydantic models

@@ -6,8 +6,9 @@
     <p class="eyebrow">Schema Detail</p>
     <h1>{{ schema_detail.schema.name }}</h1>
     <p class="hero-text">
-      Version {{ schema_detail.schema.version }} on <strong>{{ schema_detail.graph.display_name }}</strong>.
-      Usage counts below show where this schema is currently attached in graph content.
+      {{ schema_detail.schema.kind | capitalize }} schema version {{ schema_detail.schema.version }}
+      on <strong>{{ schema_detail.graph.display_name }}</strong>. Usage counts below show
+      where this schema is currently attached in graph content.
     </p>
     <div class="button-row">
       <a class="button button-secondary" href="{{ web_app.url_path_for('graph_schema_list_page', graph_id=schema_detail.graph.id) }}">Back to schemas</a>
@@ -21,6 +22,7 @@
   <div class="hero-panel">
     <h2>Usage</h2>
     <ul class="feature-list">
+      <li>Kind: {{ schema_detail.schema.kind }}.</li>
       <li>{{ schema_detail.schema.usage.node_count }} node{{ "" if schema_detail.schema.usage.node_count == 1 else "s" }} reference this schema.</li>
       <li>{{ schema_detail.schema.usage.edge_count }} edge{{ "" if schema_detail.schema.usage.edge_count == 1 else "s" }} reference this schema.</li>
       <li>Instance: {{ schema_detail.instance.display_name }}.</li>
@@ -49,10 +51,14 @@
       <div class="resource-header">
         <div>
           <h3>{{ schema_detail.schema.name }}</h3>
-          <p class="resource-subtitle">Version {{ schema_detail.schema.version }}</p>
+          <p class="resource-subtitle">{{ schema_detail.schema.kind }} schema · Version {{ schema_detail.schema.version }}</p>
         </div>
       </div>
       <dl class="resource-meta">
+        <div>
+          <dt>Kind</dt>
+          <dd>{{ schema_detail.schema.kind }}</dd>
+        </div>
         <div>
           <dt>Nodes</dt>
           <dd>{{ schema_detail.schema.usage.node_count }}</dd>

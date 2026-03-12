@@ -23,7 +23,7 @@
       <li>{{ schema_list.total }} registered schema{{ "" if schema_list.total == 1 else "s" }}.</li>
       <li>Instance: {{ schema_list.instance.display_name }}.</li>
       <li>Prefix: {{ schema_list.graph.table_prefix_label }}.</li>
-      <li>Schema names are shared across nodes and edges.</li>
+      <li>Each schema is scoped to either nodes or edges.</li>
     </ul>
   </div>
 </section>
@@ -52,7 +52,7 @@
       <div class="resource-header">
         <div>
           <h3>{{ schema.name }}</h3>
-          <p class="resource-subtitle">Version {{ schema.version }}</p>
+          <p class="resource-subtitle">{{ schema.kind }} schema · Version {{ schema.version }}</p>
         </div>
       </div>
       <dl class="resource-meta">

@@ -190,7 +190,7 @@ Field projections are available via `search_nodes_projection()` for returning on
 
 ### Schemas
 
-Register JSON schemas (or Pydantic models) to validate node/edge data on every write. Schemas are versioned with automatic semver bumps.
+Register JSON schemas (or Pydantic models) to validate node or edge data on every write. Each schema is scoped to either nodes or edges and is versioned with automatic semver bumps.
 
 ```python
 from pydantic import BaseModel
@@ -199,7 +199,7 @@ class UserData(BaseModel):
     role: str
     email: str | None = None
 
-await db.register_schema("user_data", UserData)
+await db.register_schema("user_data", UserData, kind="node")
 
 # This node's data will be validated against the schema
 await db.set_node(NodeUpsert(
@@ -275,11 +275,11 @@ await scratch.create_tables()   # creates: scratch_nodes, scratch_edges, scratch
 | `get_edge(id)` | Get an edge |
 | `delete_edge(id)` | Delete an edge |
 | `search_edges(SearchQuery)` | Search edges |
-| `register_schema(name, schema)` | Register or update a JSON schema |
+| `register_schema(name, schema, kind="node")` | Register or update a node/edge JSON schema |
 | `get_schema(name)` | Get a schema |
 | `delete_schema(name)` | Delete a schema (fails if in use) |
-| `list_schemas()` | List all schema names |
-| `migrate_schema(name, func, schema)` | Atomically migrate data + schema |
+| `list_schemas(kind=None)` | List all schema names, optionally filtered by kind |
+| `migrate_schema(name, func, schema, kind=None)` | Atomically migrate data + schema |
 | `transaction()` | Context manager for atomic operations |
 
 ## Dependencies

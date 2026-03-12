@@ -72,7 +72,7 @@ async def graph_schema_create_page(request: Request, graph_id: str) -> HTMLRespo
         request,
         graph_id=graph_id,
         current_user=current_user,
-        form_data={"name": "", "json_schema": DEFAULT_SCHEMA_JSON},
+        form_data={"name": "", "kind": "node", "json_schema": DEFAULT_SCHEMA_JSON},
     )
 
 
@@ -81,6 +81,7 @@ async def graph_schema_create(
     request: Request,
     graph_id: str,
     name: str = Form(...),
+    kind: str = Form("node"),
     json_schema: str = Form(...),
 ):
     """Create one schema in a managed graph."""
@@ -88,7 +89,11 @@ async def graph_schema_create(
     if isinstance(current_user, RedirectResponse):
         return current_user
 
-    form_data = {"name": name.strip(), "json_schema": json_schema.strip()}
+    form_data = {
+        "name": name.strip(),
+        "kind": kind.strip().lower(),
+        "json_schema": json_schema.strip(),
+    }
     try:
         parsed_schema = _parse_schema_json_text(form_data["json_schema"])
     except ValueError as exc:
@@ -104,6 +109,7 @@ async def graph_schema_create(
         created = await require_graph_content_service(request).create_graph_schema(
             graph_id=graph_id,
             name=form_data["name"],
+            kind=form_data["kind"],
             json_schema=parsed_schema,
             current_user=current_user,
         )
@@ -160,6 +166,7 @@ async def graph_schema_edit_page(
         current_user=current_user,
         form_data={
             "name": detail.schema.name,
+            "kind": detail.schema.kind,
             "json_schema": json.dumps(
                 detail.schema.json_schema,
                 indent=2,
@@ -176,6 +183,7 @@ async def graph_schema_update(
     request: Request,
     graph_id: str,
     schema_name: str,
+    kind: str = Form("node"),
     json_schema: str = Form(...),
 ):
     """Update one schema in a managed graph."""
@@ -183,7 +191,11 @@ async def graph_schema_update(
     if isinstance(current_user, RedirectResponse):
         return current_user
 
-    form_data = {"name": schema_name, "json_schema": json_schema.strip()}
+    form_data = {
+        "name": schema_name,
+        "kind": kind.strip().lower(),
+        "json_schema": json_schema.strip(),
+    }
     try:
         parsed_schema = _parse_schema_json_text(form_data["json_schema"])
     except ValueError as exc:
@@ -200,6 +212,7 @@ async def graph_schema_update(
         updated = await require_graph_content_service(request).update_graph_schema(
             graph_id=graph_id,
             name=schema_name,
+            kind=form_data["kind"],
             json_schema=parsed_schema,
             current_user=current_user,
         )

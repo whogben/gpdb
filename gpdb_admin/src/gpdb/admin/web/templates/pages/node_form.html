@@ -50,6 +50,7 @@
           <option value="{{ schema_name }}" {% if (form_data or {}).get('schema_name', '') == schema_name %}selected{% endif %}>{{ schema_name }}</option>
           {% endfor %}
         </select>
+        <small>Only node schemas are shown here.</small>
       </label>
 
       <label class="field">

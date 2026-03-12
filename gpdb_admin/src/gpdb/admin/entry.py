@@ -244,12 +244,17 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
         )
         return result.model_dump(mode="json")
 
-    async def graph_schema_list(graph_id: str, request: Request) -> dict[str, object]:
+    async def graph_schema_list(
+        graph_id: str,
+        request: Request,
+        kind: str = "",
+    ) -> dict[str, object]:
         """List graph schemas for the authenticated REST user."""
         current_user = _require_rest_user(request)
         result = await _require_graph_content(services).list_graph_schemas(
             graph_id=graph_id,
             current_user=current_user,
+            kind=kind,
         )
         return result.model_dump(mode="json")
 
@@ -268,6 +273,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
         name: str,
         json_schema: dict[str, object],
         request: Request,
+        kind: str = "node",
     ) -> dict[str, object]:
         """Create one graph schema for the authenticated REST user."""
         current_user = _require_rest_user(request)
@@ -275,6 +281,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
             graph_id=graph_id,
             name=name,
             json_schema=_coerce_json_object_argument(json_schema, argument_name="json_schema"),
+            kind=kind,
             current_user=current_user,
         )
         return result.model_dump(mode="json", by_alias=True)
@@ -284,6 +291,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
         name: str,
         json_schema: dict[str, object],
         request: Request,
+        kind: str = "node",
     ) -> dict[str, object]:
         """Update one graph schema for the authenticated REST user."""
         current_user = _require_rest_user(request)
@@ -291,6 +299,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
             graph_id=graph_id,
             name=name,
             json_schema=_coerce_json_object_argument(json_schema, argument_name="json_schema"),
+            kind=kind,
             current_user=current_user,
         )
         return result.model_dump(mode="json", by_alias=True)
@@ -585,12 +594,13 @@ def _build_cli_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         )
         return _emit_cli_result(result.model_dump(mode="json"))
 
-    async def graph_schema_list(graph_id: str) -> dict[str, object]:
+    async def graph_schema_list(graph_id: str, kind: str = "") -> dict[str, object]:
         """List graph schemas for trusted local CLI use."""
         result = await _require_graph_content(services).list_graph_schemas(
             graph_id=graph_id,
             current_user=None,
             allow_local_system=True,
+            kind=kind,
         )
         return _emit_cli_result(result.model_dump(mode="json"))
 
@@ -608,12 +618,14 @@ def _build_cli_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         graph_id: str,
         name: str,
         json_schema: str,
+        kind: str = "node",
     ) -> dict[str, object]:
         """Create one graph schema for trusted local CLI use."""
         result = await _require_graph_content(services).create_graph_schema(
             graph_id=graph_id,
             name=name,
             json_schema=_coerce_json_object_argument(json_schema, argument_name="json_schema"),
+            kind=kind,
             current_user=None,
             allow_local_system=True,
         )
@@ -623,12 +635,14 @@ def _build_cli_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         graph_id: str,
         name: str,
         json_schema: str,
+        kind: str = "node",
     ) -> dict[str, object]:
         """Update one graph schema for trusted local CLI use."""
         result = await _require_graph_content(services).update_graph_schema(
             graph_id=graph_id,
             name=name,
             json_schema=_coerce_json_object_argument(json_schema, argument_name="json_schema"),
+            kind=kind,
             current_user=None,
             allow_local_system=True,
         )
@@ -896,12 +910,17 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         )
         return result.model_dump(mode="json")
 
-    async def graph_schema_list(graph_id: str, ctx: Context) -> dict[str, object]:
+    async def graph_schema_list(
+        graph_id: str,
+        ctx: Context,
+        kind: str = "",
+    ) -> dict[str, object]:
         """List graph schemas for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
         result = await _require_graph_content(services).list_graph_schemas(
             graph_id=graph_id,
             current_user=current_user,
+            kind=kind,
         )
         return result.model_dump(mode="json")
 
@@ -920,6 +939,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         name: str,
         json_schema: dict[str, object],
         ctx: Context,
+        kind: str = "node",
     ) -> dict[str, object]:
         """Create one graph schema for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
@@ -927,6 +947,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             graph_id=graph_id,
             name=name,
             json_schema=_coerce_json_object_argument(json_schema, argument_name="json_schema"),
+            kind=kind,
             current_user=current_user,
         )
         return result.model_dump(mode="json", by_alias=True)
@@ -936,6 +957,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         name: str,
         json_schema: dict[str, object],
         ctx: Context,
+        kind: str = "node",
     ) -> dict[str, object]:
         """Update one graph schema for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
@@ -943,6 +965,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             graph_id=graph_id,
             name=name,
             json_schema=_coerce_json_object_argument(json_schema, argument_name="json_schema"),
+            kind=kind,
             current_user=current_user,
         )
         return result.model_dump(mode="json", by_alias=True)

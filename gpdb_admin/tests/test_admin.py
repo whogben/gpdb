@@ -441,6 +441,7 @@ def test_graph_schema_registry_vertical_slice_across_surfaces(tmp_path):
         response = client.get(f"/graphs/{graph_id}/schemas/new")
         assert response.status_code == 200
         assert "Create a schema for Schema Slice." in response.text
+        assert 'name="kind"' in response.text
 
         response = client.post(
             f"/graphs/{graph_id}/schemas",
@@ -515,10 +516,10 @@ def test_graph_schema_registry_vertical_slice_across_surfaces(tmp_path):
         response = client.get(f"/graphs/{graph_id}/schemas/web_schema")
         assert response.status_code == 200
         assert "Version 1.0.0" in response.text
+        assert "Kind: node." in response.text
         assert "1 node reference this schema." in response.text
-        assert "1 edge reference this schema." in response.text
+        assert "0 edges reference this schema." in response.text
         assert "Sample node IDs:" in response.text
-        assert "Sample edge IDs:" in response.text
 
         response = client.get(
             "/api/graph_schema_list",
@@ -540,11 +541,12 @@ def test_graph_schema_registry_vertical_slice_across_surfaces(tmp_path):
             headers={"Authorization": f"Bearer {api_key_value}"},
         )
         assert response.status_code == 200
+        assert response.json()["schema"]["kind"] == "node"
         assert response.json()["schema"]["usage"] == {
             "node_count": 1,
-            "edge_count": 1,
+            "edge_count": 0,
             "sample_node_ids": [response.json()["schema"]["usage"]["sample_node_ids"][0]],
-            "sample_edge_ids": [response.json()["schema"]["usage"]["sample_edge_ids"][0]],
+            "sample_edge_ids": [],
         }
 
     cli_list = manager.cli(
@@ -575,7 +577,7 @@ def test_graph_schema_registry_vertical_slice_across_surfaces(tmp_path):
         {"graph_id": graph_id, "name": "web_schema"},
     )
     assert mcp_get["schema"]["usage"]["node_count"] == 1
-    assert mcp_get["schema"]["usage"]["edge_count"] == 1
+    assert mcp_get["schema"]["usage"]["edge_count"] == 0
 
 
 def test_graph_schema_update_and_delete_vertical_slice_across_surfaces(tmp_path):
@@ -697,6 +699,7 @@ def test_graph_schema_update_and_delete_vertical_slice_across_surfaces(tmp_path)
         response = client.post(
             f"/graphs/{graph_id}/schemas/web_schema",
             data={
+                "kind": "node",
                 "json_schema": json.dumps(
                     _schema_definition(
                         "web schema updated",
@@ -716,6 +719,7 @@ def test_graph_schema_update_and_delete_vertical_slice_across_surfaces(tmp_path)
         response = client.post(
             f"/graphs/{graph_id}/schemas/web_schema",
             data={
+                "kind": "node",
                 "json_schema": json.dumps(
                     _schema_definition(
                         "web schema breaking",
@@ -735,7 +739,7 @@ def test_graph_schema_update_and_delete_vertical_slice_across_surfaces(tmp_path)
         )
         assert response.status_code == 200
         assert (
-            "Schema &#39;web_schema&#39; cannot be deleted because it is still referenced by 1 node and 1 edge."
+            "Schema &#39;web_schema&#39; cannot be deleted because it is still referenced by 1 node."
             in response.text
         )
 
@@ -854,6 +858,12 @@ def test_graph_node_browse_and_create_vertical_slice_across_surfaces(tmp_path):
         assert graph is not None
         graph_id = graph.id
         _seed_graph_schema(manager, table_prefix="node_slice", schema_name="task_schema")
+        _seed_graph_schema(
+            manager,
+            table_prefix="node_slice",
+            schema_name="edge_only_schema",
+            kind="edge",
+        )
         _seed_node_record(
             manager,
             table_prefix="node_slice",
@@ -868,6 +878,7 @@ def test_graph_node_browse_and_create_vertical_slice_across_surfaces(tmp_path):
         assert response.status_code == 200
         assert "Create a node for Node Slice." in response.text
         assert '<option value="task_schema"' in response.text
+        assert 'value="edge_only_schema"' not in response.text
 
         response = client.post(
             f"/graphs/{graph_id}/nodes",
@@ -1381,7 +1392,18 @@ def test_graph_edge_browse_and_create_vertical_slice_across_surfaces(tmp_path):
         graph = _read_graph_by_prefix(manager, table_prefix="edge_slice")
         assert graph is not None
         graph_id = graph.id
-        _seed_graph_schema(manager, table_prefix="edge_slice", schema_name="edge_schema")
+        _seed_graph_schema(
+            manager,
+            table_prefix="edge_slice",
+            schema_name="edge_schema",
+            kind="edge",
+        )
+        _seed_graph_schema(
+            manager,
+            table_prefix="edge_slice",
+            schema_name="node_only_schema",
+            kind="node",
+        )
 
         seeded_source_id = _seed_node_record(
             manager,
@@ -1469,6 +1491,7 @@ def test_graph_edge_browse_and_create_vertical_slice_across_surfaces(tmp_path):
         assert response.status_code == 200
         assert "Create an edge for Edge Slice." in response.text
         assert '<option value="edge_schema"' in response.text
+        assert 'value="node_only_schema"' not in response.text
 
         response = client.post(
             f"/graphs/{graph_id}/edges",
@@ -1661,7 +1684,12 @@ def test_graph_edge_update_and_delete_vertical_slice_across_surfaces(tmp_path):
         graph = _read_graph_by_prefix(manager, table_prefix="edge_slice_phase2")
         assert graph is not None
         graph_id = graph.id
-        _seed_graph_schema(manager, table_prefix="edge_slice_phase2", schema_name="edge_schema")
+        _seed_graph_schema(
+            manager,
+            table_prefix="edge_slice_phase2",
+            schema_name="edge_schema",
+            kind="edge",
+        )
 
         web_source_id = _seed_node_record(
             manager,
@@ -2516,19 +2544,35 @@ def _seed_graph_content(manager, *, table_prefix: str) -> None:
     return asyncio.run(_seed())
 
 
-def _seed_schema_usage(manager, *, table_prefix: str, schema_name: str) -> None:
+def _seed_schema_usage(
+    manager,
+    *,
+    table_prefix: str,
+    schema_name: str,
+    kind: str = "node",
+) -> None:
     services = manager.app.state.services
     assert services.captive_server is not None
 
     async def _seed() -> None:
         db = GPGraph(services.captive_server.get_uri(), table_prefix=table_prefix)
         try:
+            if kind == "node":
+                await db.set_node(
+                    NodeUpsert(
+                        type="schema-test",
+                        name="source",
+                        schema_name=schema_name,
+                        data={"name": "Source"},
+                    )
+                )
+                return
+
             source = await db.set_node(
                 NodeUpsert(
                     type="schema-test",
                     name="source",
-                    schema_name=schema_name,
-                    data={"name": "Source"},
+                    data={},
                 )
             )
             target = await db.set_node(
@@ -2553,7 +2597,13 @@ def _seed_schema_usage(manager, *, table_prefix: str, schema_name: str) -> None:
     return asyncio.run(_seed())
 
 
-def _seed_graph_schema(manager, *, table_prefix: str, schema_name: str) -> None:
+def _seed_graph_schema(
+    manager,
+    *,
+    table_prefix: str,
+    schema_name: str,
+    kind: str = "node",
+) -> None:
     services = manager.app.state.services
     assert services.captive_server is not None
 
@@ -2563,6 +2613,7 @@ def _seed_graph_schema(manager, *, table_prefix: str, schema_name: str) -> None:
             await db.register_schema(
                 schema_name,
                 _schema_definition(f"{schema_name} schema"),
+                kind=kind,
             )
         finally:
             await db.sqla_engine.dispose()

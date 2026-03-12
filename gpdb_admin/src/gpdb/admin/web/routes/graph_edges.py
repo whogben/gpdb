@@ -429,6 +429,7 @@ async def _render_graph_edge_form(
         schema_list = await graph_content.list_graph_schemas(
             graph_id=graph_id,
             current_user=current_user,
+            kind="edge",
         )
     except GraphContentError as exc:
         return redirect_with_message(request, "home", error=str(exc))
