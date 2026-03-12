@@ -392,6 +392,9 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
         owner_id: str = "",
         parent_id: str = "",
         tags: str = "",
+        payload_base64: str | None = None,
+        payload_mime: str = "",
+        payload_filename: str = "",
     ) -> dict[str, object]:
         """Create one graph node for the authenticated REST user."""
         current_user = _require_rest_user(request)
@@ -404,6 +407,9 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
             parent_id=parent_id,
             tags=_coerce_tags_argument(tags),
             data=_coerce_json_object_argument(data, argument_name="data"),
+            payload=_coerce_optional_payload_base64_argument(payload_base64),
+            payload_mime=payload_mime,
+            payload_filename=payload_filename,
             current_user=current_user,
         )
         return result.model_dump(mode="json", by_alias=True)
@@ -419,6 +425,10 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
         owner_id: str = "",
         parent_id: str = "",
         tags: str = "",
+        payload_base64: str | None = None,
+        payload_mime: str = "",
+        payload_filename: str = "",
+        clear_payload: bool = False,
     ) -> dict[str, object]:
         """Update one graph node for the authenticated REST user."""
         current_user = _require_rest_user(request)
@@ -432,6 +442,10 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
             parent_id=parent_id,
             tags=_coerce_tags_argument(tags),
             data=_coerce_json_object_argument(data, argument_name="data"),
+            payload=_coerce_optional_payload_base64_argument(payload_base64),
+            payload_mime=payload_mime,
+            payload_filename=payload_filename,
+            clear_payload=clear_payload,
             current_user=current_user,
         )
         return result.model_dump(mode="json", by_alias=True)
@@ -470,6 +484,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
         payload_base64: str,
         request: Request,
         mime: str = "",
+        payload_filename: str = "",
     ) -> dict[str, object]:
         """Set one graph node payload for the authenticated REST user."""
         current_user = _require_rest_user(request)
@@ -478,6 +493,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
             node_id=node_id,
             payload=_coerce_payload_base64_argument(payload_base64),
             mime=mime,
+            payload_filename=payload_filename,
             current_user=current_user,
         )
         return result.model_dump(mode="json", by_alias=True)
@@ -735,6 +751,9 @@ def _build_cli_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         owner_id: str = "",
         parent_id: str = "",
         tags: str = "",
+        payload_base64: str | None = None,
+        payload_mime: str = "",
+        payload_filename: str = "",
     ) -> dict[str, object]:
         """Create one graph node for trusted local CLI use."""
         result = await _require_graph_content(services).create_graph_node(
@@ -746,6 +765,9 @@ def _build_cli_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             parent_id=parent_id,
             tags=_coerce_tags_argument(tags),
             data=_coerce_json_object_argument(data, argument_name="data"),
+            payload=_coerce_optional_payload_base64_argument(payload_base64),
+            payload_mime=payload_mime,
+            payload_filename=payload_filename,
             current_user=None,
             allow_local_system=True,
         )
@@ -761,6 +783,10 @@ def _build_cli_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         owner_id: str = "",
         parent_id: str = "",
         tags: str = "",
+        payload_base64: str | None = None,
+        payload_mime: str = "",
+        payload_filename: str = "",
+        clear_payload: bool = False,
     ) -> dict[str, object]:
         """Update one graph node for trusted local CLI use."""
         result = await _require_graph_content(services).update_graph_node(
@@ -773,6 +799,10 @@ def _build_cli_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             parent_id=parent_id,
             tags=_coerce_tags_argument(tags),
             data=_coerce_json_object_argument(data, argument_name="data"),
+            payload=_coerce_optional_payload_base64_argument(payload_base64),
+            payload_mime=payload_mime,
+            payload_filename=payload_filename,
+            clear_payload=clear_payload,
             current_user=None,
             allow_local_system=True,
         )
@@ -803,6 +833,7 @@ def _build_cli_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         node_id: str,
         payload_base64: str,
         mime: str = "",
+        payload_filename: str = "",
     ) -> dict[str, object]:
         """Set one graph node payload for trusted local CLI use."""
         result = await _require_graph_content(services).set_graph_node_payload(
@@ -810,6 +841,7 @@ def _build_cli_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             node_id=node_id,
             payload=_coerce_payload_base64_argument(payload_base64),
             mime=mime,
+            payload_filename=payload_filename,
             current_user=None,
             allow_local_system=True,
         )
@@ -1070,6 +1102,9 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         owner_id: str = "",
         parent_id: str = "",
         tags: str = "",
+        payload_base64: str | None = None,
+        payload_mime: str = "",
+        payload_filename: str = "",
     ) -> dict[str, object]:
         """Create one graph node for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
@@ -1082,6 +1117,9 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             parent_id=parent_id,
             tags=_coerce_tags_argument(tags),
             data=_coerce_json_object_argument(data, argument_name="data"),
+            payload=_coerce_optional_payload_base64_argument(payload_base64),
+            payload_mime=payload_mime,
+            payload_filename=payload_filename,
             current_user=current_user,
         )
         return result.model_dump(mode="json", by_alias=True)
@@ -1097,6 +1135,10 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         owner_id: str = "",
         parent_id: str = "",
         tags: str = "",
+        payload_base64: str | None = None,
+        payload_mime: str = "",
+        payload_filename: str = "",
+        clear_payload: bool = False,
     ) -> dict[str, object]:
         """Update one graph node for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
@@ -1110,6 +1152,10 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             parent_id=parent_id,
             tags=_coerce_tags_argument(tags),
             data=_coerce_json_object_argument(data, argument_name="data"),
+            payload=_coerce_optional_payload_base64_argument(payload_base64),
+            payload_mime=payload_mime,
+            payload_filename=payload_filename,
+            clear_payload=clear_payload,
             current_user=current_user,
         )
         return result.model_dump(mode="json", by_alias=True)
@@ -1148,6 +1194,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         payload_base64: str,
         ctx: Context,
         mime: str = "",
+        payload_filename: str = "",
     ) -> dict[str, object]:
         """Set one graph node payload for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
@@ -1156,6 +1203,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             node_id=node_id,
             payload=_coerce_payload_base64_argument(payload_base64),
             mime=mime,
+            payload_filename=payload_filename,
             current_user=current_user,
         )
         return result.model_dump(mode="json", by_alias=True)
@@ -1530,12 +1578,17 @@ def _coerce_payload_base64_argument(raw_value) -> bytes:
     if not isinstance(raw_value, str):
         raise ValueError("payload_base64 must be a base64 string.")
     text = raw_value.strip()
-    if not text:
-        raise ValueError("payload_base64 is required.")
     try:
         return base64.b64decode(text, validate=True)
     except ValueError as exc:
         raise ValueError("payload_base64 must be valid base64.") from exc
+
+
+def _coerce_optional_payload_base64_argument(raw_value) -> bytes | None:
+    """Accept an optional base64-encoded payload body and return decoded bytes."""
+    if raw_value is None:
+        return None
+    return _coerce_payload_base64_argument(raw_value)
 
 
 if __name__ == "__main__":

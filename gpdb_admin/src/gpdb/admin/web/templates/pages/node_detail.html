@@ -168,7 +168,7 @@
       <div class="resource-header">
         <div>
           <h3>Stored payload</h3>
-          <p class="resource-subtitle">Upload, replace, and download</p>
+          <p class="resource-subtitle">Inspect and download</p>
         </div>
       </div>
       <dl class="resource-meta">
@@ -181,27 +181,24 @@
           <dd>{{ node_detail.node.payload_mime or "application/octet-stream" }}</dd>
         </div>
         <div>
+          <dt>Filename</dt>
+          <dd>{{ node_detail.node.payload_filename or "none" }}</dd>
+        </div>
+        <div>
           <dt>Hash</dt>
           <dd>{{ node_detail.node.payload_hash or "none" }}</dd>
         </div>
       </dl>
       {% if current_user.is_owner %}
-      <form class="auth-form" action="{{ web_app.url_path_for('graph_node_payload_upload', graph_id=node_detail.graph.id, node_id=node_detail.node.id) }}" method="post" enctype="multipart/form-data">
-        <label class="field">
-          <span>Payload file</span>
-          <input type="file" name="payload_file" required>
-        </label>
-        <label class="field">
-          <span>MIME override</span>
-          <input name="mime" value="{{ node_detail.node.payload_mime or '' }}" placeholder="text/plain">
-        </label>
-        <div class="button-row">
-          <button class="button" type="submit">{% if node_detail.node.has_payload %}Replace payload{% else %}Upload payload{% endif %}</button>
-          {% if node_detail.node.has_payload %}
-          <a class="button button-secondary" href="{{ web_app.url_path_for('graph_node_payload_download', graph_id=node_detail.graph.id, node_id=node_detail.node.id) }}">Download payload</a>
-          {% endif %}
-        </div>
-      </form>
+      <p class="resource-note">
+        Use Edit node to upload, replace, or clear this payload together with the rest of the node changes.
+      </p>
+      <div class="button-row">
+        <a class="button" href="{{ web_app.url_path_for('graph_node_edit_page', graph_id=node_detail.graph.id, node_id=node_detail.node.id) }}">Edit node</a>
+        {% if node_detail.node.has_payload %}
+        <a class="button button-secondary" href="{{ web_app.url_path_for('graph_node_payload_download', graph_id=node_detail.graph.id, node_id=node_detail.node.id) }}">Download payload</a>
+        {% endif %}
+      </div>
       {% endif %}
     </article>
   </div>
@@ -213,78 +210,4 @@
 <script src="{{ web_app.url_path_for('static', path='js/jedison.umd.js') }}"></script>
 <script src="{{ web_app.url_path_for('static', path='js/jedison-form.js') }}"></script>
 {% endif %}
-<script>
-  document.addEventListener("DOMContentLoaded", function () {
-    var form = document.querySelector(
-      'form[action$="/payload"][method="post"][enctype="multipart/form-data"]'
-    );
-    if (!form) {
-      return;
-    }
-
-    var fileInput = form.querySelector('input[type="file"][name="payload_file"]');
-    var mimeInput = form.querySelector('input[name="mime"]');
-
-    if (!fileInput || !mimeInput) {
-      return;
-    }
-
-    function inferMimeFromExtension(filename) {
-      var lastDot = filename.lastIndexOf(".");
-      if (lastDot === -1 || lastDot === filename.length - 1) {
-        return "";
-      }
-
-      var ext = filename.slice(lastDot + 1).toLowerCase();
-      switch (ext) {
-        case "txt":
-          return "text/plain";
-        case "md":
-        case "markdown":
-          return "text/markdown";
-        case "json":
-          return "application/json";
-        case "csv":
-          return "text/csv";
-        case "html":
-        case "htm":
-          return "text/html";
-        case "xml":
-          return "application/xml";
-        case "jpg":
-        case "jpeg":
-          return "image/jpeg";
-        case "png":
-          return "image/png";
-        case "gif":
-          return "image/gif";
-        case "webp":
-          return "image/webp";
-        case "svg":
-          return "image/svg+xml";
-        case "pdf":
-          return "application/pdf";
-        case "zip":
-          return "application/zip";
-        default:
-          return "";
-      }
-    }
-
-    fileInput.addEventListener("change", function () {
-      if (!mimeInput || mimeInput.value.trim() !== "") {
-        return;
-      }
-      var file = fileInput.files && fileInput.files[0];
-      if (!file) {
-        return;
-      }
-
-      var inferred = file.type || inferMimeFromExtension(file.name || "");
-      if (inferred) {
-        mimeInput.value = inferred;
-      }
-    });
-  });
-</script>
 {% endblock %}

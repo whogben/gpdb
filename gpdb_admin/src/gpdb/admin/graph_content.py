@@ -136,6 +136,7 @@ class GraphNodeRecord(BaseModel):
     payload_size: int = 0
     payload_hash: str | None = None
     payload_mime: str | None = None
+    payload_filename: str | None = None
     has_payload: bool = False
 
 
@@ -592,6 +593,10 @@ class GraphContentService:
         owner_id: str | None = None,
         parent_id: str | None = None,
         tags: list[str] | None = None,
+        payload: bytes | None = None,
+        payload_mime: str | None = None,
+        payload_filename: str | None = None,
+        clear_payload: bool = False,
     ) -> GraphNodeDetail:
         """Create one node in a managed graph."""
         clean_type = self._validate_node_type(type)
@@ -600,7 +605,13 @@ class GraphContentService:
         clean_owner_id = self._normalize_optional_text(owner_id)
         clean_parent_id = self._normalize_optional_text(parent_id)
         normalized_tags = self._normalize_tag_list(tags)
+        clean_payload_mime = self._normalize_optional_text(payload_mime)
+        clean_payload_filename = self._normalize_optional_text(payload_filename)
         self._validate_json_object(data, object_name="Node data")
+        if clear_payload:
+            raise GraphContentValidationError(
+                "clear_payload cannot be used while creating a node."
+            )
 
         graph, instance, db = await self._open_graph(
             graph_id=graph_id,
@@ -619,6 +630,9 @@ class GraphContentService:
                         schema_name=clean_schema_name,
                         data=data,
                         tags=normalized_tags,
+                        payload=payload,
+                        payload_mime=clean_payload_mime,
+                        payload_filename=clean_payload_filename,
                     )
                 )
             except (SchemaNotFoundError, SchemaValidationError, ValueError) as exc:
@@ -646,6 +660,10 @@ class GraphContentService:
         owner_id: str | None = None,
         parent_id: str | None = None,
         tags: list[str] | None = None,
+        payload: bytes | None = None,
+        payload_mime: str | None = None,
+        payload_filename: str | None = None,
+        clear_payload: bool = False,
     ) -> GraphNodeDetail:
         """Update one node in a managed graph."""
         clean_node_id = self._validate_node_id(node_id)
@@ -655,7 +673,13 @@ class GraphContentService:
         clean_owner_id = self._normalize_optional_text(owner_id)
         clean_parent_id = self._normalize_optional_text(parent_id)
         normalized_tags = self._normalize_tag_list(tags)
+        clean_payload_mime = self._normalize_optional_text(payload_mime)
+        clean_payload_filename = self._normalize_optional_text(payload_filename)
         self._validate_json_object(data, object_name="Node data")
+        if payload is not None and clear_payload:
+            raise GraphContentValidationError(
+                "Provide either payload bytes or clear_payload, not both."
+            )
 
         graph, instance, db = await self._open_graph(
             graph_id=graph_id,
@@ -668,18 +692,24 @@ class GraphContentService:
             if existing is None:
                 raise GraphContentNotFoundError(f"Node '{clean_node_id}' was not found.")
             try:
-                node = await db.set_node(
-                    NodeUpsert(
-                        id=clean_node_id,
-                        type=clean_type,
-                        name=clean_name,
-                        owner_id=clean_owner_id,
-                        parent_id=clean_parent_id,
-                        schema_name=clean_schema_name,
-                        data=data,
-                        tags=normalized_tags,
+                async with db.transaction():
+                    node = await db.set_node(
+                        NodeUpsert(
+                            id=clean_node_id,
+                            type=clean_type,
+                            name=clean_name,
+                            owner_id=clean_owner_id,
+                            parent_id=clean_parent_id,
+                            schema_name=clean_schema_name,
+                            data=data,
+                            tags=normalized_tags,
+                            payload=payload,
+                            payload_mime=clean_payload_mime,
+                            payload_filename=clean_payload_filename,
+                        )
                     )
-                )
+                    if clear_payload:
+                        node = await db.clear_node_payload(clean_node_id)
             except (SchemaNotFoundError, SchemaValidationError, ValueError) as exc:
                 raise GraphContentValidationError(str(exc)) from exc
             return GraphNodeDetail(
@@ -738,12 +768,12 @@ class GraphContentService:
         current_user: AdminUser | None,
         allow_local_system: bool = False,
         mime: str | None = None,
+        payload_filename: str | None = None,
     ) -> GraphNodeDetail:
         """Upload or replace one graph node payload."""
         clean_node_id = self._validate_node_id(node_id)
         clean_mime = self._normalize_optional_text(mime)
-        if not payload:
-            raise GraphContentValidationError("Payload bytes are required.")
+        clean_payload_filename = self._normalize_optional_text(payload_filename)
 
         graph, instance, db = await self._open_graph(
             graph_id=graph_id,
@@ -757,6 +787,7 @@ class GraphContentService:
                     clean_node_id,
                     payload,
                     mime=clean_mime,
+                    filename=clean_payload_filename,
                 )
             except ValueError as exc:
                 raise GraphContentNotFoundError(f"Node '{clean_node_id}' was not found.") from exc
@@ -1098,6 +1129,7 @@ class GraphContentService:
             payload_size=int(node.payload_size or 0),
             payload_hash=node.payload_hash,
             payload_mime=node.payload_mime,
+            payload_filename=node.payload_filename,
             has_payload=bool(node.payload_size or node.payload_hash),
         )
 
@@ -1340,7 +1372,7 @@ class GraphContentService:
         )
 
     def _build_node_payload_filename(self, node: GraphNodeRecord) -> str:
-        base_name = (node.name or node.id).strip() or node.id
+        base_name = (node.payload_filename or node.name or node.id).strip() or node.id
         safe_name = base_name.replace("/", "_")
         return safe_name
 

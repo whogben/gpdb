@@ -218,6 +218,7 @@ class NodeUpsert(BaseModel):
     tags: List[str] = Field(default_factory=list)
     payload: Optional[bytes] = None
     payload_mime: Optional[str] = None
+    payload_filename: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -239,6 +240,7 @@ class NodeRead(BaseModel):
     payload_size: int = 0
     payload_hash: Optional[str] = None
     payload_mime: Optional[str] = None
+    payload_filename: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -310,6 +312,7 @@ class NodeModel(BaseModel):
     node_payload_size: int = 0
     node_payload_hash: Optional[str] = None
     node_payload_mime: Optional[str] = None
+    node_payload_filename: Optional[str] = None
 
     # Payload content (optional)
     node_payload: Optional[bytes] = None
@@ -328,6 +331,7 @@ class NodeModel(BaseModel):
             "tags": self.node_tags,
             "payload": self.node_payload,
             "payload_mime": self.node_payload_mime,
+            "payload_filename": self.node_payload_filename,
         }
 
         # Identify all system keys to exclude from data
@@ -344,6 +348,7 @@ class NodeModel(BaseModel):
             "node_payload_size",
             "node_payload_hash",
             "node_payload_mime",
+            "node_payload_filename",
             "node_payload",
         }
 
@@ -369,6 +374,7 @@ class NodeModel(BaseModel):
             "node_payload_size": node.payload_size,
             "node_payload_hash": node.payload_hash,
             "node_payload_mime": node.payload_mime,
+            "node_payload_filename": node.payload_filename,
         }
 
         # 2. Add payload if present (from NodeReadWithPayload)
@@ -514,6 +520,7 @@ class _GPNodeBase(_GPRecord):
     payload_size: Mapped[int] = mapped_column(Integer, default=0)
     payload_hash: Mapped[Optional[str]] = mapped_column(String)
     payload_mime: Mapped[Optional[str]] = mapped_column(String)
+    payload_filename: Mapped[Optional[str]] = mapped_column(String)
 
     @declared_attr
     def parent_id(cls):
@@ -691,6 +698,8 @@ def _node_upsert_to_orm(
             existing.payload = dto.payload
         if dto.payload_mime is not None:
             existing.payload_mime = dto.payload_mime
+        if dto.payload_filename is not None:
+            existing.payload_filename = dto.payload_filename
         return existing
     # Create new - only pass id if provided, otherwise let SQLAlchemy use its default
     kwargs: dict = {
@@ -703,6 +712,7 @@ def _node_upsert_to_orm(
         "tags": dto.tags,
         "payload": dto.payload,
         "payload_mime": dto.payload_mime,
+        "payload_filename": dto.payload_filename,
     }
     if dto.id is not None:
         kwargs["id"] = dto.id
@@ -1494,7 +1504,11 @@ class GPGraph:
             return result.scalar_one_or_none()
 
     async def set_node_payload(
-        self, id: str, payload: bytes, mime: str | None = None
+        self,
+        id: str,
+        payload: bytes,
+        mime: str | None = None,
+        filename: str | None = None,
     ) -> NodeRead:
         """
         Set payload for an existing Node.
@@ -1508,6 +1522,22 @@ class GPGraph:
             orm.payload = payload
             if mime is not None:  # Only update mime when explicitly provided
                 orm.payload_mime = mime
+            if filename is not None:  # Only update filename when explicitly provided
+                orm.payload_filename = filename
+            await session.flush()
+            await session.refresh(orm)
+            return _node_orm_to_read(orm)
+
+    async def clear_node_payload(self, id: str) -> NodeRead:
+        """
+        Remove payload bytes and payload metadata from an existing Node.
+        Returns updated NodeRead.
+        """
+        async with self._get_session() as session:
+            orm = await session.get(self._Node, id)
+            if orm is None:
+                raise ValueError(f"Node not found: {id}")
+            orm.payload = None
             await session.flush()
             await session.refresh(orm)
             return _node_orm_to_read(orm)
@@ -1844,6 +1874,7 @@ def _update_payload_metadata(mapper, connection, target):
             target.payload_size = 0
             target.payload_hash = None
             target.payload_mime = None
+            target.payload_filename = None
 
 
 # -----------------------------------------------------------------------------

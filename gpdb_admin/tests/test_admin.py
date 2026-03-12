@@ -1055,7 +1055,9 @@ def test_graph_node_browse_and_create_vertical_slice_across_surfaces(tmp_path):
                 "parent_id": "",
                 "tags": "alpha, beta",
                 "data": json.dumps({"name": "Web node"}),
+                "mime": "text/plain",
             },
+            files={"payload_file": ("empty.txt", b"", "text/plain")},
             follow_redirects=False,
         )
         assert response.status_code == 303
@@ -1066,7 +1068,13 @@ def test_graph_node_browse_and_create_vertical_slice_across_surfaces(tmp_path):
         assert response.status_code == 200
         assert "web-node" in response.text
         assert "Tags: alpha, beta" in response.text
-        assert "No binary payload is stored on this node." in response.text
+        assert "A binary payload is stored on this node." in response.text
+        assert "0 bytes" in response.text
+
+        response = client.get(f"/graphs/{graph_id}/nodes/{web_node_id}/payload")
+        assert response.status_code == 200
+        assert response.content == b""
+        assert response.headers["content-type"].startswith("text/plain")
 
         response = client.get(f"/graphs/{graph_id}/nodes", params={"type": "task", "limit": 1})
         assert response.status_code == 200
@@ -1091,6 +1099,9 @@ def test_graph_node_browse_and_create_vertical_slice_across_surfaces(tmp_path):
                 "name": "rest-node",
                 "schema_name": "task_schema",
                 "tags": "rest",
+                "payload_base64": base64.b64encode(b"rest payload").decode("ascii"),
+                "payload_mime": "text/plain",
+                "payload_filename": "rest.txt",
             },
             json={"name": "Rest node"},
             headers={"Authorization": f"Bearer {api_key_value}"},
@@ -1100,6 +1111,8 @@ def test_graph_node_browse_and_create_vertical_slice_across_surfaces(tmp_path):
         assert rest_created["node"]["name"] == "rest-node"
         assert rest_created["node"]["schema_name"] == "task_schema"
         assert rest_created["node"]["tags"] == ["rest"]
+        assert rest_created["node"]["payload_size"] == 12
+        assert rest_created["node"]["payload_filename"] == "rest.txt"
 
         response = client.get(
             "/api/graph_node_list",
@@ -1130,11 +1143,19 @@ def test_graph_node_browse_and_create_vertical_slice_across_surfaces(tmp_path):
             graph_id,
             "task",
             json.dumps({"name": "CLI node"}),
+            "--payload-base64",
+            base64.b64encode(b"cli payload").decode("ascii"),
+            "--payload-mime",
+            "text/plain",
+            "--payload-filename",
+            "cli.txt",
         ],
         standalone_mode=False,
     )
     assert cli_created["node"]["type"] == "task"
     assert cli_created["node"]["data"] == {"name": "CLI node"}
+    assert cli_created["node"]["payload_size"] == 11
+    assert cli_created["node"]["payload_filename"] == "cli.txt"
 
     cli_get = manager.cli(
         ["gpdb", "graph_node_get", graph_id, cli_created["node"]["id"]],
@@ -1159,10 +1180,15 @@ def test_graph_node_browse_and_create_vertical_slice_across_surfaces(tmp_path):
             "schema_name": "task_schema",
             "tags": "mcp, final",
             "data": {"name": "MCP node"},
+            "payload_base64": base64.b64encode(b"mcp payload").decode("ascii"),
+            "payload_mime": "text/plain",
+            "payload_filename": "mcp.txt",
         },
     )
     assert mcp_created["node"]["name"] == "mcp-node"
     assert mcp_created["node"]["tags"] == ["mcp", "final"]
+    assert mcp_created["node"]["payload_size"] == 11
+    assert mcp_created["node"]["payload_filename"] == "mcp.txt"
 
     mcp_get = _call_persisted_authenticated_mcp_tool(
         manager,
@@ -1331,7 +1357,9 @@ def test_graph_node_update_delete_and_payload_vertical_slice_across_surfaces(tmp
                 "parent_id": "",
                 "tags": "alpha, beta",
                 "data": json.dumps({"name": "Web edit updated", "status": "active"}),
+                "mime": "text/plain",
             },
+            files={"payload_file": ("web.txt", b"web payload", "text/plain")},
             follow_redirects=False,
         )
         assert response.status_code == 303
@@ -1341,17 +1369,6 @@ def test_graph_node_update_delete_and_payload_vertical_slice_across_surfaces(tmp
         assert "web-edit-renamed" in response.text
         assert "Tags: alpha, beta" in response.text
         assert "owner-1" in response.text
-
-        response = client.post(
-            f"/graphs/{graph_id}/nodes/{web_edit_id}/payload",
-            data={"mime": "text/plain"},
-            files={"payload_file": ("web.txt", b"web payload", "text/plain")},
-            follow_redirects=False,
-        )
-        assert response.status_code == 303
-
-        response = client.get(response.headers["location"])
-        assert response.status_code == 200
         assert "A binary payload is stored on this node." in response.text
         assert "11 bytes" in response.text
         assert "Download payload" in response.text
@@ -1361,6 +1378,27 @@ def test_graph_node_update_delete_and_payload_vertical_slice_across_surfaces(tmp
         assert response.content == b"web payload"
         assert response.headers["content-type"].startswith("text/plain")
         assert "attachment;" in response.headers["content-disposition"]
+        assert 'filename="web.txt"' in response.headers["content-disposition"]
+
+        response = client.post(
+            f"/graphs/{graph_id}/nodes/{web_edit_id}",
+            data={
+                "type": "task",
+                "name": "web-edit-renamed",
+                "schema_name": "task_schema",
+                "owner_id": "owner-1",
+                "parent_id": "",
+                "tags": "alpha, beta",
+                "data": json.dumps({"name": "Web edit updated", "status": "active"}),
+                "clear_payload": "true",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+
+        response = client.get(response.headers["location"])
+        assert response.status_code == 200
+        assert "No binary payload is stored on this node." in response.text
 
         response = client.post(
             f"/graphs/{graph_id}/nodes/{web_delete_id}/delete",
@@ -1389,6 +1427,9 @@ def test_graph_node_update_delete_and_payload_vertical_slice_across_surfaces(tmp
                 "name": "rest-edit-renamed",
                 "schema_name": "task_schema",
                 "tags": "rest, updated",
+                "payload_base64": base64.b64encode(b"rest payload").decode("ascii"),
+                "payload_mime": "text/plain",
+                "payload_filename": "rest.txt",
             },
             json={"name": "Rest edit updated", "status": "active"},
             headers={"Authorization": f"Bearer {api_key_value}"},
@@ -1397,19 +1438,8 @@ def test_graph_node_update_delete_and_payload_vertical_slice_across_surfaces(tmp
         assert response.json()["node"]["name"] == "rest-edit-renamed"
         assert response.json()["node"]["schema_name"] == "task_schema"
         assert response.json()["node"]["tags"] == ["rest", "updated"]
-
-        response = client.post(
-            "/api/graph_node_payload_set",
-            params={
-                "graph_id": graph_id,
-                "node_id": rest_node_id,
-                "payload_base64": base64.b64encode(b"rest payload").decode("ascii"),
-                "mime": "text/plain",
-            },
-            headers={"Authorization": f"Bearer {api_key_value}"},
-        )
-        assert response.status_code == 200
         assert response.json()["node"]["payload_size"] == 12
+        assert response.json()["node"]["payload_filename"] == "rest.txt"
 
         response = client.get(
             "/api/graph_node_payload_get",
@@ -1419,6 +1449,27 @@ def test_graph_node_update_delete_and_payload_vertical_slice_across_surfaces(tmp
         assert response.status_code == 200
         assert response.json()["payload_base64"] == base64.b64encode(b"rest payload").decode("ascii")
         assert response.json()["node"]["payload_mime"] == "text/plain"
+        assert response.json()["node"]["payload_filename"] == "rest.txt"
+        assert response.json()["filename"] == "rest.txt"
+
+        response = client.post(
+            "/api/graph_node_update",
+            params={
+                "graph_id": graph_id,
+                "node_id": rest_node_id,
+                "type": "task",
+                "name": "rest-edit-renamed",
+                "schema_name": "task_schema",
+                "tags": "rest, updated",
+                "clear_payload": True,
+            },
+            json={"name": "Rest edit updated", "status": "active"},
+            headers={"Authorization": f"Bearer {api_key_value}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["node"]["payload_size"] == 0
+        assert response.json()["node"]["payload_filename"] is None
+        assert response.json()["node"]["has_payload"] is False
 
         response = client.post(
             "/api/graph_node_delete",
@@ -1438,25 +1489,19 @@ def test_graph_node_update_delete_and_payload_vertical_slice_across_surfaces(tmp
             json.dumps({"name": "CLI edit updated", "status": "ready"}),
             "--name",
             "cli-edit-renamed",
+            "--payload-base64",
+            base64.b64encode(b"cli payload").decode("ascii"),
+            "--payload-mime",
+            "text/plain",
+            "--payload-filename",
+            "cli.txt",
         ],
         standalone_mode=False,
     )
     assert cli_updated["node"]["name"] == "cli-edit-renamed"
     assert cli_updated["node"]["data"] == {"name": "CLI edit updated", "status": "ready"}
-
-    cli_payload_set = manager.cli(
-        [
-            "gpdb",
-            "graph_node_payload_set",
-            graph_id,
-            cli_node_id,
-            base64.b64encode(b"cli payload").decode("ascii"),
-            "--mime",
-            "text/plain",
-        ],
-        standalone_mode=False,
-    )
-    assert cli_payload_set["node"]["payload_size"] == 11
+    assert cli_updated["node"]["payload_size"] == 11
+    assert cli_updated["node"]["payload_filename"] == "cli.txt"
 
     cli_payload_get = manager.cli(
         ["gpdb", "graph_node_payload_get", graph_id, cli_node_id],
@@ -1464,6 +1509,26 @@ def test_graph_node_update_delete_and_payload_vertical_slice_across_surfaces(tmp
     )
     assert cli_payload_get["payload_base64"] == base64.b64encode(b"cli payload").decode("ascii")
     assert cli_payload_get["node"]["payload_mime"] == "text/plain"
+    assert cli_payload_get["node"]["payload_filename"] == "cli.txt"
+    assert cli_payload_get["filename"] == "cli.txt"
+
+    cli_cleared = manager.cli(
+        [
+            "gpdb",
+            "graph_node_update",
+            graph_id,
+            cli_node_id,
+            "task",
+            json.dumps({"name": "CLI edit updated", "status": "ready"}),
+            "--name",
+            "cli-edit-renamed",
+            "--clear-payload",
+        ],
+        standalone_mode=False,
+    )
+    assert cli_cleared["node"]["payload_size"] == 0
+    assert cli_cleared["node"]["payload_filename"] is None
+    assert cli_cleared["node"]["has_payload"] is False
 
     cli_deleted = manager.cli(
         ["gpdb", "graph_node_delete", graph_id, cli_node_id],
@@ -1483,23 +1548,15 @@ def test_graph_node_update_delete_and_payload_vertical_slice_across_surfaces(tmp
             "schema_name": "task_schema",
             "tags": "mcp, updated",
             "data": {"name": "MCP edit updated", "status": "active"},
+            "payload_base64": base64.b64encode(b"mcp payload").decode("ascii"),
+            "payload_mime": "text/plain",
+            "payload_filename": "mcp.txt",
         },
     )
     assert mcp_updated["node"]["name"] == "mcp-edit-renamed"
     assert mcp_updated["node"]["tags"] == ["mcp", "updated"]
-
-    mcp_payload_set = _call_persisted_authenticated_mcp_tool(
-        manager,
-        api_key_value,
-        "graph_node_payload_set",
-        {
-            "graph_id": graph_id,
-            "node_id": mcp_node_id,
-            "payload_base64": base64.b64encode(b"mcp payload").decode("ascii"),
-            "mime": "text/plain",
-        },
-    )
-    assert mcp_payload_set["node"]["payload_size"] == 11
+    assert mcp_updated["node"]["payload_size"] == 11
+    assert mcp_updated["node"]["payload_filename"] == "mcp.txt"
 
     mcp_payload_get = _call_persisted_authenticated_mcp_tool(
         manager,
@@ -1509,6 +1566,27 @@ def test_graph_node_update_delete_and_payload_vertical_slice_across_surfaces(tmp
     )
     assert mcp_payload_get["payload_base64"] == base64.b64encode(b"mcp payload").decode("ascii")
     assert mcp_payload_get["node"]["payload_mime"] == "text/plain"
+    assert mcp_payload_get["node"]["payload_filename"] == "mcp.txt"
+    assert mcp_payload_get["filename"] == "mcp.txt"
+
+    mcp_cleared = _call_persisted_authenticated_mcp_tool(
+        manager,
+        api_key_value,
+        "graph_node_update",
+        {
+            "graph_id": graph_id,
+            "node_id": mcp_node_id,
+            "type": "task",
+            "name": "mcp-edit-renamed",
+            "schema_name": "task_schema",
+            "tags": "mcp, updated",
+            "data": {"name": "MCP edit updated", "status": "active"},
+            "clear_payload": True,
+        },
+    )
+    assert mcp_cleared["node"]["payload_size"] == 0
+    assert mcp_cleared["node"]["payload_filename"] is None
+    assert mcp_cleared["node"]["has_payload"] is False
 
     mcp_deleted = _call_persisted_authenticated_mcp_tool(
         manager,

@@ -96,7 +96,7 @@ async def test_node_crud(db: GPGraph):
 @pytest.mark.asyncio
 async def test_payload(db: GPGraph):
     payload = b"some binary data"
-    node = NodeUpsert(type="test", payload=payload)
+    node = NodeUpsert(type="test", payload=payload, payload_filename="blob.bin")
     created = await db.set_node(node)
 
     # Fetch without payload (default behavior of get_node)
@@ -111,6 +111,19 @@ async def test_payload(db: GPGraph):
     assert fetched_full.payload_size == len(payload)
     assert fetched_full.payload_hash is not None
     assert fetched_full.payload_mime == "application/octet-stream"
+    assert fetched_full.payload_filename == "blob.bin"
+
+
+@pytest.mark.asyncio
+async def test_zero_byte_payload(db: GPGraph):
+    node = NodeUpsert(type="test", payload=b"", payload_filename="empty.txt")
+    created = await db.set_node(node)
+
+    fetched_full = await db.get_node_with_payload(created.id)
+    assert fetched_full.payload == b""
+    assert fetched_full.payload_size == 0
+    assert fetched_full.payload_hash is not None
+    assert fetched_full.payload_filename == "empty.txt"
 
 
 @pytest.mark.asyncio
@@ -263,9 +276,12 @@ async def test_get_node_payload(db: GPGraph):
 
     # Set payload (returns updated NodeRead)
     payload = b"new payload data"
-    updated = await db.set_node_payload(node.id, payload, "text/plain")
+    updated = await db.set_node_payload(
+        node.id, payload, "text/plain", filename="notes.txt"
+    )
     assert updated.payload_size == len(payload)
     assert updated.payload_mime == "text/plain"
+    assert updated.payload_filename == "notes.txt"
 
     # Get payload
     fetched_payload = await db.get_node_payload(node.id)
@@ -274,6 +290,23 @@ async def test_get_node_payload(db: GPGraph):
     # Verify node metadata via get_node_with_payload
     node_with_payload = await db.get_node_with_payload(node.id)
     assert node_with_payload.payload == payload
+    assert node_with_payload.payload_filename == "notes.txt"
+
+
+@pytest.mark.asyncio
+async def test_clear_node_payload(db: GPGraph):
+    node = await db.set_node(
+        NodeUpsert(type="test", payload=b"payload", payload_filename="notes.txt")
+    )
+
+    cleared = await db.clear_node_payload(node.id)
+    assert cleared.payload_size == 0
+    assert cleared.payload_hash is None
+    assert cleared.payload_mime is None
+    assert cleared.payload_filename is None
+
+    node_with_payload = await db.get_node_with_payload(node.id)
+    assert node_with_payload.payload is None
 
 
 # --- Side Table Tests ---

@@ -135,7 +135,7 @@ Nodes are the primary records. Each has an `id`, `type`, optional `name`, and a 
 
 - **Parent-child hierarchy** — `parent_id` with a unique constraint on `(parent_id, name)`
 - **Ownership** — optional `owner_id` for access control patterns
-- **Binary payloads** — store bytes with auto-computed `payload_size`, `payload_hash`, and `payload_mime`
+- **Binary payloads** — store bytes with auto-computed `payload_size`, `payload_hash`, plus optional `payload_mime` and `payload_filename`
 - **Tags** — a JSONB list for lightweight categorization
 
 ```python
@@ -147,6 +147,7 @@ node = await db.set_node(NodeUpsert(
     tags=["draft", "personal"],
     payload=b"# My notes\n...",
     payload_mime="text/markdown",
+    payload_filename="notes.md",
 ))
 ```
 

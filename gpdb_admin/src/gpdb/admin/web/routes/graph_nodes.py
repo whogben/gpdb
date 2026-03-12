@@ -136,6 +136,8 @@ async def graph_node_create_page(request: Request, graph_id: str) -> HTMLRespons
             "parent_id": "",
             "tags": "",
             "data": DEFAULT_NODE_DATA,
+            "mime": "",
+            "clear_payload": "",
         },
     )
 
@@ -151,6 +153,8 @@ async def graph_node_create(
     parent_id: str = Form(""),
     tags: str = Form(""),
     data: str = Form(...),
+    payload_file: UploadFile | None = File(None),
+    mime: str = Form(""),
 ):
     """Create one node in a managed graph."""
     current_user = await require_authenticated_user(request)
@@ -165,7 +169,10 @@ async def graph_node_create(
         "parent_id": parent_id.strip(),
         "tags": tags.strip(),
         "data": data.strip(),
+        "mime": mime.strip(),
+        "clear_payload": "",
     }
+    payload_bytes, payload_filename = await _read_optional_payload_upload(payload_file)
     try:
         parsed_data = _parse_node_data_text(form_data["data"])
     except ValueError as exc:
@@ -187,6 +194,9 @@ async def graph_node_create(
             parent_id=form_data["parent_id"],
             tags=_parse_tags_text(form_data["tags"]),
             data=parsed_data,
+            payload=payload_bytes,
+            payload_mime=form_data["mime"],
+            payload_filename=payload_filename,
             current_user=current_user,
         )
     except GraphContentError as exc:
@@ -257,6 +267,8 @@ async def graph_node_edit_page(
             "parent_id": detail.node.parent_id or "",
             "tags": ", ".join(detail.node.tags),
             "data": json.dumps(detail.node.data, indent=2, sort_keys=True),
+            "mime": detail.node.payload_mime or "",
+            "clear_payload": "",
         },
         node_id=detail.node.id,
         node_detail=detail.model_dump(mode="json", by_alias=True),
@@ -275,6 +287,9 @@ async def graph_node_update(
     parent_id: str = Form(""),
     tags: str = Form(""),
     data: str = Form(...),
+    payload_file: UploadFile | None = File(None),
+    mime: str = Form(""),
+    clear_payload: bool = Form(False),
 ):
     """Update one node in a managed graph."""
     current_user = await require_authenticated_user(request)
@@ -289,7 +304,19 @@ async def graph_node_update(
         "parent_id": parent_id.strip(),
         "tags": tags.strip(),
         "data": data.strip(),
+        "mime": mime.strip(),
+        "clear_payload": "true" if clear_payload else "",
     }
+    payload_bytes, payload_filename = await _read_optional_payload_upload(payload_file)
+    if payload_bytes is not None and clear_payload:
+        return await _render_graph_node_form(
+            request,
+            graph_id=graph_id,
+            current_user=current_user,
+            form_data=form_data,
+            node_id=node_id,
+            error_message="Choose either a replacement payload or clear_payload.",
+        )
     try:
         parsed_data = _parse_node_data_text(form_data["data"])
     except ValueError as exc:
@@ -313,6 +340,10 @@ async def graph_node_update(
             parent_id=form_data["parent_id"],
             tags=_parse_tags_text(form_data["tags"]),
             data=parsed_data,
+            payload=payload_bytes,
+            payload_mime=form_data["mime"],
+            payload_filename=payload_filename,
+            clear_payload=clear_payload,
             current_user=current_user,
         )
     except GraphContentError as exc:
@@ -442,14 +473,6 @@ async def graph_node_payload_upload(
             error="Choose a file to upload.",
         )
     payload_bytes = await payload_file.read()
-    if not payload_bytes:
-        return redirect_with_message(
-            request,
-            "graph_node_detail_page",
-            graph_id=graph_id,
-            node_id=node_id,
-            error="Uploaded payload files cannot be empty.",
-        )
 
     try:
         updated = await require_graph_content_service(request).set_graph_node_payload(
@@ -457,6 +480,7 @@ async def graph_node_payload_upload(
             node_id=node_id,
             payload=payload_bytes,
             mime=mime,
+            payload_filename=payload_file.filename,
             current_user=current_user,
         )
     except GraphContentError as exc:
@@ -600,6 +624,18 @@ def _parse_node_data_text(json_text: str) -> dict[str, object]:
 
 def _parse_tags_text(tags_text: str) -> list[str]:
     return [item.strip() for item in tags_text.split(",") if item.strip()]
+
+
+async def _read_optional_payload_upload(
+    payload_file: UploadFile | None,
+) -> tuple[bytes | None, str | None]:
+    if payload_file is None:
+        return None, None
+    payload_bytes = await payload_file.read()
+    payload_filename = (payload_file.filename or "").strip() or None
+    if payload_filename is None and payload_bytes == b"":
+        return None, None
+    return payload_bytes, payload_filename
 
 
 def _parse_int_query_param(
