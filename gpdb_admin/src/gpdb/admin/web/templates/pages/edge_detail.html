@@ -101,6 +101,23 @@
       {% endif %}
     </article>
 
+    {% if schema_json %}
+    <article class="resource-card">
+      <div class="resource-header">
+        <div>
+          <h3>Schema View</h3>
+          <p class="resource-subtitle">{{ edge_detail.edge.schema_name }}</p>
+        </div>
+      </div>
+      <section class="schema-editor-card" data-jedison-root data-mode="readonly">
+        <div class="schema-editor-card__body" data-jedison-mount></div>
+        <p class="schema-editor-card__status" data-jedison-status></p>
+        <script type="application/json" data-jedison-schema>{{ schema_json | tojson }}</script>
+        <script type="application/json" data-jedison-data>{{ edge_detail.edge.data | tojson }}</script>
+      </section>
+    </article>
+    {% endif %}
+
     <article class="resource-card">
       <div class="resource-header">
         <div>
@@ -112,4 +129,11 @@
     </article>
   </div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+{% if schema_json %}
+<script src="{{ web_app.url_path_for('static', path='js/jedison.umd.js') }}"></script>
+<script src="{{ web_app.url_path_for('static', path='js/jedison-form.js') }}"></script>
+{% endif %}
 {% endblock %}

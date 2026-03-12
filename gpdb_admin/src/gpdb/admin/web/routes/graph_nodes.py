@@ -223,11 +223,20 @@ async def graph_node_edit_page(
         return current_user
 
     try:
-        detail = await require_graph_content_service(request).get_graph_node(
+        graph_content = require_graph_content_service(request)
+        detail = await graph_content.get_graph_node(
             graph_id=graph_id,
             node_id=node_id,
             current_user=current_user,
         )
+        schema_json = None
+        if detail.node.schema_name:
+            schema_detail = await graph_content.get_graph_schema(
+                graph_id=graph_id,
+                name=detail.node.schema_name,
+                current_user=current_user,
+            )
+            schema_json = schema_detail.schema.json_schema
     except GraphContentError as exc:
         return redirect_with_message(
             request,
@@ -341,11 +350,20 @@ async def graph_node_detail_page(
         return current_user
 
     try:
-        detail = await require_graph_content_service(request).get_graph_node(
+        graph_content = require_graph_content_service(request)
+        detail = await graph_content.get_graph_node(
             graph_id=graph_id,
             node_id=node_id,
             current_user=current_user,
         )
+        schema_json = None
+        if detail.node.schema_name:
+            schema_detail = await graph_content.get_graph_schema(
+                graph_id=graph_id,
+                name=detail.node.schema_name,
+                current_user=current_user,
+            )
+            schema_json = schema_detail.schema.json_schema
     except GraphContentError as exc:
         return redirect_with_message(
             request,
@@ -361,6 +379,7 @@ async def graph_node_detail_page(
         page_title=f"{payload['node']['name'] or payload['node']['id']} Node",
         current_user=current_user,
         node_detail=payload,
+        schema_json=schema_json,
         node_json=json.dumps(payload["node"]["data"], indent=2, sort_keys=True),
         error_message=request.query_params.get("error"),
         success_message=request.query_params.get("success"),
@@ -532,6 +551,7 @@ async def _render_graph_node_form(
             graph_id=graph_id,
             current_user=current_user,
             kind="node",
+            include_json_schema=True,
         )
     except GraphContentError as exc:
         return redirect_with_message(request, "home", error=str(exc))
@@ -546,6 +566,11 @@ async def _render_graph_node_form(
         node_detail=node_detail,
         form_data=form_data,
         schema_names=[item.name for item in schema_list.items],
+        schema_json_map={
+            item.name: item.json_schema
+            for item in schema_list.items
+            if item.json_schema is not None
+        },
         is_edit=is_edit,
         submit_url=(
             request.app.url_path_for(

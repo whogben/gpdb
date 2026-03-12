@@ -828,6 +828,171 @@ def test_graph_schema_update_and_delete_vertical_slice_across_surfaces(tmp_path)
         assert "mcp_schema" not in response.text
 
 
+def test_graph_node_schema_editor_slice_renders_vendored_assets(tmp_path):
+    """Test that node forms and detail pages expose the schema-driven web UI."""
+    manager = _create_test_manager(tmp_path)
+
+    with TestClient(manager.app) as client:
+        _bootstrap_owner(client)
+        _login(client)
+
+        response = client.get("/graphs/new")
+        assert response.status_code == 200
+        default_instance_id = _extract_instance_option_value(
+            response.text, "Default instance"
+        )
+
+        response = client.post(
+            "/graphs",
+            data={
+                "instance_id": default_instance_id,
+                "table_prefix": "node_schema_editor",
+                "display_name": "Node Schema Editor",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+
+        graph = _read_graph_by_prefix(manager, table_prefix="node_schema_editor")
+        assert graph is not None
+        graph_id = graph.id
+        _seed_graph_schema(
+            manager, table_prefix="node_schema_editor", schema_name="task_schema"
+        )
+        _seed_graph_schema(
+            manager,
+            table_prefix="node_schema_editor",
+            schema_name="edge_only_schema",
+            kind="edge",
+        )
+        node_id = _seed_node_record(
+            manager,
+            table_prefix="node_schema_editor",
+            type="task",
+            name="schema-backed-node",
+            schema_name="task_schema",
+            data={"name": "Schema backed node"},
+        )
+
+        response = client.get(f"/graphs/{graph_id}/nodes/new")
+        assert response.status_code == 200
+        assert "Schema Editor" in response.text
+        assert "Raw JSON" in response.text
+        assert "jedison.umd.js" in response.text
+        assert "jedison-form.js" in response.text
+        assert 'data-jedison-root' in response.text
+        assert '"task_schema"' in response.text
+        assert '"description": "task_schema schema"' in response.text
+        assert '"edge_only_schema"' not in response.text
+
+        response = client.get(f"/graphs/{graph_id}/nodes/{node_id}/edit")
+        assert response.status_code == 200
+        assert "Reload from JSON" in response.text
+        assert "Schema backed node" in response.text
+        assert (
+            '<option value="task_schema" selected' in response.text
+        )
+
+        response = client.get(f"/graphs/{graph_id}/nodes/{node_id}")
+        assert response.status_code == 200
+        assert "Schema View" in response.text
+        assert '<p class="resource-subtitle">task_schema</p>' in response.text
+        assert "jedison.umd.js" in response.text
+        assert "jedison-form.js" in response.text
+        assert '"description": "task_schema schema"' in response.text
+        assert "Stored node body" in response.text
+
+
+def test_graph_edge_schema_editor_slice_renders_vendored_assets(tmp_path):
+    """Test that edge forms and detail pages expose the schema-driven web UI."""
+    manager = _create_test_manager(tmp_path)
+
+    with TestClient(manager.app) as client:
+        _bootstrap_owner(client)
+        _login(client)
+
+        response = client.get("/graphs/new")
+        assert response.status_code == 200
+        default_instance_id = _extract_instance_option_value(
+            response.text, "Default instance"
+        )
+
+        response = client.post(
+            "/graphs",
+            data={
+                "instance_id": default_instance_id,
+                "table_prefix": "edge_schema_editor",
+                "display_name": "Edge Schema Editor",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+
+        graph = _read_graph_by_prefix(manager, table_prefix="edge_schema_editor")
+        assert graph is not None
+        graph_id = graph.id
+        _seed_graph_schema(
+            manager,
+            table_prefix="edge_schema_editor",
+            schema_name="edge_schema",
+            kind="edge",
+        )
+        _seed_graph_schema(
+            manager,
+            table_prefix="edge_schema_editor",
+            schema_name="node_only_schema",
+            kind="node",
+        )
+        source_id = _seed_node_record(
+            manager,
+            table_prefix="edge_schema_editor",
+            type="task",
+            name="source-node",
+            data={"name": "Source"},
+        )
+        target_id = _seed_node_record(
+            manager,
+            table_prefix="edge_schema_editor",
+            type="task",
+            name="target-node",
+            data={"name": "Target"},
+        )
+        edge_id = _seed_edge_record(
+            manager,
+            table_prefix="edge_schema_editor",
+            type="depends_on",
+            source_id=source_id,
+            target_id=target_id,
+            schema_name="edge_schema",
+            data={"name": "Schema backed edge"},
+        )
+
+        response = client.get(f"/graphs/{graph_id}/edges/new")
+        assert response.status_code == 200
+        assert "Schema Editor" in response.text
+        assert "Raw JSON" in response.text
+        assert "jedison.umd.js" in response.text
+        assert "jedison-form.js" in response.text
+        assert '"edge_schema"' in response.text
+        assert '"description": "edge_schema schema"' in response.text
+        assert '"node_only_schema"' not in response.text
+
+        response = client.get(f"/graphs/{graph_id}/edges/{edge_id}/edit")
+        assert response.status_code == 200
+        assert "Reload from JSON" in response.text
+        assert "Schema backed edge" in response.text
+        assert '<option value="edge_schema" selected' in response.text
+
+        response = client.get(f"/graphs/{graph_id}/edges/{edge_id}")
+        assert response.status_code == 200
+        assert "Schema View" in response.text
+        assert '<p class="resource-subtitle">edge_schema</p>' in response.text
+        assert "jedison.umd.js" in response.text
+        assert "jedison-form.js" in response.text
+        assert '"description": "edge_schema schema"' in response.text
+        assert "Stored edge body" in response.text
+
+
 def test_graph_node_browse_and_create_vertical_slice_across_surfaces(tmp_path):
     """Test node browse/create flow across web, REST, CLI, and MCP."""
     manager = _create_test_manager(tmp_path)

@@ -6,6 +6,7 @@
     <title>{% block title %}{{ page_title or "GPDB Admin" }}{% endblock %}</title>
     <link rel="stylesheet" href="{{ web_app.url_path_for('static', path='css/tokens.css') }}">
     <link rel="stylesheet" href="{{ web_app.url_path_for('static', path='css/app.css') }}">
+    {% block head_extra %}{% endblock %}
     <script src="{{ web_app.url_path_for('static', path='js/theme.js') }}"></script>
   </head>
   <body>
@@ -19,5 +20,6 @@
         {% block content %}{% endblock %}
       </main>
     </div>
+    {% block scripts %}{% endblock %}
   </body>
 </html>

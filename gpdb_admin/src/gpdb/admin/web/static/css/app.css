@@ -367,6 +367,56 @@ a {
   word-break: break-word;
 }
 
+.schema-editor-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--surface-bg) 82%, var(--accent-color) 18%);
+}
+
+.schema-editor-card__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.schema-editor-card__header h3,
+.schema-editor-card__header p,
+.schema-editor-card__status {
+  margin: 0;
+}
+
+.schema-editor-card__header p,
+.schema-editor-card__status {
+  color: var(--muted-text);
+}
+
+.schema-editor-card__body {
+  min-height: 5rem;
+}
+
+.schema-editor-card__body:empty::before {
+  content: "No schema selected.";
+  display: block;
+  padding: 1rem;
+  border: 1px dashed var(--border-color);
+  border-radius: 0.9rem;
+  color: var(--muted-text);
+  background: var(--page-bg);
+}
+
+.schema-editor-card__status:empty {
+  display: none;
+}
+
+.schema-editor-card__status[data-state="error"] {
+  color: #c53d4b;
+}
+
 @media (max-width: 800px) {
   .site-shell {
     width: min(100% - 1rem, 1080px);

@@ -44,7 +44,7 @@
 
       <label class="field">
         <span>Schema</span>
-        <select name="schema_name">
+        <select id="node-schema-name" name="schema_name">
           <option value="">No schema</option>
           {% for schema_name in schema_names %}
           <option value="{{ schema_name }}" {% if (form_data or {}).get('schema_name', '') == schema_name %}selected{% endif %}>{{ schema_name }}</option>
@@ -68,9 +68,27 @@
         <input name="tags" value="{{ (form_data or {}).get('tags', '') }}" placeholder="alpha, beta">
       </label>
 
+      <section
+        class="schema-editor-card"
+        data-jedison-root
+        data-mode="form"
+        data-schema-select-id="node-schema-name"
+        data-json-field-id="node-data-json"
+      >
+        <div class="schema-editor-card__header">
+          <h3>Schema Editor</h3>
+          <button class="button button-secondary" type="button" data-jedison-refresh>
+            Reload from JSON
+          </button>
+        </div>
+        <div class="schema-editor-card__body" data-jedison-mount></div>
+        <p class="schema-editor-card__status" data-jedison-status></p>
+        <script type="application/json" data-jedison-schema-map>{{ schema_json_map | tojson }}</script>
+      </section>
+
       <label class="field">
-        <span>JSON Data</span>
-        <textarea name="data" rows="14" required>{{ (form_data or {}).get('data', '') }}</textarea>
+        <span>Raw JSON</span>
+        <textarea id="node-data-json" name="data" rows="14" required>{{ (form_data or {}).get('data', '') }}</textarea>
       </label>
 
       <div class="button-row">
@@ -80,4 +98,9 @@
     </form>
   </div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ web_app.url_path_for('static', path='js/jedison.umd.js') }}"></script>
+<script src="{{ web_app.url_path_for('static', path='js/jedison-form.js') }}"></script>
 {% endblock %}

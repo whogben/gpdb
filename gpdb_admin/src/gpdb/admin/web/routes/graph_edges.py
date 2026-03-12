@@ -222,11 +222,20 @@ async def graph_edge_edit_page(
         return current_user
 
     try:
-        detail = await require_graph_content_service(request).get_graph_edge(
+        graph_content = require_graph_content_service(request)
+        detail = await graph_content.get_graph_edge(
             graph_id=graph_id,
             edge_id=edge_id,
             current_user=current_user,
         )
+        schema_json = None
+        if detail.edge.schema_name:
+            schema_detail = await graph_content.get_graph_schema(
+                graph_id=graph_id,
+                name=detail.edge.schema_name,
+                current_user=current_user,
+            )
+            schema_json = schema_detail.schema.json_schema
     except GraphContentError as exc:
         return redirect_with_message(
             request,
@@ -336,11 +345,20 @@ async def graph_edge_detail_page(
         return current_user
 
     try:
-        detail = await require_graph_content_service(request).get_graph_edge(
+        graph_content = require_graph_content_service(request)
+        detail = await graph_content.get_graph_edge(
             graph_id=graph_id,
             edge_id=edge_id,
             current_user=current_user,
         )
+        schema_json = None
+        if detail.edge.schema_name:
+            schema_detail = await graph_content.get_graph_schema(
+                graph_id=graph_id,
+                name=detail.edge.schema_name,
+                current_user=current_user,
+            )
+            schema_json = schema_detail.schema.json_schema
     except GraphContentError as exc:
         return redirect_with_message(
             request,
@@ -356,6 +374,7 @@ async def graph_edge_detail_page(
         page_title=f"{payload['edge']['type']} Edge",
         current_user=current_user,
         edge_detail=payload,
+        schema_json=schema_json,
         edge_json=json.dumps(payload["edge"]["data"], indent=2, sort_keys=True),
         error_message=request.query_params.get("error"),
         success_message=request.query_params.get("success"),
@@ -430,6 +449,7 @@ async def _render_graph_edge_form(
             graph_id=graph_id,
             current_user=current_user,
             kind="edge",
+            include_json_schema=True,
         )
     except GraphContentError as exc:
         return redirect_with_message(request, "home", error=str(exc))
@@ -444,6 +464,11 @@ async def _render_graph_edge_form(
         edge_detail=edge_detail,
         form_data=form_data,
         schema_names=[item.name for item in schema_list.items],
+        schema_json_map={
+            item.name: item.json_schema
+            for item in schema_list.items
+            if item.json_schema is not None
+        },
         is_edit=is_edit,
         submit_url=(
             request.app.url_path_for(

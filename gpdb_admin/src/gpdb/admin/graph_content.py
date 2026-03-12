@@ -297,6 +297,7 @@ class GraphContentService:
         current_user: AdminUser | None,
         allow_local_system: bool = False,
         kind: str | None = None,
+        include_json_schema: bool = False,
     ) -> GraphSchemaList:
         """Return the current schema registry for one managed graph."""
         graph, instance, db = await self._open_graph(
@@ -315,7 +316,7 @@ class GraphContentService:
                 items.append(
                     self._serialize_schema_record(
                         schema,
-                        include_json_schema=False,
+                        include_json_schema=include_json_schema,
                         usage=GraphSchemaUsage(),
                     )
                 )
