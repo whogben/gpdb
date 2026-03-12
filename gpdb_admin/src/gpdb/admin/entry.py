@@ -32,6 +32,16 @@ from gpdb.admin.auth import (
     verify_api_key_secret,
 )
 from gpdb.admin.config import ConfigStore, ResolvedConfig, extract_config_arg
+from gpdb.admin.graph_content import (
+    GraphEdgeDetail,
+    GraphEdgeList,
+    GraphNodeDetail,
+    GraphNodeList,
+    GraphNodePayload,
+    GraphOverview,
+    GraphSchemaDetail,
+    GraphSchemaList,
+)
 from gpdb.admin.runtime import AdminServices, create_admin_lifespan
 from gpdb.admin.web import create_web_app
 
@@ -255,20 +265,20 @@ def _unauthorized_response() -> JSONResponse:
 def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinition]:
     """Build authenticated REST tools for graph-content access."""
 
-    async def graph_overview(graph_id: str, request: Request) -> dict[str, object]:
+    async def graph_overview(graph_id: str, request: Request) -> GraphOverview:
         """Return one managed graph overview for the authenticated REST user."""
         current_user = _require_rest_user(request)
         result = await _require_graph_content(services).get_graph_overview(
             graph_id=graph_id,
             current_user=current_user,
         )
-        return result.model_dump(mode="json")
+        return result
 
     async def graph_schema_list(
         graph_id: str,
         request: Request,
         kind: str = "",
-    ) -> dict[str, object]:
+    ) -> GraphSchemaList:
         """List graph schemas for the authenticated REST user."""
         current_user = _require_rest_user(request)
         result = await _require_graph_content(services).list_graph_schemas(
@@ -276,11 +286,11 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
             current_user=current_user,
             kind=kind,
         )
-        return result.model_dump(mode="json")
+        return result
 
     async def graph_schema_get(
         graph_id: str, name: str, request: Request
-    ) -> dict[str, object]:
+    ) -> GraphSchemaDetail:
         """Return one graph schema for the authenticated REST user."""
         current_user = _require_rest_user(request)
         result = await _require_graph_content(services).get_graph_schema(
@@ -288,7 +298,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
             name=name,
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_schema_create(
         graph_id: str,
@@ -296,7 +306,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
         json_schema: dict[str, object],
         request: Request,
         kind: str = "node",
-    ) -> dict[str, object]:
+    ) -> GraphSchemaDetail:
         """Create one graph schema for the authenticated REST user."""
         current_user = _require_rest_user(request)
         result = await _require_graph_content(services).create_graph_schema(
@@ -308,7 +318,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
             kind=kind,
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_schema_update(
         graph_id: str,
@@ -316,7 +326,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
         json_schema: dict[str, object],
         request: Request,
         kind: str = "node",
-    ) -> dict[str, object]:
+    ) -> GraphSchemaDetail:
         """Update one graph schema for the authenticated REST user."""
         current_user = _require_rest_user(request)
         result = await _require_graph_content(services).update_graph_schema(
@@ -328,13 +338,13 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
             kind=kind,
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_schema_delete(
         graph_id: str,
         name: str,
         request: Request,
-    ) -> dict[str, object]:
+    ) -> GraphSchemaDetail:
         """Delete one graph schema for the authenticated REST user."""
         current_user = _require_rest_user(request)
         result = await _require_graph_content(services).delete_graph_schema(
@@ -342,7 +352,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
             name=name,
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_node_list(
         graph_id: str,
@@ -353,7 +363,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
         limit: int = 50,
         offset: int = 0,
         sort: str = "created_at_desc",
-    ) -> dict[str, object]:
+    ) -> GraphNodeList:
         """List graph nodes for the authenticated REST user."""
         current_user = _require_rest_user(request)
         result = await _require_graph_content(services).list_graph_nodes(
@@ -366,13 +376,13 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
             offset=offset,
             sort=sort,
         )
-        return result.model_dump(mode="json")
+        return result
 
     async def graph_node_get(
         graph_id: str,
         node_id: str,
         request: Request,
-    ) -> dict[str, object]:
+    ) -> GraphNodeDetail:
         """Return one graph node for the authenticated REST user."""
         current_user = _require_rest_user(request)
         result = await _require_graph_content(services).get_graph_node(
@@ -380,7 +390,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
             node_id=node_id,
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_node_create(
         graph_id: str,
@@ -395,7 +405,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
         payload_base64: str | None = None,
         payload_mime: str = "",
         payload_filename: str = "",
-    ) -> dict[str, object]:
+    ) -> GraphNodeDetail:
         """Create one graph node for the authenticated REST user."""
         current_user = _require_rest_user(request)
         result = await _require_graph_content(services).create_graph_node(
@@ -412,7 +422,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
             payload_filename=payload_filename,
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_node_update(
         graph_id: str,
@@ -429,7 +439,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
         payload_mime: str = "",
         payload_filename: str = "",
         clear_payload: bool = False,
-    ) -> dict[str, object]:
+    ) -> GraphNodeDetail:
         """Update one graph node for the authenticated REST user."""
         current_user = _require_rest_user(request)
         result = await _require_graph_content(services).update_graph_node(
@@ -448,13 +458,13 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
             clear_payload=clear_payload,
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_node_delete(
         graph_id: str,
         node_id: str,
         request: Request,
-    ) -> dict[str, object]:
+    ) -> GraphNodeDetail:
         """Delete one graph node for the authenticated REST user."""
         current_user = _require_rest_user(request)
         result = await _require_graph_content(services).delete_graph_node(
@@ -462,13 +472,13 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
             node_id=node_id,
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_node_payload_get(
         graph_id: str,
         node_id: str,
         request: Request,
-    ) -> dict[str, object]:
+    ) -> GraphNodePayload:
         """Return one graph node payload for the authenticated REST user."""
         current_user = _require_rest_user(request)
         result = await _require_graph_content(services).get_graph_node_payload(
@@ -476,7 +486,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
             node_id=node_id,
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_node_payload_set(
         graph_id: str,
@@ -485,7 +495,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
         request: Request,
         mime: str = "",
         payload_filename: str = "",
-    ) -> dict[str, object]:
+    ) -> GraphNodeDetail:
         """Set one graph node payload for the authenticated REST user."""
         current_user = _require_rest_user(request)
         result = await _require_graph_content(services).set_graph_node_payload(
@@ -496,7 +506,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
             payload_filename=payload_filename,
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_edge_list(
         graph_id: str,
@@ -508,7 +518,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
         limit: int = 50,
         offset: int = 0,
         sort: str = "created_at_desc",
-    ) -> dict[str, object]:
+    ) -> GraphEdgeList:
         """List graph edges for the authenticated REST user."""
         current_user = _require_rest_user(request)
         result = await _require_graph_content(services).list_graph_edges(
@@ -522,13 +532,13 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
             offset=offset,
             sort=sort,
         )
-        return result.model_dump(mode="json")
+        return result
 
     async def graph_edge_get(
         graph_id: str,
         edge_id: str,
         request: Request,
-    ) -> dict[str, object]:
+    ) -> GraphEdgeDetail:
         """Return one graph edge for the authenticated REST user."""
         current_user = _require_rest_user(request)
         result = await _require_graph_content(services).get_graph_edge(
@@ -536,7 +546,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
             edge_id=edge_id,
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_edge_create(
         graph_id: str,
@@ -547,7 +557,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
         request: Request,
         schema_name: str = "",
         tags: str = "",
-    ) -> dict[str, object]:
+    ) -> GraphEdgeDetail:
         """Create one graph edge for the authenticated REST user."""
         current_user = _require_rest_user(request)
         result = await _require_graph_content(services).create_graph_edge(
@@ -560,7 +570,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
             data=_coerce_json_object_argument(data, argument_name="data"),
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_edge_update(
         graph_id: str,
@@ -572,7 +582,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
         request: Request,
         schema_name: str = "",
         tags: str = "",
-    ) -> dict[str, object]:
+    ) -> GraphEdgeDetail:
         """Update one graph edge for the authenticated REST user."""
         current_user = _require_rest_user(request)
         result = await _require_graph_content(services).update_graph_edge(
@@ -586,13 +596,13 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
             data=_coerce_json_object_argument(data, argument_name="data"),
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_edge_delete(
         graph_id: str,
         edge_id: str,
         request: Request,
-    ) -> dict[str, object]:
+    ) -> GraphEdgeDetail:
         """Delete one graph edge for the authenticated REST user."""
         current_user = _require_rest_user(request)
         result = await _require_graph_content(services).delete_graph_edge(
@@ -600,7 +610,7 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
             edge_id=edge_id,
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     return [
         ToolDefinition(graph_overview, "graph_overview", http_method="GET"),
@@ -965,20 +975,20 @@ def _build_cli_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
 def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefinition]:
     """Build authenticated MCP tools for graph-content access."""
 
-    async def graph_overview(graph_id: str, ctx: Context) -> dict[str, object]:
+    async def graph_overview(graph_id: str, ctx: Context) -> GraphOverview:
         """Return one managed graph overview for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
         result = await _require_graph_content(services).get_graph_overview(
             graph_id=graph_id,
             current_user=current_user,
         )
-        return result.model_dump(mode="json")
+        return result
 
     async def graph_schema_list(
         graph_id: str,
         ctx: Context,
         kind: str = "",
-    ) -> dict[str, object]:
+    ) -> GraphSchemaList:
         """List graph schemas for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
         result = await _require_graph_content(services).list_graph_schemas(
@@ -986,11 +996,11 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             current_user=current_user,
             kind=kind,
         )
-        return result.model_dump(mode="json")
+        return result
 
     async def graph_schema_get(
         graph_id: str, name: str, ctx: Context
-    ) -> dict[str, object]:
+    ) -> GraphSchemaDetail:
         """Return one graph schema for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
         result = await _require_graph_content(services).get_graph_schema(
@@ -998,7 +1008,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             name=name,
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_schema_create(
         graph_id: str,
@@ -1006,7 +1016,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         json_schema: dict[str, object],
         ctx: Context,
         kind: str = "node",
-    ) -> dict[str, object]:
+    ) -> GraphSchemaDetail:
         """Create one graph schema for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
         result = await _require_graph_content(services).create_graph_schema(
@@ -1018,7 +1028,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             kind=kind,
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_schema_update(
         graph_id: str,
@@ -1026,7 +1036,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         json_schema: dict[str, object],
         ctx: Context,
         kind: str = "node",
-    ) -> dict[str, object]:
+    ) -> GraphSchemaDetail:
         """Update one graph schema for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
         result = await _require_graph_content(services).update_graph_schema(
@@ -1038,13 +1048,13 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             kind=kind,
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_schema_delete(
         graph_id: str,
         name: str,
         ctx: Context,
-    ) -> dict[str, object]:
+    ) -> GraphSchemaDetail:
         """Delete one graph schema for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
         result = await _require_graph_content(services).delete_graph_schema(
@@ -1052,7 +1062,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             name=name,
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_node_list(
         graph_id: str,
@@ -1063,7 +1073,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         limit: int = 50,
         offset: int = 0,
         sort: str = "created_at_desc",
-    ) -> dict[str, object]:
+    ) -> GraphNodeList:
         """List graph nodes for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
         result = await _require_graph_content(services).list_graph_nodes(
@@ -1076,13 +1086,13 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             offset=offset,
             sort=sort,
         )
-        return result.model_dump(mode="json")
+        return result
 
     async def graph_node_get(
         graph_id: str,
         node_id: str,
         ctx: Context,
-    ) -> dict[str, object]:
+    ) -> GraphNodeDetail:
         """Return one graph node for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
         result = await _require_graph_content(services).get_graph_node(
@@ -1090,7 +1100,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             node_id=node_id,
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_node_create(
         graph_id: str,
@@ -1105,7 +1115,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         payload_base64: str | None = None,
         payload_mime: str = "",
         payload_filename: str = "",
-    ) -> dict[str, object]:
+    ) -> GraphNodeDetail:
         """Create one graph node for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
         result = await _require_graph_content(services).create_graph_node(
@@ -1122,7 +1132,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             payload_filename=payload_filename,
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_node_update(
         graph_id: str,
@@ -1139,7 +1149,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         payload_mime: str = "",
         payload_filename: str = "",
         clear_payload: bool = False,
-    ) -> dict[str, object]:
+    ) -> GraphNodeDetail:
         """Update one graph node for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
         result = await _require_graph_content(services).update_graph_node(
@@ -1158,13 +1168,13 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             clear_payload=clear_payload,
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_node_delete(
         graph_id: str,
         node_id: str,
         ctx: Context,
-    ) -> dict[str, object]:
+    ) -> GraphNodeDetail:
         """Delete one graph node for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
         result = await _require_graph_content(services).delete_graph_node(
@@ -1172,13 +1182,13 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             node_id=node_id,
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_node_payload_get(
         graph_id: str,
         node_id: str,
         ctx: Context,
-    ) -> dict[str, object]:
+    ) -> GraphNodePayload:
         """Return one graph node payload for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
         result = await _require_graph_content(services).get_graph_node_payload(
@@ -1186,7 +1196,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             node_id=node_id,
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_node_payload_set(
         graph_id: str,
@@ -1195,7 +1205,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         ctx: Context,
         mime: str = "",
         payload_filename: str = "",
-    ) -> dict[str, object]:
+    ) -> GraphNodeDetail:
         """Set one graph node payload for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
         result = await _require_graph_content(services).set_graph_node_payload(
@@ -1206,7 +1216,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             payload_filename=payload_filename,
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_edge_list(
         graph_id: str,
@@ -1218,7 +1228,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         limit: int = 50,
         offset: int = 0,
         sort: str = "created_at_desc",
-    ) -> dict[str, object]:
+    ) -> GraphEdgeList:
         """List graph edges for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
         result = await _require_graph_content(services).list_graph_edges(
@@ -1232,13 +1242,13 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             offset=offset,
             sort=sort,
         )
-        return result.model_dump(mode="json")
+        return result
 
     async def graph_edge_get(
         graph_id: str,
         edge_id: str,
         ctx: Context,
-    ) -> dict[str, object]:
+    ) -> GraphEdgeDetail:
         """Return one graph edge for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
         result = await _require_graph_content(services).get_graph_edge(
@@ -1246,7 +1256,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             edge_id=edge_id,
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_edge_create(
         graph_id: str,
@@ -1257,7 +1267,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         ctx: Context,
         schema_name: str = "",
         tags: str = "",
-    ) -> dict[str, object]:
+    ) -> GraphEdgeDetail:
         """Create one graph edge for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
         result = await _require_graph_content(services).create_graph_edge(
@@ -1270,7 +1280,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             data=_coerce_json_object_argument(data, argument_name="data"),
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_edge_update(
         graph_id: str,
@@ -1282,7 +1292,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         ctx: Context,
         schema_name: str = "",
         tags: str = "",
-    ) -> dict[str, object]:
+    ) -> GraphEdgeDetail:
         """Update one graph edge for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
         result = await _require_graph_content(services).update_graph_edge(
@@ -1296,13 +1306,13 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             data=_coerce_json_object_argument(data, argument_name="data"),
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     async def graph_edge_delete(
         graph_id: str,
         edge_id: str,
         ctx: Context,
-    ) -> dict[str, object]:
+    ) -> GraphEdgeDetail:
         """Delete one graph edge for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
         result = await _require_graph_content(services).delete_graph_edge(
@@ -1310,7 +1320,7 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             edge_id=edge_id,
             current_user=current_user,
         )
-        return result.model_dump(mode="json", by_alias=True)
+        return result
 
     return [
         ToolDefinition(graph_overview, "graph_overview"),
