@@ -1,13 +1,16 @@
 import asyncio
+import json
 import re
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
+from mcp.server.auth.middleware.auth_context import auth_context_var
 from sqlalchemy.engine import make_url
 
 from gpdb.admin import entry
+from gpdb.admin.auth import generate_api_key, hash_api_key_secret, hash_password
 from gpdb.admin.config import AdminConfig, ConfigPathSource, ConfigStore, extract_config_arg, resolve_config_location
 from gpdb.admin.store import AdminStore
 
@@ -322,6 +325,107 @@ def test_api_key_lifecycle_for_web_rest_and_mcp(tmp_path):
         assert _verify_api_key_with_mcp_verifier(manager, api_key_value) is None
 
 
+def test_cli_api_key_management_commands(tmp_path):
+    """Test trusted local CLI API key management commands."""
+    manager = _create_test_manager(tmp_path)
+
+    with TestClient(manager.app) as client:
+        _bootstrap_owner(client)
+
+    created = manager.cli(
+        ["gpdb", "api_key_create", "owner", "CLI key"],
+        standalone_mode=False,
+    )
+    assert created["label"] == "CLI key"
+    assert str(created["api_key"]).startswith("gpdb_")
+    key_id = str(created["key_id"])
+
+    listed = manager.cli(
+        ["gpdb", "api_key_list", "owner"],
+        standalone_mode=False,
+    )
+    assert any(item["key_id"] == key_id for item in listed)
+
+    revealed = manager.cli(
+        ["gpdb", "api_key_reveal", "owner", key_id],
+        standalone_mode=False,
+    )
+    assert revealed["api_key"] == created["api_key"]
+
+    revoked = manager.cli(
+        ["gpdb", "api_key_revoke", "owner", key_id],
+        standalone_mode=False,
+    )
+    assert revoked["is_active"] is False
+
+
+def test_mcp_api_key_management_tools(tmp_path):
+    """Test authenticated MCP API key management tools."""
+    manager = _create_test_manager(tmp_path)
+
+    async def _run():
+        assert manager.lifespan_ctx is not None
+        async with manager.lifespan_ctx(manager.app):
+            services = manager.app.state.services
+            assert services.admin_store is not None
+
+            owner = await services.admin_store.create_initial_owner(
+                username="owner",
+                password_hash=hash_password("secret-pass"),
+                display_name="Primary Owner",
+            )
+            bootstrap_generated = generate_api_key()
+            bootstrap_key = await services.admin_store.create_api_key(
+                user_id=owner.id,
+                label="MCP bootstrap",
+                key_id=bootstrap_generated.key_id,
+                preview=bootstrap_generated.preview,
+                secret_hash=hash_api_key_secret(bootstrap_generated.secret),
+                key_value=bootstrap_generated.token,
+            )
+
+            verified_token = await entry._AdminAPIKeyTokenVerifier(
+                SimpleNamespace(admin_store=services.admin_store)
+            ).verify_token(bootstrap_generated.token)
+            assert verified_token is not None
+
+            listed = await _call_authenticated_mcp_tool_in_loop(
+                manager,
+                verified_token,
+                "api_key_list",
+                {},
+            )
+            assert any(item["key_id"] == bootstrap_key.key_id for item in listed)
+
+            created = await _call_authenticated_mcp_tool_in_loop(
+                manager,
+                verified_token,
+                "api_key_create",
+                {"label": "MCP managed"},
+            )
+            assert created["label"] == "MCP managed"
+            assert str(created["api_key"]).startswith("gpdb_")
+            created_key_id = str(created["key_id"])
+
+            revealed = await _call_authenticated_mcp_tool_in_loop(
+                manager,
+                verified_token,
+                "api_key_reveal",
+                {"key_id": created_key_id},
+            )
+            assert revealed["api_key"] == created["api_key"]
+
+            revoked = await _call_authenticated_mcp_tool_in_loop(
+                manager,
+                verified_token,
+                "api_key_revoke",
+                {"key_id": created_key_id},
+            )
+            assert revoked["is_active"] is False
+
+    asyncio.run(_run())
+
+
 def test_rest_api_public_docs_and_health_endpoints(tmp_path):
     """Test that documented public REST endpoints stay accessible without API keys."""
     manager = _create_test_manager(tmp_path)
@@ -577,6 +681,26 @@ def _read_stored_api_key(manager, *, label: str) -> dict[str, object]:
     return asyncio.run(_load())
 
 
+def _read_api_key_key_id(manager, *, api_key_node_id: str) -> str:
+    services = manager.app.state.services
+    assert services.captive_server is not None
+    assert services.resolved_config.auth.session_secret is not None
+
+    async def _load() -> str:
+        store = AdminStore(
+            services.captive_server.get_uri(),
+            instance_secret=services.resolved_config.auth.session_secret,
+        )
+        try:
+            node = await store.db.get_node(api_key_node_id)
+            assert node is not None
+            return str(node.data["key_id"])
+        finally:
+            await store.close()
+
+    return asyncio.run(_load())
+
+
 def _verify_api_key_with_mcp_verifier(manager, api_key_value: str):
     services = manager.app.state.services
     assert services.captive_server is not None
@@ -594,6 +718,42 @@ def _verify_api_key_with_mcp_verifier(manager, api_key_value: str):
             await store.close()
 
     return asyncio.run(_verify())
+
+
+def _call_authenticated_mcp_tool(
+    manager,
+    api_key_value: str,
+    tool_name: str,
+    arguments: dict[str, object],
+):
+    verified_token = _verify_api_key_with_mcp_verifier(manager, api_key_value)
+    assert verified_token is not None
+
+    async def _call():
+        token = auth_context_var.set(SimpleNamespace(access_token=verified_token))
+        try:
+            result = await manager.mcp_servers["gpdb"].call_tool(tool_name, arguments)
+        finally:
+            auth_context_var.reset(token)
+        assert result.content
+        return json.loads(result.content[0].text)
+
+    return asyncio.run(_call())
+
+
+async def _call_authenticated_mcp_tool_in_loop(
+    manager,
+    verified_token,
+    tool_name: str,
+    arguments: dict[str, object],
+):
+    token = auth_context_var.set(SimpleNamespace(access_token=verified_token))
+    try:
+        result = await manager.mcp_servers["gpdb"].call_tool(tool_name, arguments)
+    finally:
+        auth_context_var.reset(token)
+    assert result.content
+    return json.loads(result.content[0].text)
 
 
 def _read_stored_instance_password(manager, *, slug: str) -> object:

@@ -3,18 +3,27 @@
 from __future__ import annotations
 
 import argparse
+import json
 import secrets
 import sys
+from dataclasses import asdict
 
 import uvicorn
 from fastapi import Request
 from fastapi.responses import JSONResponse
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from fastmcp.server.auth import AccessToken, TokenVerifier
+from mcp.server.auth.middleware.auth_context import get_access_token
 from toolaccess import CLIServer, OpenAPIServer, SSEMCPServer as ToolaccessSSEMCPServer, ServerManager, ToolService
+from toolaccess import ToolDefinition
 from toolaccess.toolaccess import MountableApp
 
-from gpdb.admin.auth import extract_bearer_token, verify_api_key_secret
+from gpdb.admin.auth import (
+    extract_bearer_token,
+    generate_api_key,
+    hash_api_key_secret,
+    verify_api_key_secret,
+)
 from gpdb.admin.config import ConfigStore, ResolvedConfig, extract_config_arg
 from gpdb.admin.runtime import AdminServices, create_admin_lifespan
 from gpdb.admin.web import create_web_app
@@ -90,6 +99,8 @@ def create_manager(
         config_store=config_store,
     )
     admin_service = ToolService("admin", [status])
+    cli_api_key_service = ToolService("admin-cli", _build_cli_api_key_tools(services))
+    mcp_api_key_service = ToolService("admin-mcp", _build_mcp_api_key_tools(services))
 
     rest_api = OpenAPIServer(path_prefix="/api", title="GPDB Admin API")
     rest_api.mount(admin_service)
@@ -97,9 +108,11 @@ def create_manager(
 
     mcp_server = SSEMCPServer("gpdb", auth_provider=_AdminAPIKeyTokenVerifier(services))
     mcp_server.mount(admin_service)
+    mcp_server.mount(mcp_api_key_service)
 
     cli = CLIServer("gpdb")
     cli.mount(admin_service)
+    cli.mount(cli_api_key_service)
 
     web_app = MountableApp(
         create_web_app(
@@ -210,6 +223,187 @@ def _unauthorized_response() -> JSONResponse:
         status_code=401,
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+def _build_cli_api_key_tools(services: AdminServices) -> list[ToolDefinition]:
+    """Build trusted local CLI commands for API key management."""
+
+    async def api_key_list(username: str) -> list[dict[str, object]]:
+        """List API keys for one local admin user."""
+        user = await _require_user_by_username(services, username)
+        result = [_serialize_api_key(item) for item in await services.admin_store.list_api_keys_for_user(user.id)]
+        return _emit_cli_result(result)
+
+    async def api_key_create(username: str, label: str) -> dict[str, object]:
+        """Create an API key for one local admin user."""
+        user = await _require_user_by_username(services, username)
+        result = await _create_api_key_for_user(services, user_id=user.id, label=label)
+        return _emit_cli_result(result)
+
+    async def api_key_reveal(username: str, key_id: str) -> dict[str, object]:
+        """Reveal one API key owned by the named local user."""
+        user = await _require_user_by_username(services, username)
+        result = await _reveal_api_key_for_user(services, user_id=user.id, key_id=key_id)
+        return _emit_cli_result(result)
+
+    async def api_key_revoke(username: str, key_id: str) -> dict[str, object]:
+        """Revoke one API key owned by the named local user."""
+        user = await _require_user_by_username(services, username)
+        result = await _revoke_api_key_for_user(services, user_id=user.id, key_id=key_id)
+        return _emit_cli_result(result)
+
+    return [
+        ToolDefinition(api_key_list, "api_key_list"),
+        ToolDefinition(api_key_create, "api_key_create"),
+        ToolDefinition(api_key_reveal, "api_key_reveal"),
+        ToolDefinition(api_key_revoke, "api_key_revoke"),
+    ]
+
+
+def _build_mcp_api_key_tools(services: AdminServices) -> list[ToolDefinition]:
+    """Build authenticated MCP tools for current-user API key management."""
+
+    async def api_key_list_me(ctx: Context) -> list[dict[str, object]]:
+        """List API keys for the authenticated MCP user."""
+        user = await _require_mcp_user(services, ctx)
+        return [_serialize_api_key(item) for item in await services.admin_store.list_api_keys_for_user(user.id)]
+
+    async def api_key_create_me(label: str, ctx: Context) -> dict[str, object]:
+        """Create an API key for the authenticated MCP user."""
+        user = await _require_mcp_user(services, ctx)
+        return await _create_api_key_for_user(services, user_id=user.id, label=label)
+
+    async def api_key_reveal_me(key_id: str, ctx: Context) -> dict[str, object]:
+        """Reveal one API key owned by the authenticated MCP user."""
+        user = await _require_mcp_user(services, ctx)
+        return await _reveal_api_key_for_user(services, user_id=user.id, key_id=key_id)
+
+    async def api_key_revoke_me(key_id: str, ctx: Context) -> dict[str, object]:
+        """Revoke one API key owned by the authenticated MCP user."""
+        user = await _require_mcp_user(services, ctx)
+        return await _revoke_api_key_for_user(services, user_id=user.id, key_id=key_id)
+
+    return [
+        ToolDefinition(api_key_list_me, "api_key_list"),
+        ToolDefinition(api_key_create_me, "api_key_create"),
+        ToolDefinition(api_key_reveal_me, "api_key_reveal"),
+        ToolDefinition(api_key_revoke_me, "api_key_revoke"),
+    ]
+
+
+async def _require_user_by_username(services: AdminServices, username: str):
+    """Return an active admin user by username or raise a friendly error."""
+    admin_store = services.admin_store
+    if admin_store is None:
+        raise RuntimeError("Admin store is not ready yet.")
+    user = await admin_store.get_user_by_username(username.strip())
+    if user is None or not user.is_active:
+        raise ValueError(f"User '{username}' was not found.")
+    return user
+
+
+async def _require_mcp_user(services: AdminServices, ctx: Context):
+    """Return the authenticated MCP user for the current request."""
+    admin_store = services.admin_store
+    if admin_store is None:
+        raise RuntimeError("Admin store is not ready yet.")
+    access_token = get_access_token()
+    if access_token is None:
+        raise RuntimeError("Authenticated MCP API key required.")
+    user_id = str(access_token.claims.get("user_id", "")).strip()
+    if not user_id:
+        raise RuntimeError("Authenticated MCP token is missing a user id.")
+    user = await admin_store.get_user_by_id(user_id)
+    if user is None or not user.is_active:
+        raise RuntimeError("Authenticated MCP user is no longer active.")
+    return user
+
+
+async def _create_api_key_for_user(
+    services: AdminServices,
+    *,
+    user_id: str,
+    label: str,
+) -> dict[str, object]:
+    """Create one API key for a target user and return revealable metadata."""
+    admin_store = services.admin_store
+    if admin_store is None:
+        raise RuntimeError("Admin store is not ready yet.")
+    clean_label = label.strip()
+    if not clean_label:
+        raise ValueError("API key label is required.")
+    generated = generate_api_key()
+    api_key = await admin_store.create_api_key(
+        user_id=user_id,
+        label=clean_label,
+        key_id=generated.key_id,
+        preview=generated.preview,
+        secret_hash=hash_api_key_secret(generated.secret),
+        key_value=generated.token,
+    )
+    result = _serialize_api_key(api_key)
+    result["api_key"] = generated.token
+    return result
+
+
+async def _reveal_api_key_for_user(
+    services: AdminServices,
+    *,
+    user_id: str,
+    key_id: str,
+) -> dict[str, object]:
+    """Reveal one API key if it belongs to the target user."""
+    api_key = await _require_owned_api_key(services, user_id=user_id, key_id=key_id)
+    revealed = await services.admin_store.reveal_api_key(api_key.id)
+    if revealed is None:
+        raise ValueError(f"API key '{key_id}' was not found.")
+    result = _serialize_api_key(api_key)
+    result["api_key"] = revealed
+    return result
+
+
+async def _revoke_api_key_for_user(
+    services: AdminServices,
+    *,
+    user_id: str,
+    key_id: str,
+) -> dict[str, object]:
+    """Revoke one API key if it belongs to the target user."""
+    admin_store = services.admin_store
+    if admin_store is None:
+        raise RuntimeError("Admin store is not ready yet.")
+    api_key = await _require_owned_api_key(services, user_id=user_id, key_id=key_id)
+    updated = await admin_store.revoke_api_key(api_key.id)
+    if updated is None:
+        raise ValueError(f"API key '{key_id}' was not found.")
+    return _serialize_api_key(updated)
+
+
+async def _require_owned_api_key(
+    services: AdminServices,
+    *,
+    user_id: str,
+    key_id: str,
+):
+    """Return one API key when it belongs to the requested user."""
+    admin_store = services.admin_store
+    if admin_store is None:
+        raise RuntimeError("Admin store is not ready yet.")
+    api_key = await admin_store.get_api_key_by_key_id(key_id.strip())
+    if api_key is None or api_key.user_id != user_id:
+        raise ValueError(f"API key '{key_id}' was not found.")
+    return api_key
+
+
+def _serialize_api_key(api_key) -> dict[str, object]:
+    """Project one API key dataclass into a tool-friendly dict."""
+    return asdict(api_key)
+
+
+def _emit_cli_result(result):
+    """Print a JSON-formatted CLI result and return it for tests."""
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return result
 
 
 if __name__ == "__main__":

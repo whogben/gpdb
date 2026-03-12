@@ -253,6 +253,18 @@ class AdminStore:
             return None
         return _admin_api_key_from_node(node)
 
+    async def get_api_key_by_key_id(self, key_id: str) -> AdminAPIKey | None:
+        """Return one API key by its public identifier."""
+        node = await self._get_node_by_filters(
+            [
+                Filter(field="type", value=API_KEY_NODE_TYPE),
+                Filter(field="data.key_id", value=key_id),
+            ]
+        )
+        if node is None or not node.parent_id:
+            return None
+        return _admin_api_key_from_node(node)
+
     async def create_api_key(
         self,
         *,
