@@ -15,7 +15,13 @@ from fastapi.responses import JSONResponse
 from fastmcp import Context, FastMCP
 from fastmcp.server.auth import AccessToken, TokenVerifier
 from mcp.server.auth.middleware.auth_context import get_access_token
-from toolaccess import CLIServer, OpenAPIServer, SSEMCPServer as ToolaccessSSEMCPServer, ServerManager, ToolService
+from toolaccess import (
+    CLIServer,
+    OpenAPIServer,
+    SSEMCPServer as ToolaccessSSEMCPServer,
+    ServerManager,
+    ToolService,
+)
 from toolaccess import ToolDefinition
 from toolaccess.toolaccess import MountableApp
 
@@ -42,7 +48,9 @@ REST_API_PUBLIC_PATHS = frozenset(
 class SSEMCPServer(ToolaccessSSEMCPServer):
     """Toolaccess-compatible MCP server with optional bearer auth."""
 
-    def __init__(self, name: str = "default", auth_provider: TokenVerifier | None = None):
+    def __init__(
+        self, name: str = "default", auth_provider: TokenVerifier | None = None
+    ):
         self.name = name
         self.mcp = FastMCP(name, auth=auth_provider)
 
@@ -100,9 +108,15 @@ def create_manager(
         config_store=config_store,
     )
     admin_service = ToolService("admin", [status])
-    rest_graph_service = ToolService("admin-graph-api", _build_rest_graph_content_tools(services))
-    cli_graph_service = ToolService("admin-graph-cli", _build_cli_graph_content_tools(services))
-    mcp_graph_service = ToolService("admin-graph-mcp", _build_mcp_graph_content_tools(services))
+    rest_graph_service = ToolService(
+        "admin-graph-api", _build_rest_graph_content_tools(services)
+    )
+    cli_graph_service = ToolService(
+        "admin-graph-cli", _build_cli_graph_content_tools(services)
+    )
+    mcp_graph_service = ToolService(
+        "admin-graph-mcp", _build_mcp_graph_content_tools(services)
+    )
     cli_api_key_service = ToolService("admin-cli", _build_cli_api_key_tools(services))
     mcp_api_key_service = ToolService("admin-mcp", _build_mcp_api_key_tools(services))
 
@@ -145,7 +159,9 @@ def create_manager(
     return manager
 
 
-def bootstrap_runtime(argv: list[str] | None = None) -> tuple[ServerManager, ResolvedConfig, list[str]]:
+def bootstrap_runtime(
+    argv: list[str] | None = None,
+) -> tuple[ServerManager, ResolvedConfig, list[str]]:
     """Resolve config and create the runtime manager."""
     cli_args = list(sys.argv[1:] if argv is None else argv)
     config_arg, remaining_args = extract_config_arg(cli_args)
@@ -174,13 +190,17 @@ def _run_start_command(
     parser.add_argument("--port", type=int, default=resolved_config.server.port)
     args = parser.parse_args(argv)
 
-    print(f"Using config file: {resolved_config.location.path} ({resolved_config.location.source.value})")
+    print(
+        f"Using config file: {resolved_config.location.path} ({resolved_config.location.source.value})"
+    )
     print(f"Config writable: {'yes' if resolved_config.location.writable else 'no'}")
     print("🚀 gpdb-admin Server Starting...")
     print("---------------------------------------------------")
-    print(f"📋 OpenAPI:           http://{args.host}:{args.port}/docs")
+    print(f"📋 OpenAPI:           http://{args.host}:{args.port}/api/docs")
     for mcp_name in manager.mcp_servers:
-        print(f"🤖 MCP Server:        http://{args.host}:{args.port}/mcp/{mcp_name}/sse")
+        print(
+            f"🤖 MCP Server:        http://{args.host}:{args.port}/mcp/{mcp_name}/sse"
+        )
     for server in manager.active_servers.values():
         if isinstance(server, MountableApp):
             prefix = server.path_prefix if server.path_prefix else "/"
@@ -258,7 +278,9 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
         )
         return result.model_dump(mode="json")
 
-    async def graph_schema_get(graph_id: str, name: str, request: Request) -> dict[str, object]:
+    async def graph_schema_get(
+        graph_id: str, name: str, request: Request
+    ) -> dict[str, object]:
         """Return one graph schema for the authenticated REST user."""
         current_user = _require_rest_user(request)
         result = await _require_graph_content(services).get_graph_schema(
@@ -280,7 +302,9 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
         result = await _require_graph_content(services).create_graph_schema(
             graph_id=graph_id,
             name=name,
-            json_schema=_coerce_json_object_argument(json_schema, argument_name="json_schema"),
+            json_schema=_coerce_json_object_argument(
+                json_schema, argument_name="json_schema"
+            ),
             kind=kind,
             current_user=current_user,
         )
@@ -298,7 +322,9 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
         result = await _require_graph_content(services).update_graph_schema(
             graph_id=graph_id,
             name=name,
-            json_schema=_coerce_json_object_argument(json_schema, argument_name="json_schema"),
+            json_schema=_coerce_json_object_argument(
+                json_schema, argument_name="json_schema"
+            ),
             kind=kind,
             current_user=current_user,
         )
@@ -572,7 +598,9 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
         ToolDefinition(graph_node_create, "graph_node_create"),
         ToolDefinition(graph_node_update, "graph_node_update"),
         ToolDefinition(graph_node_delete, "graph_node_delete"),
-        ToolDefinition(graph_node_payload_get, "graph_node_payload_get", http_method="GET"),
+        ToolDefinition(
+            graph_node_payload_get, "graph_node_payload_get", http_method="GET"
+        ),
         ToolDefinition(graph_node_payload_set, "graph_node_payload_set"),
         ToolDefinition(graph_edge_list, "graph_edge_list", http_method="GET"),
         ToolDefinition(graph_edge_get, "graph_edge_get", http_method="GET"),
@@ -624,7 +652,9 @@ def _build_cli_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         result = await _require_graph_content(services).create_graph_schema(
             graph_id=graph_id,
             name=name,
-            json_schema=_coerce_json_object_argument(json_schema, argument_name="json_schema"),
+            json_schema=_coerce_json_object_argument(
+                json_schema, argument_name="json_schema"
+            ),
             kind=kind,
             current_user=None,
             allow_local_system=True,
@@ -641,7 +671,9 @@ def _build_cli_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         result = await _require_graph_content(services).update_graph_schema(
             graph_id=graph_id,
             name=name,
-            json_schema=_coerce_json_object_argument(json_schema, argument_name="json_schema"),
+            json_schema=_coerce_json_object_argument(
+                json_schema, argument_name="json_schema"
+            ),
             kind=kind,
             current_user=None,
             allow_local_system=True,
@@ -924,7 +956,9 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         )
         return result.model_dump(mode="json")
 
-    async def graph_schema_get(graph_id: str, name: str, ctx: Context) -> dict[str, object]:
+    async def graph_schema_get(
+        graph_id: str, name: str, ctx: Context
+    ) -> dict[str, object]:
         """Return one graph schema for the authenticated MCP user."""
         current_user = await _require_mcp_user(services, ctx)
         result = await _require_graph_content(services).get_graph_schema(
@@ -946,7 +980,9 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         result = await _require_graph_content(services).create_graph_schema(
             graph_id=graph_id,
             name=name,
-            json_schema=_coerce_json_object_argument(json_schema, argument_name="json_schema"),
+            json_schema=_coerce_json_object_argument(
+                json_schema, argument_name="json_schema"
+            ),
             kind=kind,
             current_user=current_user,
         )
@@ -964,7 +1000,9 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         result = await _require_graph_content(services).update_graph_schema(
             graph_id=graph_id,
             name=name,
-            json_schema=_coerce_json_object_argument(json_schema, argument_name="json_schema"),
+            json_schema=_coerce_json_object_argument(
+                json_schema, argument_name="json_schema"
+            ),
             kind=kind,
             current_user=current_user,
         )
@@ -1254,7 +1292,10 @@ def _build_cli_api_key_tools(services: AdminServices) -> list[ToolDefinition]:
     async def api_key_list(username: str) -> list[dict[str, object]]:
         """List API keys for one local admin user."""
         user = await _require_user_by_username(services, username)
-        result = [_serialize_api_key(item) for item in await services.admin_store.list_api_keys_for_user(user.id)]
+        result = [
+            _serialize_api_key(item)
+            for item in await services.admin_store.list_api_keys_for_user(user.id)
+        ]
         return _emit_cli_result(result)
 
     async def api_key_create(username: str, label: str) -> dict[str, object]:
@@ -1266,13 +1307,17 @@ def _build_cli_api_key_tools(services: AdminServices) -> list[ToolDefinition]:
     async def api_key_reveal(username: str, key_id: str) -> dict[str, object]:
         """Reveal one API key owned by the named local user."""
         user = await _require_user_by_username(services, username)
-        result = await _reveal_api_key_for_user(services, user_id=user.id, key_id=key_id)
+        result = await _reveal_api_key_for_user(
+            services, user_id=user.id, key_id=key_id
+        )
         return _emit_cli_result(result)
 
     async def api_key_revoke(username: str, key_id: str) -> dict[str, object]:
         """Revoke one API key owned by the named local user."""
         user = await _require_user_by_username(services, username)
-        result = await _revoke_api_key_for_user(services, user_id=user.id, key_id=key_id)
+        result = await _revoke_api_key_for_user(
+            services, user_id=user.id, key_id=key_id
+        )
         return _emit_cli_result(result)
 
     return [
@@ -1289,7 +1334,10 @@ def _build_mcp_api_key_tools(services: AdminServices) -> list[ToolDefinition]:
     async def api_key_list_me(ctx: Context) -> list[dict[str, object]]:
         """List API keys for the authenticated MCP user."""
         user = await _require_mcp_user(services, ctx)
-        return [_serialize_api_key(item) for item in await services.admin_store.list_api_keys_for_user(user.id)]
+        return [
+            _serialize_api_key(item)
+            for item in await services.admin_store.list_api_keys_for_user(user.id)
+        ]
 
     async def api_key_create_me(label: str, ctx: Context) -> dict[str, object]:
         """Create an API key for the authenticated MCP user."""
