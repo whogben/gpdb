@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-copy">
+    <p class="eyebrow">Nodes</p>
+    <h1>{{ node_list.graph.display_name }}</h1>
+    <p class="hero-text">
+      Browse nodes in this graph, inspect stored metadata, and create new records with
+      schema-validated JSON data.
+    </p>
+    <div class="button-row">
+      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_overview_page', graph_id=node_list.graph.id) }}">Back to overview</a>
+      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_schema_list_page', graph_id=node_list.graph.id) }}">Schemas</a>
+      {% if current_user.is_owner %}
+      <a class="button" href="{{ web_app.url_path_for('graph_node_create_page', graph_id=node_list.graph.id) }}">New node</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="hero-panel">
+    <h2>Browse summary</h2>
+    <ul class="feature-list">
+      <li>{{ node_list.total }} node{{ "" if node_list.total == 1 else "s" }} matched.</li>
+      <li>Instance: {{ node_list.instance.display_name }}.</li>
+      <li>Prefix: {{ node_list.graph.table_prefix_label }}.</li>
+      <li>Showing {{ node_list.offset + 1 if node_list.total else 0 }}-{{ [node_list.offset + node_list.limit, node_list.total] | min }}.</li>
+    </ul>
+  </div>
+</section>
+
+{% if error_message %}
+<p class="form-error">{{ error_message }}</p>
+{% endif %}
+{% if success_message %}
+<p class="form-success">{{ success_message }}</p>
+{% endif %}
+
+<section class="dashboard-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Browse</p>
+      <h2>Filters</h2>
+    </div>
+  </div>
+
+  <article class="resource-card">
+    <form class="auth-form" action="{{ web_app.url_path_for('graph_node_list_page', graph_id=node_list.graph.id) }}" method="get">
+      <label class="field">
+        <span>Type</span>
+        <input name="type" value="{{ filter_form.type }}">
+      </label>
+
+      <label class="field">
+        <span>Schema name</span>
+        <input name="schema_name" value="{{ filter_form.schema_name }}">
+      </label>
+
+      <label class="field">
+        <span>Parent ID</span>
+        <input name="parent_id" value="{{ filter_form.parent_id }}">
+      </label>
+
+      <label class="field">
+        <span>Sort</span>
+        <select name="sort">
+          {% for value, label in sort_options %}
+          <option value="{{ value }}" {% if filter_form.sort == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label class="field">
+        <span>Page size</span>
+        <select name="limit">
+          {% for option in (10, 20, 50, 100) %}
+          <option value="{{ option }}" {% if filter_form.limit == option %}selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <input type="hidden" name="offset" value="0">
+
+      <div class="button-row">
+        <button class="button" type="submit">Apply filters</button>
+        <a class="button button-secondary" href="{{ clear_filters_url }}">Clear</a>
+      </div>
+    </form>
+  </article>
+</section>
+
+<section class="dashboard-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Results</p>
+      <h2>Node list</h2>
+    </div>
+    {% if current_user.is_owner %}
+    <a class="button" href="{{ web_app.url_path_for('graph_node_create_page', graph_id=node_list.graph.id) }}">New node</a>
+    {% endif %}
+  </div>
+
+  <div class="card-grid">
+    {% for node in node_list["items"] %}
+    <article class="resource-card">
+      <div class="resource-header">
+        <div>
+          <h3>{{ node.name or node.id }}</h3>
+          <p class="resource-subtitle">{{ node.type }}</p>
+        </div>
+      </div>
+      <dl class="resource-meta">
+        <div>
+          <dt>Schema</dt>
+          <dd>{{ node.schema_name or "none" }}</dd>
+        </div>
+        <div>
+          <dt>Parent</dt>
+          <dd>{{ node.parent_id or "none" }}</dd>
+        </div>
+        <div>
+          <dt>Payload</dt>
+          <dd>{{ node.payload_size }} bytes</dd>
+        </div>
+        <div>
+          <dt>Version</dt>
+          <dd>{{ node.version }}</dd>
+        </div>
+      </dl>
+      {% if node.tags %}
+      <p class="resource-note">Tags: {{ node.tags | join(", ") }}</p>
+      {% endif %}
+      <div class="button-row">
+        <a class="button button-secondary" href="{{ web_app.url_path_for('graph_node_detail_page', graph_id=node_list.graph.id, node_id=node.id) }}">Open</a>
+      </div>
+    </article>
+    {% else %}
+    <article class="resource-card resource-card-empty">
+      <h3>No nodes matched</h3>
+      <p class="resource-note">
+        Adjust the current filters or create the first node for this graph.
+      </p>
+    </article>
+    {% endfor %}
+  </div>
+
+  {% if previous_url or next_url %}
+  <div class="button-row">
+    {% if previous_url %}
+    <a class="button button-secondary" href="{{ previous_url }}">Previous page</a>
+    {% endif %}
+    {% if next_url %}
+    <a class="button button-secondary" href="{{ next_url }}">Next page</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

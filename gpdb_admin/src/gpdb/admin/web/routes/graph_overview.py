@@ -10,6 +10,7 @@ from gpdb.admin.web.routes.common import (
     redirect_with_message,
     render,
     require_authenticated_user,
+    require_graph_content_service,
 )
 
 
@@ -23,17 +24,8 @@ async def graph_overview_page(request: Request, graph_id: str) -> HTMLResponse:
     if isinstance(current_user, RedirectResponse):
         return current_user
 
-    services = request.app.state.services
-    graph_content = services.graph_content
-    if graph_content is None:
-        return redirect_with_message(
-            request,
-            "home",
-            error="Graph content service is not ready yet.",
-        )
-
     try:
-        overview = await graph_content.get_graph_overview(
+        overview = await require_graph_content_service(request).get_graph_overview(
             graph_id=graph_id,
             current_user=current_user,
         )

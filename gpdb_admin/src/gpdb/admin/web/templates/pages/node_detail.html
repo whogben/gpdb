@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-copy">
+    <p class="eyebrow">Node Detail</p>
+    <h1>{{ node_detail.node.name or node_detail.node.id }}</h1>
+    <p class="hero-text">
+      Type <strong>{{ node_detail.node.type }}</strong> on
+      <strong>{{ node_detail.graph.display_name }}</strong>.
+    </p>
+    <div class="button-row">
+      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_node_list_page', graph_id=node_detail.graph.id) }}">Back to nodes</a>
+      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_overview_page', graph_id=node_detail.graph.id) }}">Graph overview</a>
+      {% if current_user.is_owner %}
+      <a class="button" href="{{ web_app.url_path_for('graph_node_create_page', graph_id=node_detail.graph.id) }}">Create node</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="hero-panel">
+    <h2>Summary</h2>
+    <ul class="feature-list">
+      <li>Schema: {{ node_detail.node.schema_name or "none" }}.</li>
+      <li>Parent: {{ node_detail.node.parent_id or "none" }}.</li>
+      <li>Payload size: {{ node_detail.node.payload_size }} bytes.</li>
+      <li>Tags: {{ node_detail.node.tags | length }}.</li>
+    </ul>
+  </div>
+</section>
+
+{% if error_message %}
+<p class="form-error">{{ error_message }}</p>
+{% endif %}
+{% if success_message %}
+<p class="form-success">{{ success_message }}</p>
+{% endif %}
+
+<section class="dashboard-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Record</p>
+      <h2>Metadata</h2>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    <article class="resource-card">
+      <div class="resource-header">
+        <div>
+          <h3>{{ node_detail.node.name or node_detail.node.id }}</h3>
+          <p class="resource-subtitle">{{ node_detail.node.type }}</p>
+        </div>
+      </div>
+      <dl class="resource-meta">
+        <div>
+          <dt>Node ID</dt>
+          <dd>{{ node_detail.node.id }}</dd>
+        </div>
+        <div>
+          <dt>Owner</dt>
+          <dd>{{ node_detail.node.owner_id or "none" }}</dd>
+        </div>
+        <div>
+          <dt>Parent</dt>
+          <dd>{{ node_detail.node.parent_id or "none" }}</dd>
+        </div>
+        <div>
+          <dt>Schema</dt>
+          <dd>{{ node_detail.node.schema_name or "none" }}</dd>
+        </div>
+        <div>
+          <dt>Version</dt>
+          <dd>{{ node_detail.node.version }}</dd>
+        </div>
+        <div>
+          <dt>Created</dt>
+          <dd>{{ node_detail.node.created_at }}</dd>
+        </div>
+        <div>
+          <dt>Updated</dt>
+          <dd>{{ node_detail.node.updated_at }}</dd>
+        </div>
+        <div>
+          <dt>Payload MIME</dt>
+          <dd>{{ node_detail.node.payload_mime or "none" }}</dd>
+        </div>
+      </dl>
+      {% if node_detail.node.tags %}
+      <p class="resource-note">Tags: {{ node_detail.node.tags | join(", ") }}</p>
+      {% else %}
+      <p class="resource-note">No tags are currently stored on this node.</p>
+      {% endif %}
+      {% if node_detail.node.has_payload %}
+      <p class="resource-note">A binary payload is stored on this node.</p>
+      {% else %}
+      <p class="resource-note">No binary payload is stored on this node.</p>
+      {% endif %}
+    </article>
+
+    <article class="resource-card">
+      <div class="resource-header">
+        <div>
+          <h3>JSON Data</h3>
+          <p class="resource-subtitle">Stored node body</p>
+        </div>
+      </div>
+      <pre class="code-block">{{ node_json }}</pre>
+    </article>
+  </div>
+</section>
+{% endblock %}

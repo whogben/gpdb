@@ -8,6 +8,7 @@ from fastapi import Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from gpdb.admin.auth import SESSION_COOKIE_NAME
+from gpdb.admin.graph_content import GraphContentNotReadyError
 
 
 def render(request: Request, template_name: str, **context) -> HTMLResponse:
@@ -88,3 +89,11 @@ def redirect_with_message(
     if params:
         url = f"{url}?{urlencode(params)}"
     return RedirectResponse(url=url, status_code=status.HTTP_303_SEE_OTHER)
+
+
+def require_graph_content_service(request: Request):
+    """Return the shared graph-content service once startup has completed."""
+    graph_content = request.app.state.services.graph_content
+    if graph_content is None:
+        raise GraphContentNotReadyError("Graph content service is not ready yet.")
+    return graph_content

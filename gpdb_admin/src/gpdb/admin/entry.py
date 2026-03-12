@@ -243,8 +243,145 @@ def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinit
         )
         return result.model_dump(mode="json")
 
+    async def graph_schema_list(graph_id: str, request: Request) -> dict[str, object]:
+        """List graph schemas for the authenticated REST user."""
+        current_user = _require_rest_user(request)
+        result = await _require_graph_content(services).list_graph_schemas(
+            graph_id=graph_id,
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json")
+
+    async def graph_schema_get(graph_id: str, name: str, request: Request) -> dict[str, object]:
+        """Return one graph schema for the authenticated REST user."""
+        current_user = _require_rest_user(request)
+        result = await _require_graph_content(services).get_graph_schema(
+            graph_id=graph_id,
+            name=name,
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
+    async def graph_schema_create(
+        graph_id: str,
+        name: str,
+        json_schema: dict[str, object],
+        request: Request,
+    ) -> dict[str, object]:
+        """Create one graph schema for the authenticated REST user."""
+        current_user = _require_rest_user(request)
+        result = await _require_graph_content(services).create_graph_schema(
+            graph_id=graph_id,
+            name=name,
+            json_schema=_coerce_json_object_argument(json_schema, argument_name="json_schema"),
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
+    async def graph_schema_update(
+        graph_id: str,
+        name: str,
+        json_schema: dict[str, object],
+        request: Request,
+    ) -> dict[str, object]:
+        """Update one graph schema for the authenticated REST user."""
+        current_user = _require_rest_user(request)
+        result = await _require_graph_content(services).update_graph_schema(
+            graph_id=graph_id,
+            name=name,
+            json_schema=_coerce_json_object_argument(json_schema, argument_name="json_schema"),
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
+    async def graph_schema_delete(
+        graph_id: str,
+        name: str,
+        request: Request,
+    ) -> dict[str, object]:
+        """Delete one graph schema for the authenticated REST user."""
+        current_user = _require_rest_user(request)
+        result = await _require_graph_content(services).delete_graph_schema(
+            graph_id=graph_id,
+            name=name,
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
+    async def graph_node_list(
+        graph_id: str,
+        request: Request,
+        type: str = "",
+        schema_name: str = "",
+        parent_id: str = "",
+        limit: int = 50,
+        offset: int = 0,
+        sort: str = "created_at_desc",
+    ) -> dict[str, object]:
+        """List graph nodes for the authenticated REST user."""
+        current_user = _require_rest_user(request)
+        result = await _require_graph_content(services).list_graph_nodes(
+            graph_id=graph_id,
+            current_user=current_user,
+            type=type,
+            schema_name=schema_name,
+            parent_id=parent_id,
+            limit=limit,
+            offset=offset,
+            sort=sort,
+        )
+        return result.model_dump(mode="json")
+
+    async def graph_node_get(
+        graph_id: str,
+        node_id: str,
+        request: Request,
+    ) -> dict[str, object]:
+        """Return one graph node for the authenticated REST user."""
+        current_user = _require_rest_user(request)
+        result = await _require_graph_content(services).get_graph_node(
+            graph_id=graph_id,
+            node_id=node_id,
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
+    async def graph_node_create(
+        graph_id: str,
+        type: str,
+        data: dict[str, object],
+        request: Request,
+        name: str = "",
+        schema_name: str = "",
+        owner_id: str = "",
+        parent_id: str = "",
+        tags: str = "",
+    ) -> dict[str, object]:
+        """Create one graph node for the authenticated REST user."""
+        current_user = _require_rest_user(request)
+        result = await _require_graph_content(services).create_graph_node(
+            graph_id=graph_id,
+            type=type,
+            name=name,
+            schema_name=schema_name,
+            owner_id=owner_id,
+            parent_id=parent_id,
+            tags=_coerce_tags_argument(tags),
+            data=_coerce_json_object_argument(data, argument_name="data"),
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
     return [
         ToolDefinition(graph_overview, "graph_overview", http_method="GET"),
+        ToolDefinition(graph_schema_list, "graph_schema_list", http_method="GET"),
+        ToolDefinition(graph_schema_get, "graph_schema_get", http_method="GET"),
+        ToolDefinition(graph_schema_create, "graph_schema_create"),
+        ToolDefinition(graph_schema_update, "graph_schema_update"),
+        ToolDefinition(graph_schema_delete, "graph_schema_delete"),
+        ToolDefinition(graph_node_list, "graph_node_list", http_method="GET"),
+        ToolDefinition(graph_node_get, "graph_node_get", http_method="GET"),
+        ToolDefinition(graph_node_create, "graph_node_create"),
     ]
 
 
@@ -260,8 +397,136 @@ def _build_cli_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         )
         return _emit_cli_result(result.model_dump(mode="json"))
 
+    async def graph_schema_list(graph_id: str) -> dict[str, object]:
+        """List graph schemas for trusted local CLI use."""
+        result = await _require_graph_content(services).list_graph_schemas(
+            graph_id=graph_id,
+            current_user=None,
+            allow_local_system=True,
+        )
+        return _emit_cli_result(result.model_dump(mode="json"))
+
+    async def graph_schema_get(graph_id: str, name: str) -> dict[str, object]:
+        """Return one graph schema for trusted local CLI use."""
+        result = await _require_graph_content(services).get_graph_schema(
+            graph_id=graph_id,
+            name=name,
+            current_user=None,
+            allow_local_system=True,
+        )
+        return _emit_cli_result(result.model_dump(mode="json", by_alias=True))
+
+    async def graph_schema_create(
+        graph_id: str,
+        name: str,
+        json_schema: str,
+    ) -> dict[str, object]:
+        """Create one graph schema for trusted local CLI use."""
+        result = await _require_graph_content(services).create_graph_schema(
+            graph_id=graph_id,
+            name=name,
+            json_schema=_coerce_json_object_argument(json_schema, argument_name="json_schema"),
+            current_user=None,
+            allow_local_system=True,
+        )
+        return _emit_cli_result(result.model_dump(mode="json", by_alias=True))
+
+    async def graph_schema_update(
+        graph_id: str,
+        name: str,
+        json_schema: str,
+    ) -> dict[str, object]:
+        """Update one graph schema for trusted local CLI use."""
+        result = await _require_graph_content(services).update_graph_schema(
+            graph_id=graph_id,
+            name=name,
+            json_schema=_coerce_json_object_argument(json_schema, argument_name="json_schema"),
+            current_user=None,
+            allow_local_system=True,
+        )
+        return _emit_cli_result(result.model_dump(mode="json", by_alias=True))
+
+    async def graph_schema_delete(
+        graph_id: str,
+        name: str,
+    ) -> dict[str, object]:
+        """Delete one graph schema for trusted local CLI use."""
+        result = await _require_graph_content(services).delete_graph_schema(
+            graph_id=graph_id,
+            name=name,
+            current_user=None,
+            allow_local_system=True,
+        )
+        return _emit_cli_result(result.model_dump(mode="json", by_alias=True))
+
+    async def graph_node_list(
+        graph_id: str,
+        type: str = "",
+        schema_name: str = "",
+        parent_id: str = "",
+        limit: int = 50,
+        offset: int = 0,
+        sort: str = "created_at_desc",
+    ) -> dict[str, object]:
+        """List graph nodes for trusted local CLI use."""
+        result = await _require_graph_content(services).list_graph_nodes(
+            graph_id=graph_id,
+            current_user=None,
+            allow_local_system=True,
+            type=type,
+            schema_name=schema_name,
+            parent_id=parent_id,
+            limit=limit,
+            offset=offset,
+            sort=sort,
+        )
+        return _emit_cli_result(result.model_dump(mode="json"))
+
+    async def graph_node_get(graph_id: str, node_id: str) -> dict[str, object]:
+        """Return one graph node for trusted local CLI use."""
+        result = await _require_graph_content(services).get_graph_node(
+            graph_id=graph_id,
+            node_id=node_id,
+            current_user=None,
+            allow_local_system=True,
+        )
+        return _emit_cli_result(result.model_dump(mode="json", by_alias=True))
+
+    async def graph_node_create(
+        graph_id: str,
+        type: str,
+        data: str,
+        name: str = "",
+        schema_name: str = "",
+        owner_id: str = "",
+        parent_id: str = "",
+        tags: str = "",
+    ) -> dict[str, object]:
+        """Create one graph node for trusted local CLI use."""
+        result = await _require_graph_content(services).create_graph_node(
+            graph_id=graph_id,
+            type=type,
+            name=name,
+            schema_name=schema_name,
+            owner_id=owner_id,
+            parent_id=parent_id,
+            tags=_coerce_tags_argument(tags),
+            data=_coerce_json_object_argument(data, argument_name="data"),
+            current_user=None,
+            allow_local_system=True,
+        )
+        return _emit_cli_result(result.model_dump(mode="json", by_alias=True))
+
     return [
         ToolDefinition(graph_overview, "graph_overview"),
+        ToolDefinition(graph_schema_list, "graph_schema_list"),
+        ToolDefinition(graph_schema_get, "graph_schema_get"),
+        ToolDefinition(graph_schema_create, "graph_schema_create"),
+        ToolDefinition(graph_schema_update, "graph_schema_update"),
+        ToolDefinition(graph_schema_delete, "graph_schema_delete"),
+        ToolDefinition(graph_node_list, "graph_node_list"),
+        ToolDefinition(graph_node_get, "graph_node_get"),
+        ToolDefinition(graph_node_create, "graph_node_create"),
     ]
 
 
@@ -277,8 +542,145 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         )
         return result.model_dump(mode="json")
 
+    async def graph_schema_list(graph_id: str, ctx: Context) -> dict[str, object]:
+        """List graph schemas for the authenticated MCP user."""
+        current_user = await _require_mcp_user(services, ctx)
+        result = await _require_graph_content(services).list_graph_schemas(
+            graph_id=graph_id,
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json")
+
+    async def graph_schema_get(graph_id: str, name: str, ctx: Context) -> dict[str, object]:
+        """Return one graph schema for the authenticated MCP user."""
+        current_user = await _require_mcp_user(services, ctx)
+        result = await _require_graph_content(services).get_graph_schema(
+            graph_id=graph_id,
+            name=name,
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
+    async def graph_schema_create(
+        graph_id: str,
+        name: str,
+        json_schema: dict[str, object],
+        ctx: Context,
+    ) -> dict[str, object]:
+        """Create one graph schema for the authenticated MCP user."""
+        current_user = await _require_mcp_user(services, ctx)
+        result = await _require_graph_content(services).create_graph_schema(
+            graph_id=graph_id,
+            name=name,
+            json_schema=_coerce_json_object_argument(json_schema, argument_name="json_schema"),
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
+    async def graph_schema_update(
+        graph_id: str,
+        name: str,
+        json_schema: dict[str, object],
+        ctx: Context,
+    ) -> dict[str, object]:
+        """Update one graph schema for the authenticated MCP user."""
+        current_user = await _require_mcp_user(services, ctx)
+        result = await _require_graph_content(services).update_graph_schema(
+            graph_id=graph_id,
+            name=name,
+            json_schema=_coerce_json_object_argument(json_schema, argument_name="json_schema"),
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
+    async def graph_schema_delete(
+        graph_id: str,
+        name: str,
+        ctx: Context,
+    ) -> dict[str, object]:
+        """Delete one graph schema for the authenticated MCP user."""
+        current_user = await _require_mcp_user(services, ctx)
+        result = await _require_graph_content(services).delete_graph_schema(
+            graph_id=graph_id,
+            name=name,
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
+    async def graph_node_list(
+        graph_id: str,
+        ctx: Context,
+        type: str = "",
+        schema_name: str = "",
+        parent_id: str = "",
+        limit: int = 50,
+        offset: int = 0,
+        sort: str = "created_at_desc",
+    ) -> dict[str, object]:
+        """List graph nodes for the authenticated MCP user."""
+        current_user = await _require_mcp_user(services, ctx)
+        result = await _require_graph_content(services).list_graph_nodes(
+            graph_id=graph_id,
+            current_user=current_user,
+            type=type,
+            schema_name=schema_name,
+            parent_id=parent_id,
+            limit=limit,
+            offset=offset,
+            sort=sort,
+        )
+        return result.model_dump(mode="json")
+
+    async def graph_node_get(
+        graph_id: str,
+        node_id: str,
+        ctx: Context,
+    ) -> dict[str, object]:
+        """Return one graph node for the authenticated MCP user."""
+        current_user = await _require_mcp_user(services, ctx)
+        result = await _require_graph_content(services).get_graph_node(
+            graph_id=graph_id,
+            node_id=node_id,
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
+    async def graph_node_create(
+        graph_id: str,
+        type: str,
+        data: dict[str, object],
+        ctx: Context,
+        name: str = "",
+        schema_name: str = "",
+        owner_id: str = "",
+        parent_id: str = "",
+        tags: str = "",
+    ) -> dict[str, object]:
+        """Create one graph node for the authenticated MCP user."""
+        current_user = await _require_mcp_user(services, ctx)
+        result = await _require_graph_content(services).create_graph_node(
+            graph_id=graph_id,
+            type=type,
+            name=name,
+            schema_name=schema_name,
+            owner_id=owner_id,
+            parent_id=parent_id,
+            tags=_coerce_tags_argument(tags),
+            data=_coerce_json_object_argument(data, argument_name="data"),
+            current_user=current_user,
+        )
+        return result.model_dump(mode="json", by_alias=True)
+
     return [
         ToolDefinition(graph_overview, "graph_overview"),
+        ToolDefinition(graph_schema_list, "graph_schema_list"),
+        ToolDefinition(graph_schema_get, "graph_schema_get"),
+        ToolDefinition(graph_schema_create, "graph_schema_create"),
+        ToolDefinition(graph_schema_update, "graph_schema_update"),
+        ToolDefinition(graph_schema_delete, "graph_schema_delete"),
+        ToolDefinition(graph_node_list, "graph_node_list"),
+        ToolDefinition(graph_node_get, "graph_node_get"),
+        ToolDefinition(graph_node_create, "graph_node_create"),
     ]
 
 
@@ -477,6 +879,38 @@ def _emit_cli_result(result):
     """Print a JSON-formatted CLI result and return it for tests."""
     print(json.dumps(result, indent=2, sort_keys=True))
     return result
+
+
+def _coerce_json_object_argument(raw_value, *, argument_name: str) -> dict[str, object]:
+    """Accept either a parsed dict or JSON text and return a JSON object."""
+    if isinstance(raw_value, dict):
+        return raw_value
+    if isinstance(raw_value, str):
+        text = raw_value.strip()
+        if not text:
+            raise ValueError(f"{argument_name} is required.")
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{argument_name} must be valid JSON: {exc.msg}.") from exc
+        if not isinstance(parsed, dict):
+            raise ValueError(f"{argument_name} must be a JSON object.")
+        return parsed
+    raise ValueError(f"{argument_name} must be a JSON object.")
+
+
+def _coerce_tags_argument(raw_value) -> list[str]:
+    """Accept blank values, comma-delimited text, or a string list."""
+    if raw_value is None:
+        return []
+    if isinstance(raw_value, list):
+        return [str(item).strip() for item in raw_value if str(item).strip()]
+    if isinstance(raw_value, str):
+        text = raw_value.strip()
+        if not text:
+            return []
+        return [item.strip() for item in text.split(",") if item.strip()]
+    raise ValueError("tags must be blank, comma-delimited text, or a list of strings.")
 
 
 if __name__ == "__main__":

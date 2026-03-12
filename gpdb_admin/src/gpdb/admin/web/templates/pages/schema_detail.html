@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-copy">
+    <p class="eyebrow">Schema Detail</p>
+    <h1>{{ schema_detail.schema.name }}</h1>
+    <p class="hero-text">
+      Version {{ schema_detail.schema.version }} on <strong>{{ schema_detail.graph.display_name }}</strong>.
+      Usage counts below show where this schema is currently attached in graph content.
+    </p>
+    <div class="button-row">
+      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_schema_list_page', graph_id=schema_detail.graph.id) }}">Back to schemas</a>
+      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_overview_page', graph_id=schema_detail.graph.id) }}">Graph overview</a>
+      {% if current_user.is_owner %}
+      <a class="button" href="{{ web_app.url_path_for('graph_schema_edit_page', graph_id=schema_detail.graph.id, schema_name=schema_detail.schema.name) }}">Edit schema</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="hero-panel">
+    <h2>Usage</h2>
+    <ul class="feature-list">
+      <li>{{ schema_detail.schema.usage.node_count }} node{{ "" if schema_detail.schema.usage.node_count == 1 else "s" }} reference this schema.</li>
+      <li>{{ schema_detail.schema.usage.edge_count }} edge{{ "" if schema_detail.schema.usage.edge_count == 1 else "s" }} reference this schema.</li>
+      <li>Instance: {{ schema_detail.instance.display_name }}.</li>
+      <li>Prefix: {{ schema_detail.graph.table_prefix_label }}.</li>
+    </ul>
+  </div>
+</section>
+
+{% if error_message %}
+<p class="form-error">{{ error_message }}</p>
+{% endif %}
+{% if success_message %}
+<p class="form-success">{{ success_message }}</p>
+{% endif %}
+
+<section class="dashboard-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Registry Record</p>
+      <h2>Metadata</h2>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    <article class="resource-card">
+      <div class="resource-header">
+        <div>
+          <h3>{{ schema_detail.schema.name }}</h3>
+          <p class="resource-subtitle">Version {{ schema_detail.schema.version }}</p>
+        </div>
+      </div>
+      <dl class="resource-meta">
+        <div>
+          <dt>Nodes</dt>
+          <dd>{{ schema_detail.schema.usage.node_count }}</dd>
+        </div>
+        <div>
+          <dt>Edges</dt>
+          <dd>{{ schema_detail.schema.usage.edge_count }}</dd>
+        </div>
+      </dl>
+      {% if schema_detail.schema.usage.sample_node_ids %}
+      <p class="resource-note">Sample node IDs: {{ schema_detail.schema.usage.sample_node_ids | join(", ") }}</p>
+      {% endif %}
+      {% if schema_detail.schema.usage.sample_edge_ids %}
+      <p class="resource-note">Sample edge IDs: {{ schema_detail.schema.usage.sample_edge_ids | join(", ") }}</p>
+      {% endif %}
+      {% if current_user.is_owner %}
+      <div class="button-row">
+        <a class="button button-secondary" href="{{ web_app.url_path_for('graph_schema_edit_page', graph_id=schema_detail.graph.id, schema_name=schema_detail.schema.name) }}">Edit schema</a>
+        <form class="inline-form" action="{{ web_app.url_path_for('graph_schema_delete', graph_id=schema_detail.graph.id, schema_name=schema_detail.schema.name) }}" method="post">
+          <button class="button button-danger" type="submit" {% if schema_detail.schema.usage.node_count or schema_detail.schema.usage.edge_count %}disabled{% endif %}>Delete schema</button>
+        </form>
+      </div>
+      <p class="resource-note">
+        {% if schema_detail.schema.usage.node_count or schema_detail.schema.usage.edge_count %}
+        Delete is blocked until all node and edge references are removed.
+        {% else %}
+        Delete is available because this schema is currently unused.
+        {% endif %}
+      </p>
+      {% endif %}
+    </article>
+
+    <article class="resource-card">
+      <div class="resource-header">
+        <div>
+          <h3>JSON Schema</h3>
+          <p class="resource-subtitle">Stored schema body</p>
+        </div>
+      </div>
+      <pre class="code-block">{{ schema_json }}</pre>
+    </article>
+  </div>
+</section>
+{% endblock %}

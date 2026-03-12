@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="auth-layout">
+  <div class="auth-copy">
+    <p class="eyebrow">Node</p>
+    <h1>Create a node for {{ overview.graph.display_name }}.</h1>
+    <p class="hero-text">
+      Create the first node-management slice with basic metadata, optional schema
+      attachment, and raw JSON data.
+    </p>
+    <ul class="feature-list">
+      <li>Graph: {{ overview.graph.display_name }}.</li>
+      <li>Instance: {{ overview.instance.display_name }}.</li>
+      <li>Prefix: {{ overview.graph.table_prefix_label }}.</li>
+    </ul>
+  </div>
+
+  <div class="auth-card">
+    <h2>New node</h2>
+    {% if error_message %}
+    <p class="form-error">{{ error_message }}</p>
+    {% endif %}
+    <form class="auth-form" action="{{ submit_url }}" method="post">
+      <label class="field">
+        <span>Type</span>
+        <input name="type" value="{{ (form_data or {}).get('type', '') }}" required>
+      </label>
+
+      <label class="field">
+        <span>Name</span>
+        <input name="name" value="{{ (form_data or {}).get('name', '') }}">
+      </label>
+
+      <label class="field">
+        <span>Schema</span>
+        <select name="schema_name">
+          <option value="">No schema</option>
+          {% for schema_name in schema_names %}
+          <option value="{{ schema_name }}" {% if (form_data or {}).get('schema_name', '') == schema_name %}selected{% endif %}>{{ schema_name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label class="field">
+        <span>Owner ID</span>
+        <input name="owner_id" value="{{ (form_data or {}).get('owner_id', '') }}">
+      </label>
+
+      <label class="field">
+        <span>Parent ID</span>
+        <input name="parent_id" value="{{ (form_data or {}).get('parent_id', '') }}">
+      </label>
+
+      <label class="field">
+        <span>Tags</span>
+        <input name="tags" value="{{ (form_data or {}).get('tags', '') }}" placeholder="alpha, beta">
+      </label>
+
+      <label class="field">
+        <span>JSON Data</span>
+        <textarea name="data" rows="14" required>{{ (form_data or {}).get('data', '') }}</textarea>
+      </label>
+
+      <div class="button-row">
+        <button class="button" type="submit">Create node</button>
+        <a class="button button-secondary" href="{{ web_app.url_path_for('graph_node_list_page', graph_id=overview.graph.id) }}">Back</a>
+      </div>
+    </form>
+  </div>
+</section>
+{% endblock %}

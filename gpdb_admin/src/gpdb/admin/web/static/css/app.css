@@ -167,6 +167,17 @@ a {
   font: inherit;
 }
 
+.field textarea {
+  width: 100%;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.85rem;
+  background: var(--page-bg);
+  color: var(--text-color);
+  font: inherit;
+  resize: vertical;
+}
+
 .field-checkbox {
   grid-template-columns: auto 1fr;
   align-items: center;
@@ -203,10 +214,19 @@ a {
   background: #c53d4b;
 }
 
+.button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .button-row {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
+}
+
+.inline-form {
+  margin: 0;
 }
 
 .form-error {
@@ -333,6 +353,18 @@ a {
 .status-disabled {
   background: rgba(103, 112, 124, 0.15);
   color: var(--muted-text);
+}
+
+.code-block {
+  margin: 0;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: var(--page-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 @media (max-width: 800px) {

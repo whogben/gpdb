@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-copy">
+    <p class="eyebrow">Schemas</p>
+    <h1>{{ schema_list.graph.display_name }}</h1>
+    <p class="hero-text">
+      Browse the registered JSON Schemas for this graph and open individual schema
+      details, including version and current usage across nodes and edges.
+    </p>
+    <div class="button-row">
+      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_overview_page', graph_id=schema_list.graph.id) }}">Back to overview</a>
+      {% if current_user.is_owner %}
+      <a class="button" href="{{ web_app.url_path_for('graph_schema_create_page', graph_id=schema_list.graph.id) }}">New schema</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="hero-panel">
+    <h2>Registry summary</h2>
+    <ul class="feature-list">
+      <li>{{ schema_list.total }} registered schema{{ "" if schema_list.total == 1 else "s" }}.</li>
+      <li>Instance: {{ schema_list.instance.display_name }}.</li>
+      <li>Prefix: {{ schema_list.graph.table_prefix_label }}.</li>
+      <li>Schema names are shared across nodes and edges.</li>
+    </ul>
+  </div>
+</section>
+
+{% if error_message %}
+<p class="form-error">{{ error_message }}</p>
+{% endif %}
+{% if success_message %}
+<p class="form-success">{{ success_message }}</p>
+{% endif %}
+
+<section class="dashboard-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Registry</p>
+      <h2>Schema list</h2>
+    </div>
+    {% if current_user.is_owner %}
+    <a class="button" href="{{ web_app.url_path_for('graph_schema_create_page', graph_id=schema_list.graph.id) }}">New schema</a>
+    {% endif %}
+  </div>
+
+  <div class="card-grid">
+    {% for schema in schema_list["items"] %}
+    <article class="resource-card">
+      <div class="resource-header">
+        <div>
+          <h3>{{ schema.name }}</h3>
+          <p class="resource-subtitle">Version {{ schema.version }}</p>
+        </div>
+      </div>
+      <dl class="resource-meta">
+        <div>
+          <dt>Nodes</dt>
+          <dd>{{ schema.usage.node_count }}</dd>
+        </div>
+        <div>
+          <dt>Edges</dt>
+          <dd>{{ schema.usage.edge_count }}</dd>
+        </div>
+      </dl>
+      <div class="button-row">
+        <a class="button button-secondary" href="{{ web_app.url_path_for('graph_schema_detail_page', graph_id=schema_list.graph.id, schema_name=schema.name) }}">Open</a>
+      </div>
+    </article>
+    {% else %}
+    <article class="resource-card resource-card-empty">
+      <h3>No schemas yet</h3>
+      <p class="resource-note">
+        Create the first schema to start validating graph content from the admin UI or tool surfaces.
+      </p>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

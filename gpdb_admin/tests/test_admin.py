@@ -408,6 +408,619 @@ def test_graph_overview_vertical_slice_across_surfaces(tmp_path):
     }
 
 
+def test_graph_schema_registry_vertical_slice_across_surfaces(tmp_path):
+    """Test schema browse/create flow across web, REST, CLI, and MCP."""
+    manager = _create_test_manager(tmp_path)
+    graph_id = ""
+    api_key_value = ""
+
+    with TestClient(manager.app) as client:
+        _bootstrap_owner(client)
+        _login(client)
+
+        response = client.get("/graphs/new")
+        assert response.status_code == 200
+        default_instance_id = _extract_instance_option_value(response.text, "Default instance")
+
+        response = client.post(
+            "/graphs",
+            data={
+                "instance_id": default_instance_id,
+                "table_prefix": "schema_slice",
+                "display_name": "Schema Slice",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+
+        graph = _read_graph_by_prefix(manager, table_prefix="schema_slice")
+        assert graph is not None
+        graph_id = graph.id
+
+        response = client.get(f"/graphs/{graph_id}/schemas/new")
+        assert response.status_code == 200
+        assert "Create a schema for Schema Slice." in response.text
+
+        response = client.post(
+            f"/graphs/{graph_id}/schemas",
+            data={
+                "name": "web_schema",
+                "json_schema": json.dumps(_schema_definition("web schema")),
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert response.headers["location"].startswith(f"/graphs/{graph_id}/schemas/web_schema")
+
+        _seed_schema_usage(manager, table_prefix="schema_slice", schema_name="web_schema")
+
+        response = client.post(
+            "/apikeys",
+            data={"label": "Schema slice key"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        api_key_detail_path = response.headers["location"]
+        response = client.get(api_key_detail_path)
+        assert response.status_code == 200
+        api_key_value = _extract_revealed_api_key(response.text)
+
+        response = client.post(
+            "/api/graph_schema_create",
+            params={"graph_id": graph_id, "name": "rest_schema"},
+            json=_schema_definition("rest schema"),
+            headers={"Authorization": f"Bearer {api_key_value}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["schema"]["name"] == "rest_schema"
+
+    cli_created = manager.cli(
+        [
+            "gpdb",
+            "graph_schema_create",
+            graph_id,
+            "cli_schema",
+            json.dumps(_schema_definition("cli schema")),
+        ],
+        standalone_mode=False,
+    )
+    assert cli_created["schema"]["name"] == "cli_schema"
+    assert cli_created["schema"]["version"] == "1.0.0"
+
+    mcp_created = _call_persisted_authenticated_mcp_tool(
+        manager,
+        api_key_value,
+        "graph_schema_create",
+        {
+            "graph_id": graph_id,
+            "name": "mcp_schema",
+            "json_schema": _schema_definition("mcp schema"),
+        },
+    )
+    assert mcp_created["schema"]["name"] == "mcp_schema"
+    assert mcp_created["schema"]["version"] == "1.0.0"
+
+    with TestClient(manager.app) as client:
+        _login(client)
+
+        response = client.get(f"/graphs/{graph_id}/schemas")
+        assert response.status_code == 200
+        assert "Schema Slice" in response.text
+        assert "web_schema" in response.text
+        assert "rest_schema" in response.text
+        assert "cli_schema" in response.text
+        assert "mcp_schema" in response.text
+
+        response = client.get(f"/graphs/{graph_id}/schemas/web_schema")
+        assert response.status_code == 200
+        assert "Version 1.0.0" in response.text
+        assert "1 node reference this schema." in response.text
+        assert "1 edge reference this schema." in response.text
+        assert "Sample node IDs:" in response.text
+        assert "Sample edge IDs:" in response.text
+
+        response = client.get(
+            "/api/graph_schema_list",
+            params={"graph_id": graph_id},
+            headers={"Authorization": f"Bearer {api_key_value}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["total"] == 4
+        assert {item["name"] for item in response.json()["items"]} == {
+            "cli_schema",
+            "mcp_schema",
+            "rest_schema",
+            "web_schema",
+        }
+
+        response = client.get(
+            "/api/graph_schema_get",
+            params={"graph_id": graph_id, "name": "web_schema"},
+            headers={"Authorization": f"Bearer {api_key_value}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["schema"]["usage"] == {
+            "node_count": 1,
+            "edge_count": 1,
+            "sample_node_ids": [response.json()["schema"]["usage"]["sample_node_ids"][0]],
+            "sample_edge_ids": [response.json()["schema"]["usage"]["sample_edge_ids"][0]],
+        }
+
+    cli_list = manager.cli(
+        ["gpdb", "graph_schema_list", graph_id],
+        standalone_mode=False,
+    )
+    assert cli_list["total"] == 4
+
+    cli_get = manager.cli(
+        ["gpdb", "graph_schema_get", graph_id, "rest_schema"],
+        standalone_mode=False,
+    )
+    assert cli_get["schema"]["name"] == "rest_schema"
+    assert cli_get["schema"]["json_schema"]["description"] == "rest schema"
+
+    mcp_list = _call_persisted_authenticated_mcp_tool(
+        manager,
+        api_key_value,
+        "graph_schema_list",
+        {"graph_id": graph_id},
+    )
+    assert mcp_list["total"] == 4
+
+    mcp_get = _call_persisted_authenticated_mcp_tool(
+        manager,
+        api_key_value,
+        "graph_schema_get",
+        {"graph_id": graph_id, "name": "web_schema"},
+    )
+    assert mcp_get["schema"]["usage"]["node_count"] == 1
+    assert mcp_get["schema"]["usage"]["edge_count"] == 1
+
+
+def test_graph_schema_update_and_delete_vertical_slice_across_surfaces(tmp_path):
+    """Test schema update/delete flow, blockers, and breaking-change rejection."""
+    manager = _create_test_manager(tmp_path)
+    graph_id = ""
+    api_key_value = ""
+
+    with TestClient(manager.app) as client:
+        _bootstrap_owner(client)
+        _login(client)
+
+        response = client.get("/graphs/new")
+        assert response.status_code == 200
+        default_instance_id = _extract_instance_option_value(response.text, "Default instance")
+
+        response = client.post(
+            "/graphs",
+            data={
+                "instance_id": default_instance_id,
+                "table_prefix": "schema_slice_phase2",
+                "display_name": "Schema Slice Phase 2",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+
+        graph = _read_graph_by_prefix(manager, table_prefix="schema_slice_phase2")
+        assert graph is not None
+        graph_id = graph.id
+
+        response = client.post(
+            f"/graphs/{graph_id}/schemas",
+            data={
+                "name": "web_schema",
+                "json_schema": json.dumps(_schema_definition("web schema")),
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+
+        response = client.post(
+            f"/graphs/{graph_id}/schemas",
+            data={
+                "name": "web_unused",
+                "json_schema": json.dumps(_schema_definition("web unused")),
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+
+        _seed_schema_usage(
+            manager,
+            table_prefix="schema_slice_phase2",
+            schema_name="web_schema",
+        )
+
+        response = client.post(
+            "/apikeys",
+            data={"label": "Schema phase 2 key"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        api_key_detail_path = response.headers["location"]
+        response = client.get(api_key_detail_path)
+        assert response.status_code == 200
+        api_key_value = _extract_revealed_api_key(response.text)
+
+        response = client.post(
+            "/api/graph_schema_create",
+            params={"graph_id": graph_id, "name": "rest_schema"},
+            json=_schema_definition("rest schema"),
+            headers={"Authorization": f"Bearer {api_key_value}"},
+        )
+        assert response.status_code == 200
+
+    cli_created = manager.cli(
+        [
+            "gpdb",
+            "graph_schema_create",
+            graph_id,
+            "cli_schema",
+            json.dumps(_schema_definition("cli schema")),
+        ],
+        standalone_mode=False,
+    )
+    assert cli_created["schema"]["name"] == "cli_schema"
+
+    mcp_created = _call_persisted_authenticated_mcp_tool(
+        manager,
+        api_key_value,
+        "graph_schema_create",
+        {
+            "graph_id": graph_id,
+            "name": "mcp_schema",
+            "json_schema": _schema_definition("mcp schema"),
+        },
+    )
+    assert mcp_created["schema"]["name"] == "mcp_schema"
+
+    with TestClient(manager.app) as client:
+        _login(client)
+
+        response = client.get(f"/graphs/{graph_id}/schemas/web_schema")
+        assert response.status_code == 200
+        assert "Delete is blocked until all node and edge references are removed." in response.text
+        assert "Delete schema</button>" in response.text
+        assert "disabled" in response.text
+
+        response = client.get(f"/graphs/{graph_id}/schemas/web_unused")
+        assert response.status_code == 200
+        assert "Delete is available because this schema is currently unused." in response.text
+
+        response = client.get(f"/graphs/{graph_id}/schemas/web_schema/edit")
+        assert response.status_code == 200
+        assert "Update schema" in response.text
+        assert "non-breaking updates are allowed here" in response.text
+
+        response = client.post(
+            f"/graphs/{graph_id}/schemas/web_schema",
+            data={
+                "json_schema": json.dumps(
+                    _schema_definition(
+                        "web schema updated",
+                        include_optional_status=True,
+                    )
+                ),
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert response.headers["location"].startswith(f"/graphs/{graph_id}/schemas/web_schema")
+
+        response = client.get(f"/graphs/{graph_id}/schemas/web_schema")
+        assert response.status_code == 200
+        assert "Version 1.1.0" in response.text
+
+        response = client.post(
+            f"/graphs/{graph_id}/schemas/web_schema",
+            data={
+                "json_schema": json.dumps(
+                    _schema_definition(
+                        "web schema breaking",
+                        include_optional_status=True,
+                        require_status=True,
+                    )
+                ),
+            },
+        )
+        assert response.status_code == 200
+        assert "Breaking schema changes are not supported here yet." in response.text
+        assert "Use a migration workflow for schema &#39;web_schema&#39;." in response.text
+
+        response = client.post(
+            f"/graphs/{graph_id}/schemas/web_schema/delete",
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        assert (
+            "Schema &#39;web_schema&#39; cannot be deleted because it is still referenced by 1 node and 1 edge."
+            in response.text
+        )
+
+        response = client.post(
+            f"/graphs/{graph_id}/schemas/web_unused/delete",
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert response.headers["location"].startswith(f"/graphs/{graph_id}/schemas?success=")
+
+        response = client.post(
+            "/api/graph_schema_update",
+            params={"graph_id": graph_id, "name": "rest_schema"},
+            json=_schema_definition(
+                "rest schema updated",
+                include_optional_status=True,
+            ),
+            headers={"Authorization": f"Bearer {api_key_value}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["schema"]["version"] == "1.1.0"
+        assert response.json()["schema"]["json_schema"]["properties"]["status"]["type"] == "string"
+
+        response = client.post(
+            "/api/graph_schema_delete",
+            params={"graph_id": graph_id, "name": "rest_schema"},
+            headers={"Authorization": f"Bearer {api_key_value}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["schema"]["name"] == "rest_schema"
+
+    cli_updated = manager.cli(
+        [
+            "gpdb",
+            "graph_schema_update",
+            graph_id,
+            "cli_schema",
+            json.dumps(
+                _schema_definition(
+                    "cli schema updated",
+                    include_optional_status=True,
+                )
+            ),
+        ],
+        standalone_mode=False,
+    )
+    assert cli_updated["schema"]["version"] == "1.1.0"
+
+    cli_deleted = manager.cli(
+        ["gpdb", "graph_schema_delete", graph_id, "cli_schema"],
+        standalone_mode=False,
+    )
+    assert cli_deleted["schema"]["name"] == "cli_schema"
+
+    mcp_updated = _call_persisted_authenticated_mcp_tool(
+        manager,
+        api_key_value,
+        "graph_schema_update",
+        {
+            "graph_id": graph_id,
+            "name": "mcp_schema",
+            "json_schema": _schema_definition(
+                "mcp schema updated",
+                include_optional_status=True,
+            ),
+        },
+    )
+    assert mcp_updated["schema"]["version"] == "1.1.0"
+
+    mcp_deleted = _call_persisted_authenticated_mcp_tool(
+        manager,
+        api_key_value,
+        "graph_schema_delete",
+        {"graph_id": graph_id, "name": "mcp_schema"},
+    )
+    assert mcp_deleted["schema"]["name"] == "mcp_schema"
+
+    with TestClient(manager.app) as client:
+        _login(client)
+        response = client.get(f"/graphs/{graph_id}/schemas")
+        assert response.status_code == 200
+        assert "web_schema" in response.text
+        assert "web_unused" not in response.text
+        assert "rest_schema" not in response.text
+        assert "cli_schema" not in response.text
+        assert "mcp_schema" not in response.text
+
+
+def test_graph_node_browse_and_create_vertical_slice_across_surfaces(tmp_path):
+    """Test node browse/create flow across web, REST, CLI, and MCP."""
+    manager = _create_test_manager(tmp_path)
+    graph_id = ""
+    api_key_value = ""
+    web_node_id = ""
+
+    with TestClient(manager.app) as client:
+        _bootstrap_owner(client)
+        _login(client)
+
+        response = client.get("/graphs/new")
+        assert response.status_code == 200
+        default_instance_id = _extract_instance_option_value(response.text, "Default instance")
+
+        response = client.post(
+            "/graphs",
+            data={
+                "instance_id": default_instance_id,
+                "table_prefix": "node_slice",
+                "display_name": "Node Slice",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+
+        graph = _read_graph_by_prefix(manager, table_prefix="node_slice")
+        assert graph is not None
+        graph_id = graph.id
+        _seed_graph_schema(manager, table_prefix="node_slice", schema_name="task_schema")
+        _seed_node_record(
+            manager,
+            table_prefix="node_slice",
+            type="task",
+            name="seeded-node",
+            schema_name="task_schema",
+            data={"name": "Seeded node"},
+            tags=["seeded"],
+        )
+
+        response = client.get(f"/graphs/{graph_id}/nodes/new")
+        assert response.status_code == 200
+        assert "Create a node for Node Slice." in response.text
+        assert '<option value="task_schema"' in response.text
+
+        response = client.post(
+            f"/graphs/{graph_id}/nodes",
+            data={
+                "type": "task",
+                "name": "web-node",
+                "schema_name": "task_schema",
+                "owner_id": "",
+                "parent_id": "",
+                "tags": "alpha, beta",
+                "data": json.dumps({"name": "Web node"}),
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert response.headers["location"].startswith(f"/graphs/{graph_id}/nodes/")
+        web_node_id = response.headers["location"].split("?", 1)[0].rsplit("/", 1)[-1]
+
+        response = client.get(response.headers["location"])
+        assert response.status_code == 200
+        assert "web-node" in response.text
+        assert "Tags: alpha, beta" in response.text
+        assert "No binary payload is stored on this node." in response.text
+
+        response = client.get(f"/graphs/{graph_id}/nodes", params={"type": "task", "limit": 1})
+        assert response.status_code == 200
+        assert "Next page" in response.text
+
+        response = client.post(
+            "/apikeys",
+            data={"label": "Node slice key"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        api_key_detail_path = response.headers["location"]
+        response = client.get(api_key_detail_path)
+        assert response.status_code == 200
+        api_key_value = _extract_revealed_api_key(response.text)
+
+        response = client.post(
+            "/api/graph_node_create",
+            params={
+                "graph_id": graph_id,
+                "type": "task",
+                "name": "rest-node",
+                "schema_name": "task_schema",
+                "tags": "rest",
+            },
+            json={"name": "Rest node"},
+            headers={"Authorization": f"Bearer {api_key_value}"},
+        )
+        assert response.status_code == 200
+        rest_created = response.json()
+        assert rest_created["node"]["name"] == "rest-node"
+        assert rest_created["node"]["schema_name"] == "task_schema"
+        assert rest_created["node"]["tags"] == ["rest"]
+
+        response = client.get(
+            "/api/graph_node_list",
+            params={"graph_id": graph_id, "type": "task", "limit": 10},
+            headers={"Authorization": f"Bearer {api_key_value}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["total"] == 3
+        assert {item["name"] for item in response.json()["items"]} == {
+            "seeded-node",
+            "web-node",
+            "rest-node",
+        }
+
+        response = client.get(
+            "/api/graph_node_get",
+            params={"graph_id": graph_id, "node_id": web_node_id},
+            headers={"Authorization": f"Bearer {api_key_value}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["node"]["name"] == "web-node"
+        assert response.json()["node"]["tags"] == ["alpha", "beta"]
+
+    cli_created = manager.cli(
+        [
+            "gpdb",
+            "graph_node_create",
+            graph_id,
+            "task",
+            json.dumps({"name": "CLI node"}),
+        ],
+        standalone_mode=False,
+    )
+    assert cli_created["node"]["type"] == "task"
+    assert cli_created["node"]["data"] == {"name": "CLI node"}
+
+    cli_get = manager.cli(
+        ["gpdb", "graph_node_get", graph_id, cli_created["node"]["id"]],
+        standalone_mode=False,
+    )
+    assert cli_get["node"]["data"] == {"name": "CLI node"}
+
+    cli_list = manager.cli(
+        ["gpdb", "graph_node_list", graph_id],
+        standalone_mode=False,
+    )
+    assert cli_list["total"] == 4
+
+    mcp_created = _call_persisted_authenticated_mcp_tool(
+        manager,
+        api_key_value,
+        "graph_node_create",
+        {
+            "graph_id": graph_id,
+            "type": "task",
+            "name": "mcp-node",
+            "schema_name": "task_schema",
+            "tags": "mcp, final",
+            "data": {"name": "MCP node"},
+        },
+    )
+    assert mcp_created["node"]["name"] == "mcp-node"
+    assert mcp_created["node"]["tags"] == ["mcp", "final"]
+
+    mcp_get = _call_persisted_authenticated_mcp_tool(
+        manager,
+        api_key_value,
+        "graph_node_get",
+        {
+            "graph_id": graph_id,
+            "node_id": mcp_created["node"]["id"],
+        },
+    )
+    assert mcp_get["node"]["name"] == "mcp-node"
+
+    mcp_list = _call_persisted_authenticated_mcp_tool(
+        manager,
+        api_key_value,
+        "graph_node_list",
+        {
+            "graph_id": graph_id,
+            "type": "task",
+            "limit": 10,
+        },
+    )
+    assert mcp_list["total"] == 5
+
+    with TestClient(manager.app) as client:
+        _login(client)
+        response = client.get(f"/graphs/{graph_id}/nodes")
+        assert response.status_code == 200
+        assert "seeded-node" in response.text
+        assert "web-node" in response.text
+        assert "rest-node" in response.text
+        assert cli_created["node"]["id"] in response.text
+        assert "mcp-node" in response.text
+
+
 def test_cli_api_key_management_commands(tmp_path):
     """Test trusted local CLI API key management commands."""
     manager = _create_test_manager(tmp_path)
@@ -950,3 +1563,110 @@ def _seed_graph_content(manager, *, table_prefix: str) -> None:
             await db.sqla_engine.dispose()
 
     asyncio.run(_seed())
+
+
+def _seed_schema_usage(manager, *, table_prefix: str, schema_name: str) -> None:
+    services = manager.app.state.services
+    assert services.captive_server is not None
+
+    async def _seed() -> None:
+        db = GPGraph(services.captive_server.get_uri(), table_prefix=table_prefix)
+        try:
+            source = await db.set_node(
+                NodeUpsert(
+                    type="schema-test",
+                    name="source",
+                    schema_name=schema_name,
+                    data={"name": "Source"},
+                )
+            )
+            target = await db.set_node(
+                NodeUpsert(
+                    type="schema-test",
+                    name="target",
+                    data={},
+                )
+            )
+            await db.set_edge(
+                EdgeUpsert(
+                    type="schema-link",
+                    source_id=source.id,
+                    target_id=target.id,
+                    schema_name=schema_name,
+                    data={"name": "Edge"},
+                )
+            )
+        finally:
+            await db.sqla_engine.dispose()
+
+    asyncio.run(_seed())
+
+
+def _seed_graph_schema(manager, *, table_prefix: str, schema_name: str) -> None:
+    services = manager.app.state.services
+    assert services.captive_server is not None
+
+    async def _seed() -> None:
+        db = GPGraph(services.captive_server.get_uri(), table_prefix=table_prefix)
+        try:
+            await db.register_schema(
+                schema_name,
+                _schema_definition(f"{schema_name} schema"),
+            )
+        finally:
+            await db.sqla_engine.dispose()
+
+    asyncio.run(_seed())
+
+
+def _seed_node_record(
+    manager,
+    *,
+    table_prefix: str,
+    type: str,
+    name: str,
+    data: dict[str, object],
+    schema_name: str | None = None,
+    tags: list[str] | None = None,
+) -> None:
+    services = manager.app.state.services
+    assert services.captive_server is not None
+
+    async def _seed() -> None:
+        db = GPGraph(services.captive_server.get_uri(), table_prefix=table_prefix)
+        try:
+            await db.set_node(
+                NodeUpsert(
+                    type=type,
+                    name=name,
+                    schema_name=schema_name,
+                    data=data,
+                    tags=list(tags or []),
+                )
+            )
+        finally:
+            await db.sqla_engine.dispose()
+
+    asyncio.run(_seed())
+
+
+def _schema_definition(
+    description: str,
+    *,
+    include_optional_status: bool = False,
+    require_status: bool = False,
+) -> dict[str, object]:
+    properties = {
+        "name": {"type": "string"},
+    }
+    required = ["name"]
+    if include_optional_status or require_status:
+        properties["status"] = {"type": "string"}
+    if require_status:
+        required.append("status")
+    return {
+        "type": "object",
+        "description": description,
+        "properties": properties,
+        "required": required,
+    }

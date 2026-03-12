@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="auth-layout">
+  <div class="auth-copy">
+    <p class="eyebrow">Schema</p>
+    <h1>{% if is_edit %}Edit{% else %}Create{% endif %} a schema for {{ overview.graph.display_name }}.</h1>
+    <p class="hero-text">
+      Schemas validate node and edge JSON data at write time. {% if is_edit %}Only
+      non-breaking updates are allowed here; breaking changes still require a future migration
+      workflow.{% else %}Breaking-change migration flows come later.{% endif %}
+    </p>
+    {% if is_edit and schema_detail %}
+    <ul class="feature-list">
+      <li>Name: {{ schema_detail.schema.name }}.</li>
+      <li>Current version: {{ schema_detail.schema.version }}.</li>
+      <li>Usage: {{ schema_detail.schema.usage.node_count }} node{{ "" if schema_detail.schema.usage.node_count == 1 else "s" }}, {{ schema_detail.schema.usage.edge_count }} edge{{ "" if schema_detail.schema.usage.edge_count == 1 else "s" }}.</li>
+    </ul>
+    {% endif %}
+  </div>
+
+  <div class="auth-card">
+    <h2>{% if is_edit %}Update schema{% else %}New schema{% endif %}</h2>
+    {% if error_message %}
+    <p class="form-error">{{ error_message }}</p>
+    {% endif %}
+    <form class="auth-form" action="{{ submit_url }}" method="post">
+      {% if is_edit %}
+      <label class="field">
+        <span>Name</span>
+        <input value="{{ (form_data or {}).get('name', '') }}" readonly>
+      </label>
+      {% else %}
+      <label class="field">
+        <span>Name</span>
+        <input name="name" value="{{ (form_data or {}).get('name', '') }}" required>
+      </label>
+      {% endif %}
+
+      <label class="field">
+        <span>JSON Schema</span>
+        <textarea name="json_schema" rows="18" required>{{ (form_data or {}).get('json_schema', '') }}</textarea>
+      </label>
+
+      <div class="button-row">
+        <button class="button" type="submit">{% if is_edit %}Save changes{% else %}Create schema{% endif %}</button>
+        <a class="button button-secondary" href="{% if is_edit %}{{ web_app.url_path_for('graph_schema_detail_page', graph_id=overview.graph.id, schema_name=schema_detail.schema.name) }}{% else %}{{ web_app.url_path_for('graph_schema_list_page', graph_id=overview.graph.id) }}{% endif %}">Back</a>
+      </div>
+    </form>
+  </div>
+</section>
+{% endblock %}
