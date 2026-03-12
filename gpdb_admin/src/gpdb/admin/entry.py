@@ -3,27 +3,49 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import base64
+import inspect
 import json
+import logging
 import secrets
 import sys
 from dataclasses import asdict
+from typing import Any, Union, get_args, get_origin
 
 import uvicorn
-from fastapi import Request
+from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
-from fastmcp import Context, FastMCP
+from fastmcp import FastMCP
 from fastmcp.server.auth import AccessToken, TokenVerifier
 from mcp.server.auth.middleware.auth_context import get_access_token
 from toolaccess import (
-    CLIServer,
-    OpenAPIServer,
-    SSEMCPServer as ToolaccessSSEMCPServer,
+    AccessPolicy,
+    CLIServer as ToolaccessCLIServer,
+    InvocationContext,
+    MountableApp,
+    OpenAPIServer as ToolaccessOpenAPIServer,
+    PydanticJsonRenderer,
+    Principal,
     ServerManager,
+    StreamableHTTPMCPServer as ToolaccessStreamableHTTPMCPServer,
+    SurfaceSpec,
+    ToolDefinition,
     ToolService,
+    get_public_signature,
+    get_surface_spec,
+    inject_context,
 )
-from toolaccess import ToolDefinition
-from toolaccess.toolaccess import MountableApp
+from toolaccess.definition import get_cli_signature
+from toolaccess.codecs import ArgumentCodec
+from toolaccess.pipeline import (
+    call_user_func,
+    decode_args,
+    invoke_tool,
+    render_result,
+    resolve_principal,
+    validate_access,
+)
 
 from gpdb.admin.auth import (
     extract_bearer_token,
@@ -54,15 +76,288 @@ REST_API_PUBLIC_PATHS = frozenset(
     }
 )
 
+logger = logging.getLogger(__name__)
 
-class SSEMCPServer(ToolaccessSSEMCPServer):
-    """Toolaccess-compatible MCP server with optional bearer auth."""
+GRAPH_TOOL_ACCESS = AccessPolicy(
+    require_authenticated=True,
+    allow_anonymous=False,
+)
+
+CLI_JSON_RENDERER = PydanticJsonRenderer(indent=2, sort_keys=True)
+CLI_ALIAS_JSON_RENDERER = PydanticJsonRenderer(
+    by_alias=True,
+    indent=2,
+    sort_keys=True,
+)
+
+
+async def _invoke_tool_raw(
+    tool: ToolDefinition,
+    raw_args: dict[str, Any],
+    ctx: InvocationContext,
+    *,
+    context_param_name: str | None = None,
+    surface_resolver=None,
+):
+    """Run ToolAccess resolution/validation/decoding without rendering."""
+    ctx.principal = await resolve_principal(tool, ctx, surface_resolver)
+    await validate_access(tool.access, ctx)
+    decoded_args = decode_args(tool.codecs, raw_args, ctx)
+    return await call_user_func(tool.func, decoded_args, ctx, context_param_name)
+
+
+class OpenAPIServer(ToolaccessOpenAPIServer):
+    """ToolAccess OpenAPI server that hides injected invocation context."""
+
+    def _add_route(self, tool: ToolDefinition):
+        surface_spec = get_surface_spec(tool, "rest")
+        http_method = surface_spec.http_method or "POST"
+        router = {
+            "GET": self.app.get,
+            "POST": self.app.post,
+            "PUT": self.app.put,
+            "DELETE": self.app.delete,
+            "PATCH": self.app.patch,
+        }.get(http_method, self.app.post)
+
+        public_sig, annotations, context_param = get_public_signature(tool.func)
+        request_param = inspect.Parameter(
+            "request",
+            inspect.Parameter.KEYWORD_ONLY,
+            default=inspect.Parameter.empty,
+            annotation=Request,
+        )
+        route_sig = public_sig.replace(
+            parameters=[*public_sig.parameters.values(), request_param]
+        )
+        annotations["request"] = Request
+
+        if inspect.iscoroutinefunction(tool.func):
+
+            async def route_handler(*args, request: Request, **kwargs):
+                ctx = InvocationContext(
+                    surface="rest",
+                    principal=None,
+                    raw_request=request,
+                )
+                try:
+                    return await invoke_tool(
+                        tool=tool,
+                        raw_args=kwargs,
+                        ctx=ctx,
+                        context_param_name=context_param,
+                        surface_resolver=self.principal_resolver,
+                    )
+                except PermissionError as exc:
+                    raise HTTPException(status_code=403, detail=str(exc)) from exc
+                except (ValueError, KeyError, TypeError) as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+                except Exception as exc:
+                    logger.exception("Unexpected REST tool error for %s", tool.name)
+                    raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        else:
+
+            def route_handler(*args, request: Request, **kwargs):
+                ctx = InvocationContext(
+                    surface="rest",
+                    principal=None,
+                    raw_request=request,
+                )
+                try:
+                    return asyncio.run(
+                        invoke_tool(
+                            tool=tool,
+                            raw_args=kwargs,
+                            ctx=ctx,
+                            context_param_name=context_param,
+                            surface_resolver=self.principal_resolver,
+                        )
+                    )
+                except PermissionError as exc:
+                    raise HTTPException(status_code=403, detail=str(exc)) from exc
+                except (ValueError, KeyError, TypeError) as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+                except Exception as exc:
+                    logger.exception("Unexpected REST tool error for %s", tool.name)
+                    raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        route_handler.__signature__ = route_sig
+        route_handler.__annotations__ = annotations
+        route_handler.__doc__ = tool.description
+        route_handler.__name__ = tool.name
+        router(f"/{tool.name}", name=tool.name, description=tool.description)(route_handler)
+
+
+class SSEMCPServer(ToolaccessStreamableHTTPMCPServer):
+    """ToolAccess-compatible MCP server with optional bearer auth."""
 
     def __init__(
-        self, name: str = "default", auth_provider: TokenVerifier | None = None
+        self,
+        name: str = "default",
+        auth_provider: TokenVerifier | None = None,
+        principal_resolver=None,
     ):
+        super().__init__(name=name, principal_resolver=principal_resolver)
         self.name = name
         self.mcp = FastMCP(name, auth=auth_provider)
+
+    def _wrap_for_mcp(self, tool: ToolDefinition):
+        public_sig, annotations, context_param = get_public_signature(tool.func)
+
+        def process_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
+            processed: dict[str, Any] = {}
+            for key, value in kwargs.items():
+                if not isinstance(value, str):
+                    processed[key] = value
+                    continue
+                parameter = public_sig.parameters.get(key)
+                should_skip = False
+                if parameter is not None:
+                    annotation = parameter.annotation
+                    if annotation is str:
+                        should_skip = True
+                    else:
+                        origin = get_origin(annotation)
+                        if origin is Union:
+                            args = get_args(annotation)
+                            non_none = [arg for arg in args if arg is not type(None)]
+                            if len(non_none) == 1 and non_none[0] is str:
+                                should_skip = True
+                if should_skip:
+                    processed[key] = value
+                    continue
+                try:
+                    processed[key] = json.loads(value)
+                except (json.JSONDecodeError, TypeError):
+                    processed[key] = value
+            return processed
+
+        if inspect.iscoroutinefunction(tool.func):
+
+            async def async_wrapper(*args, **kwargs):
+                return await invoke_tool(
+                    tool=tool,
+                    raw_args=process_kwargs(kwargs),
+                    ctx=InvocationContext(surface="mcp", principal=None),
+                    context_param_name=context_param,
+                    surface_resolver=self.principal_resolver,
+                )
+
+            async_wrapper.__signature__ = public_sig
+            async_wrapper.__annotations__ = annotations
+            return async_wrapper
+
+        def sync_wrapper(*args, **kwargs):
+            return asyncio.run(
+                invoke_tool(
+                    tool=tool,
+                    raw_args=process_kwargs(kwargs),
+                    ctx=InvocationContext(surface="mcp", principal=None),
+                    context_param_name=context_param,
+                    surface_resolver=self.principal_resolver,
+                )
+            )
+
+        sync_wrapper.__signature__ = public_sig
+        sync_wrapper.__annotations__ = annotations
+        return sync_wrapper
+
+
+class CLIServer(ToolaccessCLIServer):
+    """ToolAccess CLI server that hides injected context."""
+
+    def _add_command(self, app, tool: ToolDefinition):
+        public_sig, annotations, context_param = get_cli_signature(tool.func)
+
+        async def _run_tool(kwargs: dict[str, Any]) -> tuple[Any, InvocationContext]:
+            ctx = InvocationContext(
+                surface="cli",
+                principal=Principal(
+                    kind="local",
+                    is_authenticated=True,
+                    is_trusted_local=True,
+                ),
+            )
+            result = await _invoke_tool_raw(
+                tool=tool,
+                raw_args=kwargs,
+                ctx=ctx,
+                context_param_name=context_param,
+                surface_resolver=self.principal_resolver,
+            )
+            return result, ctx
+
+        def cli_wrapper(**kwargs):
+            async def runner():
+                return await _run_tool(kwargs)
+
+            async def runner_with_lifespan():
+                if self.manager and self.manager.lifespan_ctx:
+                    async with self.manager.lifespan_ctx(self.manager.app):
+                        return await runner()
+                return await runner()
+
+            try:
+                raw_result, ctx = asyncio.run(runner_with_lifespan())
+            except KeyboardInterrupt:
+                return None
+
+            if isinstance(raw_result, str):
+                print(raw_result)
+                return raw_result
+
+            rendered = render_result(
+                tool,
+                raw_result,
+                ctx,
+                surface_default_renderer=self.default_renderer,
+            )
+            if isinstance(rendered, str):
+                print(rendered)
+                try:
+                    return json.loads(rendered)
+                except json.JSONDecodeError:
+                    return rendered
+
+            print(rendered)
+            return rendered
+
+        cli_wrapper.__signature__ = public_sig
+        cli_wrapper.__annotations__ = annotations
+        app.command(name=tool.name, help=tool.description)(cli_wrapper)
+
+
+class _JsonObjectArgumentCodec(ArgumentCodec):
+    """Use gpdb's strict JSON-object coercion within ToolAccess."""
+
+    def decode(self, value: Any, *, parameter_name: str, ctx: InvocationContext):
+        return _coerce_json_object_argument(value, argument_name=parameter_name)
+
+
+class _TagsArgumentCodec(ArgumentCodec):
+    """Use gpdb's existing tags coercion rules within ToolAccess."""
+
+    def decode(self, value: Any, *, parameter_name: str, ctx: InvocationContext):
+        return _coerce_tags_argument(value)
+
+
+class _PayloadBase64ArgumentCodec(ArgumentCodec):
+    """Use gpdb's payload validation rules within ToolAccess."""
+
+    def __init__(self, *, optional: bool = False):
+        self._optional = optional
+
+    def decode(self, value: Any, *, parameter_name: str, ctx: InvocationContext):
+        if self._optional:
+            return _coerce_optional_payload_base64_argument(value)
+        return _coerce_payload_base64_argument(value)
+
+
+JSON_OBJECT_CODEC = _JsonObjectArgumentCodec()
+TAGS_CODEC = _TagsArgumentCodec()
+PAYLOAD_BASE64_CODEC = _PayloadBase64ArgumentCodec()
+OPTIONAL_PAYLOAD_BASE64_CODEC = _PayloadBase64ArgumentCodec(optional=True)
 
 
 class _AdminAPIKeyTokenVerifier(TokenVerifier):
@@ -118,31 +413,31 @@ def create_manager(
         config_store=config_store,
     )
     admin_service = ToolService("admin", [status])
-    rest_graph_service = ToolService(
-        "admin-graph-api", _build_rest_graph_content_tools(services)
-    )
-    cli_graph_service = ToolService(
-        "admin-graph-cli", _build_cli_graph_content_tools(services)
-    )
-    mcp_graph_service = ToolService(
-        "admin-graph-mcp", _build_mcp_graph_content_tools(services)
-    )
+    graph_service = _build_graph_content_service(services)
     cli_api_key_service = ToolService("admin-cli", _build_cli_api_key_tools(services))
     mcp_api_key_service = ToolService("admin-mcp", _build_mcp_api_key_tools(services))
 
-    rest_api = OpenAPIServer(path_prefix="/api", title="GPDB Admin API")
+    rest_api = OpenAPIServer(
+        path_prefix="/api",
+        title="GPDB Admin API",
+        principal_resolver=_build_rest_principal_resolver(),
+    )
     rest_api.mount(admin_service)
-    rest_api.mount(rest_graph_service)
+    rest_api.mount(graph_service)
     _install_api_key_auth(rest_api, services)
 
-    mcp_server = SSEMCPServer("gpdb", auth_provider=_AdminAPIKeyTokenVerifier(services))
+    mcp_server = SSEMCPServer(
+        "gpdb",
+        auth_provider=_AdminAPIKeyTokenVerifier(services),
+        principal_resolver=_build_mcp_principal_resolver(services),
+    )
     mcp_server.mount(admin_service)
-    mcp_server.mount(mcp_graph_service)
+    mcp_server.mount(graph_service)
     mcp_server.mount(mcp_api_key_service)
 
     cli = CLIServer("gpdb")
     cli.mount(admin_service)
-    cli.mount(cli_graph_service)
+    cli.mount(graph_service)
     cli.mount(cli_api_key_service)
 
     web_app = MountableApp(
@@ -209,7 +504,7 @@ def _run_start_command(
     print(f"📋 OpenAPI:           http://{args.host}:{args.port}/api/docs")
     for mcp_name in manager.mcp_servers:
         print(
-            f"🤖 MCP Server:        http://{args.host}:{args.port}/mcp/{mcp_name}/sse"
+            f"🤖 MCP Server:        http://{args.host}:{args.port}/mcp/{mcp_name}/mcp"
         )
     for server in manager.active_servers.values():
         if isinstance(server, MountableApp):
@@ -280,845 +575,261 @@ async def _call_graph_content(
     )
 
 
-def _emit_cli_model(result, *, by_alias: bool = False):
-    """Serialize one Pydantic result for CLI output."""
-    return _emit_cli_result(result.model_dump(mode="json", by_alias=by_alias))
+def _build_rest_principal_resolver():
+    """Resolve the authenticated REST principal from request state."""
+
+    async def resolve(ctx: InvocationContext) -> Principal | None:
+        request = ctx.raw_request
+        if request is None:
+            return None
+        current_user = getattr(request.state, "current_user", None)
+        if current_user is None:
+            return None
+        current_api_key = getattr(request.state, "current_api_key", None)
+        ctx.state["current_user"] = current_user
+        if current_api_key is not None:
+            ctx.state["current_api_key"] = current_api_key
+        claims = {"is_owner": current_user.is_owner}
+        if current_api_key is not None:
+            claims["api_key_id"] = current_api_key.id
+            claims["api_key_label"] = current_api_key.label
+        return Principal(
+            kind="api_key",
+            id=current_user.id,
+            name=current_user.username,
+            claims=claims,
+            is_authenticated=True,
+        )
+
+    return resolve
 
 
-def _build_rest_graph_content_tools(services: AdminServices) -> list[ToolDefinition]:
-    """Build authenticated REST tools for graph-content access."""
+def _build_mcp_principal_resolver(services: AdminServices):
+    """Resolve the authenticated MCP principal from the FastMCP auth context."""
 
-    async def graph_overview(graph_id: str, request: Request) -> GraphOverview:
-        """Return one managed graph overview for the authenticated REST user."""
-        return await _call_graph_content(
+    async def resolve(ctx: InvocationContext) -> Principal | None:
+        admin_store = services.admin_store
+        if admin_store is None:
+            raise RuntimeError("Admin store is not ready yet.")
+        access_token = get_access_token()
+        if access_token is None:
+            return None
+        user_id = str(access_token.claims.get("user_id", "")).strip()
+        if not user_id:
+            raise RuntimeError("Authenticated MCP token is missing a user id.")
+        user = await admin_store.get_user_by_id(user_id)
+        if user is None or not user.is_active:
+            raise RuntimeError("Authenticated MCP user is no longer active.")
+        ctx.state["current_user"] = user
+        ctx.state["access_token"] = access_token
+        return Principal(
+            kind="api_key",
+            id=user.id,
+            name=user.username,
+            claims=dict(access_token.claims),
+            is_authenticated=True,
+        )
+
+    return resolve
+
+
+def _ctx_current_user(ctx: InvocationContext):
+    """Return the resolved current user from one invocation context."""
+    return ctx.state.get("current_user")
+
+
+def _require_context_user(ctx: InvocationContext):
+    """Return the resolved current user or raise a friendly error."""
+    current_user = _ctx_current_user(ctx)
+    if current_user is None:
+        raise RuntimeError("Authenticated user required.")
+    return current_user
+
+
+def _ctx_allow_local_system(ctx: InvocationContext) -> bool:
+    """Return whether the current invocation represents trusted local access."""
+    principal = ctx.principal
+    return bool(principal is not None and principal.is_trusted_local)
+
+
+async def _call_graph_content_from_context(
+    services: AdminServices,
+    method_name: str,
+    ctx: InvocationContext,
+    **kwargs,
+):
+    """Invoke one graph-content method using the resolved tool context."""
+    return await _call_graph_content(
+        services,
+        method_name,
+        current_user=_ctx_current_user(ctx),
+        allow_local_system=_ctx_allow_local_system(ctx),
+        **kwargs,
+    )
+
+
+def _graph_surface_specs(
+    *,
+    http_method: str = "POST",
+    cli_renderer=CLI_JSON_RENDERER,
+) -> dict[str, SurfaceSpec]:
+    """Return the standard REST/MCP/CLI surface configuration for graph tools."""
+    return {
+        "rest": SurfaceSpec(http_method=http_method),
+        "mcp": SurfaceSpec(),
+        "cli": SurfaceSpec(renderer=cli_renderer),
+    }
+
+
+def _build_graph_content_service(services: AdminServices) -> ToolService:
+    """Build graph-content tools once and expose them on all surfaces."""
+    service = ToolService("admin-graph")
+
+    @service.tool(
+        name="graph_overview",
+        surfaces=_graph_surface_specs(http_method="GET"),
+        access=GRAPH_TOOL_ACCESS,
+    )
+    async def graph_overview(
+        graph_id: str,
+        ctx: InvocationContext = inject_context(),
+    ) -> GraphOverview:
+        """Return one managed graph overview for the authenticated caller."""
+        return await _call_graph_content_from_context(
             services,
             "get_graph_overview",
+            ctx,
             graph_id=graph_id,
-            current_user=_require_rest_user(request),
         )
 
+    @service.tool(
+        name="graph_schema_list",
+        surfaces=_graph_surface_specs(http_method="GET"),
+        access=GRAPH_TOOL_ACCESS,
+    )
     async def graph_schema_list(
         graph_id: str,
-        request: Request,
         kind: str = "",
+        ctx: InvocationContext = inject_context(),
     ) -> GraphSchemaList:
-        """List graph schemas for the authenticated REST user."""
-        return await _call_graph_content(
+        """List graph schemas for the authenticated caller."""
+        return await _call_graph_content_from_context(
             services,
             "list_graph_schemas",
+            ctx,
             graph_id=graph_id,
             kind=kind,
-            current_user=_require_rest_user(request),
         )
 
-    async def graph_schema_get(
-        graph_id: str, name: str, request: Request
-    ) -> GraphSchemaDetail:
-        """Return one graph schema for the authenticated REST user."""
-        return await _call_graph_content(
-            services,
-            "get_graph_schema",
-            graph_id=graph_id,
-            name=name,
-            current_user=_require_rest_user(request),
-        )
-
-    async def graph_schema_create(
-        graph_id: str,
-        name: str,
-        json_schema: dict[str, object],
-        request: Request,
-        kind: str = "node",
-    ) -> GraphSchemaDetail:
-        """Create one graph schema for the authenticated REST user."""
-        return await _call_graph_content(
-            services,
-            "create_graph_schema",
-            graph_id=graph_id,
-            name=name,
-            json_schema=_coerce_json_object_argument(
-                json_schema, argument_name="json_schema"
-            ),
-            kind=kind,
-            current_user=_require_rest_user(request),
-        )
-
-    async def graph_schema_update(
-        graph_id: str,
-        name: str,
-        json_schema: dict[str, object],
-        request: Request,
-        kind: str = "node",
-    ) -> GraphSchemaDetail:
-        """Update one graph schema for the authenticated REST user."""
-        return await _call_graph_content(
-            services,
-            "update_graph_schema",
-            graph_id=graph_id,
-            name=name,
-            json_schema=_coerce_json_object_argument(
-                json_schema, argument_name="json_schema"
-            ),
-            kind=kind,
-            current_user=_require_rest_user(request),
-        )
-
-    async def graph_schema_delete(
-        graph_id: str,
-        name: str,
-        request: Request,
-    ) -> GraphSchemaDetail:
-        """Delete one graph schema for the authenticated REST user."""
-        return await _call_graph_content(
-            services,
-            "delete_graph_schema",
-            graph_id=graph_id,
-            name=name,
-            current_user=_require_rest_user(request),
-        )
-
-    async def graph_node_list(
-        graph_id: str,
-        request: Request,
-        type: str = "",
-        schema_name: str = "",
-        parent_id: str = "",
-        limit: int = 50,
-        offset: int = 0,
-        sort: str = "created_at_desc",
-    ) -> GraphNodeList:
-        """List graph nodes for the authenticated REST user."""
-        return await _call_graph_content(
-            services,
-            "list_graph_nodes",
-            graph_id=graph_id,
-            type=type,
-            schema_name=schema_name,
-            parent_id=parent_id,
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            current_user=_require_rest_user(request),
-        )
-
-    async def graph_node_get(
-        graph_id: str,
-        node_id: str,
-        request: Request,
-    ) -> GraphNodeDetail:
-        """Return one graph node for the authenticated REST user."""
-        return await _call_graph_content(
-            services,
-            "get_graph_node",
-            graph_id=graph_id,
-            node_id=node_id,
-            current_user=_require_rest_user(request),
-        )
-
-    async def graph_node_create(
-        graph_id: str,
-        type: str,
-        data: dict[str, object],
-        request: Request,
-        name: str = "",
-        schema_name: str = "",
-        owner_id: str = "",
-        parent_id: str = "",
-        tags: str = "",
-        payload_base64: str | None = None,
-        payload_mime: str = "",
-        payload_filename: str = "",
-    ) -> GraphNodeDetail:
-        """Create one graph node for the authenticated REST user."""
-        return await _call_graph_content(
-            services,
-            "create_graph_node",
-            graph_id=graph_id,
-            type=type,
-            name=name,
-            schema_name=schema_name,
-            owner_id=owner_id,
-            parent_id=parent_id,
-            tags=_coerce_tags_argument(tags),
-            data=_coerce_json_object_argument(data, argument_name="data"),
-            payload=_coerce_optional_payload_base64_argument(payload_base64),
-            payload_mime=payload_mime,
-            payload_filename=payload_filename,
-            current_user=_require_rest_user(request),
-        )
-
-    async def graph_node_update(
-        graph_id: str,
-        node_id: str,
-        type: str,
-        data: dict[str, object],
-        request: Request,
-        name: str = "",
-        schema_name: str = "",
-        owner_id: str = "",
-        parent_id: str = "",
-        tags: str = "",
-        payload_base64: str | None = None,
-        payload_mime: str = "",
-        payload_filename: str = "",
-        clear_payload: bool = False,
-    ) -> GraphNodeDetail:
-        """Update one graph node for the authenticated REST user."""
-        return await _call_graph_content(
-            services,
-            "update_graph_node",
-            graph_id=graph_id,
-            node_id=node_id,
-            type=type,
-            name=name,
-            schema_name=schema_name,
-            owner_id=owner_id,
-            parent_id=parent_id,
-            tags=_coerce_tags_argument(tags),
-            data=_coerce_json_object_argument(data, argument_name="data"),
-            payload=_coerce_optional_payload_base64_argument(payload_base64),
-            payload_mime=payload_mime,
-            payload_filename=payload_filename,
-            clear_payload=clear_payload,
-            current_user=_require_rest_user(request),
-        )
-
-    async def graph_node_delete(
-        graph_id: str,
-        node_id: str,
-        request: Request,
-    ) -> GraphNodeDetail:
-        """Delete one graph node for the authenticated REST user."""
-        return await _call_graph_content(
-            services,
-            "delete_graph_node",
-            graph_id=graph_id,
-            node_id=node_id,
-            current_user=_require_rest_user(request),
-        )
-
-    async def graph_node_payload_get(
-        graph_id: str,
-        node_id: str,
-        request: Request,
-    ) -> GraphNodePayload:
-        """Return one graph node payload for the authenticated REST user."""
-        return await _call_graph_content(
-            services,
-            "get_graph_node_payload",
-            graph_id=graph_id,
-            node_id=node_id,
-            current_user=_require_rest_user(request),
-        )
-
-    async def graph_node_payload_set(
-        graph_id: str,
-        node_id: str,
-        payload_base64: str,
-        request: Request,
-        mime: str = "",
-        payload_filename: str = "",
-    ) -> GraphNodeDetail:
-        """Set one graph node payload for the authenticated REST user."""
-        return await _call_graph_content(
-            services,
-            "set_graph_node_payload",
-            graph_id=graph_id,
-            node_id=node_id,
-            payload=_coerce_payload_base64_argument(payload_base64),
-            mime=mime,
-            payload_filename=payload_filename,
-            current_user=_require_rest_user(request),
-        )
-
-    async def graph_edge_list(
-        graph_id: str,
-        request: Request,
-        type: str = "",
-        schema_name: str = "",
-        source_id: str = "",
-        target_id: str = "",
-        limit: int = 50,
-        offset: int = 0,
-        sort: str = "created_at_desc",
-    ) -> GraphEdgeList:
-        """List graph edges for the authenticated REST user."""
-        return await _call_graph_content(
-            services,
-            "list_graph_edges",
-            graph_id=graph_id,
-            type=type,
-            schema_name=schema_name,
-            source_id=source_id,
-            target_id=target_id,
-            limit=limit,
-            offset=offset,
-            sort=sort,
-            current_user=_require_rest_user(request),
-        )
-
-    async def graph_edge_get(
-        graph_id: str,
-        edge_id: str,
-        request: Request,
-    ) -> GraphEdgeDetail:
-        """Return one graph edge for the authenticated REST user."""
-        return await _call_graph_content(
-            services,
-            "get_graph_edge",
-            graph_id=graph_id,
-            edge_id=edge_id,
-            current_user=_require_rest_user(request),
-        )
-
-    async def graph_edge_create(
-        graph_id: str,
-        type: str,
-        source_id: str,
-        target_id: str,
-        data: dict[str, object],
-        request: Request,
-        schema_name: str = "",
-        tags: str = "",
-    ) -> GraphEdgeDetail:
-        """Create one graph edge for the authenticated REST user."""
-        return await _call_graph_content(
-            services,
-            "create_graph_edge",
-            graph_id=graph_id,
-            type=type,
-            source_id=source_id,
-            target_id=target_id,
-            schema_name=schema_name,
-            tags=_coerce_tags_argument(tags),
-            data=_coerce_json_object_argument(data, argument_name="data"),
-            current_user=_require_rest_user(request),
-        )
-
-    async def graph_edge_update(
-        graph_id: str,
-        edge_id: str,
-        type: str,
-        source_id: str,
-        target_id: str,
-        data: dict[str, object],
-        request: Request,
-        schema_name: str = "",
-        tags: str = "",
-    ) -> GraphEdgeDetail:
-        """Update one graph edge for the authenticated REST user."""
-        return await _call_graph_content(
-            services,
-            "update_graph_edge",
-            graph_id=graph_id,
-            edge_id=edge_id,
-            type=type,
-            source_id=source_id,
-            target_id=target_id,
-            schema_name=schema_name,
-            tags=_coerce_tags_argument(tags),
-            data=_coerce_json_object_argument(data, argument_name="data"),
-            current_user=_require_rest_user(request),
-        )
-
-    async def graph_edge_delete(
-        graph_id: str,
-        edge_id: str,
-        request: Request,
-    ) -> GraphEdgeDetail:
-        """Delete one graph edge for the authenticated REST user."""
-        return await _call_graph_content(
-            services,
-            "delete_graph_edge",
-            graph_id=graph_id,
-            edge_id=edge_id,
-            current_user=_require_rest_user(request),
-        )
-
-    return [
-        ToolDefinition(graph_overview, "graph_overview", http_method="GET"),
-        ToolDefinition(graph_schema_list, "graph_schema_list", http_method="GET"),
-        ToolDefinition(graph_schema_get, "graph_schema_get", http_method="GET"),
-        ToolDefinition(graph_schema_create, "graph_schema_create"),
-        ToolDefinition(graph_schema_update, "graph_schema_update"),
-        ToolDefinition(graph_schema_delete, "graph_schema_delete"),
-        ToolDefinition(graph_node_list, "graph_node_list", http_method="GET"),
-        ToolDefinition(graph_node_get, "graph_node_get", http_method="GET"),
-        ToolDefinition(graph_node_create, "graph_node_create"),
-        ToolDefinition(graph_node_update, "graph_node_update"),
-        ToolDefinition(graph_node_delete, "graph_node_delete"),
-        ToolDefinition(
-            graph_node_payload_get, "graph_node_payload_get", http_method="GET"
+    @service.tool(
+        name="graph_schema_get",
+        surfaces=_graph_surface_specs(
+            http_method="GET",
+            cli_renderer=CLI_ALIAS_JSON_RENDERER,
         ),
-        ToolDefinition(graph_node_payload_set, "graph_node_payload_set"),
-        ToolDefinition(graph_edge_list, "graph_edge_list", http_method="GET"),
-        ToolDefinition(graph_edge_get, "graph_edge_get", http_method="GET"),
-        ToolDefinition(graph_edge_create, "graph_edge_create"),
-        ToolDefinition(graph_edge_update, "graph_edge_update"),
-        ToolDefinition(graph_edge_delete, "graph_edge_delete"),
-    ]
-
-
-def _build_cli_graph_content_tools(services: AdminServices) -> list[ToolDefinition]:
-    """Build trusted local CLI commands for graph-content access."""
-
-    async def graph_overview(graph_id: str) -> dict[str, object]:
-        """Return one managed graph overview for trusted local CLI use."""
-        result = await _call_graph_content(
-            services,
-            "get_graph_overview",
-            graph_id=graph_id,
-            allow_local_system=True,
-        )
-        return _emit_cli_model(result)
-
-    async def graph_schema_list(graph_id: str, kind: str = "") -> dict[str, object]:
-        """List graph schemas for trusted local CLI use."""
-        result = await _call_graph_content(
-            services,
-            "list_graph_schemas",
-            graph_id=graph_id,
-            allow_local_system=True,
-            kind=kind,
-        )
-        return _emit_cli_model(result)
-
-    async def graph_schema_get(graph_id: str, name: str) -> dict[str, object]:
-        """Return one graph schema for trusted local CLI use."""
-        result = await _call_graph_content(
-            services,
-            "get_graph_schema",
-            graph_id=graph_id,
-            name=name,
-            allow_local_system=True,
-        )
-        return _emit_cli_model(result, by_alias=True)
-
-    async def graph_schema_create(
-        graph_id: str,
-        name: str,
-        json_schema: str,
-        kind: str = "node",
-    ) -> dict[str, object]:
-        """Create one graph schema for trusted local CLI use."""
-        result = await _call_graph_content(
-            services,
-            "create_graph_schema",
-            graph_id=graph_id,
-            name=name,
-            json_schema=_coerce_json_object_argument(
-                json_schema, argument_name="json_schema"
-            ),
-            kind=kind,
-            allow_local_system=True,
-        )
-        return _emit_cli_model(result, by_alias=True)
-
-    async def graph_schema_update(
-        graph_id: str,
-        name: str,
-        json_schema: str,
-        kind: str = "node",
-    ) -> dict[str, object]:
-        """Update one graph schema for trusted local CLI use."""
-        result = await _call_graph_content(
-            services,
-            "update_graph_schema",
-            graph_id=graph_id,
-            name=name,
-            json_schema=_coerce_json_object_argument(
-                json_schema, argument_name="json_schema"
-            ),
-            kind=kind,
-            allow_local_system=True,
-        )
-        return _emit_cli_model(result, by_alias=True)
-
-    async def graph_schema_delete(
-        graph_id: str,
-        name: str,
-    ) -> dict[str, object]:
-        """Delete one graph schema for trusted local CLI use."""
-        result = await _call_graph_content(
-            services,
-            "delete_graph_schema",
-            graph_id=graph_id,
-            name=name,
-            allow_local_system=True,
-        )
-        return _emit_cli_model(result, by_alias=True)
-
-    async def graph_node_list(
-        graph_id: str,
-        type: str = "",
-        schema_name: str = "",
-        parent_id: str = "",
-        limit: int = 50,
-        offset: int = 0,
-        sort: str = "created_at_desc",
-    ) -> dict[str, object]:
-        """List graph nodes for trusted local CLI use."""
-        result = await _call_graph_content(
-            services,
-            "list_graph_nodes",
-            graph_id=graph_id,
-            allow_local_system=True,
-            type=type,
-            schema_name=schema_name,
-            parent_id=parent_id,
-            limit=limit,
-            offset=offset,
-            sort=sort,
-        )
-        return _emit_cli_model(result)
-
-    async def graph_node_get(graph_id: str, node_id: str) -> dict[str, object]:
-        """Return one graph node for trusted local CLI use."""
-        result = await _call_graph_content(
-            services,
-            "get_graph_node",
-            graph_id=graph_id,
-            node_id=node_id,
-            allow_local_system=True,
-        )
-        return _emit_cli_model(result, by_alias=True)
-
-    async def graph_node_create(
-        graph_id: str,
-        type: str,
-        data: str,
-        name: str = "",
-        schema_name: str = "",
-        owner_id: str = "",
-        parent_id: str = "",
-        tags: str = "",
-        payload_base64: str | None = None,
-        payload_mime: str = "",
-        payload_filename: str = "",
-    ) -> dict[str, object]:
-        """Create one graph node for trusted local CLI use."""
-        result = await _call_graph_content(
-            services,
-            "create_graph_node",
-            graph_id=graph_id,
-            type=type,
-            name=name,
-            schema_name=schema_name,
-            owner_id=owner_id,
-            parent_id=parent_id,
-            tags=_coerce_tags_argument(tags),
-            data=_coerce_json_object_argument(data, argument_name="data"),
-            payload=_coerce_optional_payload_base64_argument(payload_base64),
-            payload_mime=payload_mime,
-            payload_filename=payload_filename,
-            allow_local_system=True,
-        )
-        return _emit_cli_model(result, by_alias=True)
-
-    async def graph_node_update(
-        graph_id: str,
-        node_id: str,
-        type: str,
-        data: str,
-        name: str = "",
-        schema_name: str = "",
-        owner_id: str = "",
-        parent_id: str = "",
-        tags: str = "",
-        payload_base64: str | None = None,
-        payload_mime: str = "",
-        payload_filename: str = "",
-        clear_payload: bool = False,
-    ) -> dict[str, object]:
-        """Update one graph node for trusted local CLI use."""
-        result = await _call_graph_content(
-            services,
-            "update_graph_node",
-            graph_id=graph_id,
-            node_id=node_id,
-            type=type,
-            name=name,
-            schema_name=schema_name,
-            owner_id=owner_id,
-            parent_id=parent_id,
-            tags=_coerce_tags_argument(tags),
-            data=_coerce_json_object_argument(data, argument_name="data"),
-            payload=_coerce_optional_payload_base64_argument(payload_base64),
-            payload_mime=payload_mime,
-            payload_filename=payload_filename,
-            clear_payload=clear_payload,
-            allow_local_system=True,
-        )
-        return _emit_cli_model(result, by_alias=True)
-
-    async def graph_node_delete(graph_id: str, node_id: str) -> dict[str, object]:
-        """Delete one graph node for trusted local CLI use."""
-        result = await _call_graph_content(
-            services,
-            "delete_graph_node",
-            graph_id=graph_id,
-            node_id=node_id,
-            allow_local_system=True,
-        )
-        return _emit_cli_model(result, by_alias=True)
-
-    async def graph_node_payload_get(graph_id: str, node_id: str) -> dict[str, object]:
-        """Return one graph node payload for trusted local CLI use."""
-        result = await _call_graph_content(
-            services,
-            "get_graph_node_payload",
-            graph_id=graph_id,
-            node_id=node_id,
-            allow_local_system=True,
-        )
-        return _emit_cli_model(result, by_alias=True)
-
-    async def graph_node_payload_set(
-        graph_id: str,
-        node_id: str,
-        payload_base64: str,
-        mime: str = "",
-        payload_filename: str = "",
-    ) -> dict[str, object]:
-        """Set one graph node payload for trusted local CLI use."""
-        result = await _call_graph_content(
-            services,
-            "set_graph_node_payload",
-            graph_id=graph_id,
-            node_id=node_id,
-            payload=_coerce_payload_base64_argument(payload_base64),
-            mime=mime,
-            payload_filename=payload_filename,
-            allow_local_system=True,
-        )
-        return _emit_cli_model(result, by_alias=True)
-
-    async def graph_edge_list(
-        graph_id: str,
-        type: str = "",
-        schema_name: str = "",
-        source_id: str = "",
-        target_id: str = "",
-        limit: int = 50,
-        offset: int = 0,
-        sort: str = "created_at_desc",
-    ) -> dict[str, object]:
-        """List graph edges for trusted local CLI use."""
-        result = await _call_graph_content(
-            services,
-            "list_graph_edges",
-            graph_id=graph_id,
-            allow_local_system=True,
-            type=type,
-            schema_name=schema_name,
-            source_id=source_id,
-            target_id=target_id,
-            limit=limit,
-            offset=offset,
-            sort=sort,
-        )
-        return _emit_cli_model(result)
-
-    async def graph_edge_get(graph_id: str, edge_id: str) -> dict[str, object]:
-        """Return one graph edge for trusted local CLI use."""
-        result = await _call_graph_content(
-            services,
-            "get_graph_edge",
-            graph_id=graph_id,
-            edge_id=edge_id,
-            allow_local_system=True,
-        )
-        return _emit_cli_model(result, by_alias=True)
-
-    async def graph_edge_create(
-        graph_id: str,
-        type: str,
-        source_id: str,
-        target_id: str,
-        data: str,
-        schema_name: str = "",
-        tags: str = "",
-    ) -> dict[str, object]:
-        """Create one graph edge for trusted local CLI use."""
-        result = await _call_graph_content(
-            services,
-            "create_graph_edge",
-            graph_id=graph_id,
-            type=type,
-            source_id=source_id,
-            target_id=target_id,
-            schema_name=schema_name,
-            tags=_coerce_tags_argument(tags),
-            data=_coerce_json_object_argument(data, argument_name="data"),
-            allow_local_system=True,
-        )
-        return _emit_cli_model(result, by_alias=True)
-
-    async def graph_edge_update(
-        graph_id: str,
-        edge_id: str,
-        type: str,
-        source_id: str,
-        target_id: str,
-        data: str,
-        schema_name: str = "",
-        tags: str = "",
-    ) -> dict[str, object]:
-        """Update one graph edge for trusted local CLI use."""
-        result = await _call_graph_content(
-            services,
-            "update_graph_edge",
-            graph_id=graph_id,
-            edge_id=edge_id,
-            type=type,
-            source_id=source_id,
-            target_id=target_id,
-            schema_name=schema_name,
-            tags=_coerce_tags_argument(tags),
-            data=_coerce_json_object_argument(data, argument_name="data"),
-            allow_local_system=True,
-        )
-        return _emit_cli_model(result, by_alias=True)
-
-    async def graph_edge_delete(graph_id: str, edge_id: str) -> dict[str, object]:
-        """Delete one graph edge for trusted local CLI use."""
-        result = await _call_graph_content(
-            services,
-            "delete_graph_edge",
-            graph_id=graph_id,
-            edge_id=edge_id,
-            allow_local_system=True,
-        )
-        return _emit_cli_model(result, by_alias=True)
-
-    return [
-        ToolDefinition(graph_overview, "graph_overview"),
-        ToolDefinition(graph_schema_list, "graph_schema_list"),
-        ToolDefinition(graph_schema_get, "graph_schema_get"),
-        ToolDefinition(graph_schema_create, "graph_schema_create"),
-        ToolDefinition(graph_schema_update, "graph_schema_update"),
-        ToolDefinition(graph_schema_delete, "graph_schema_delete"),
-        ToolDefinition(graph_node_list, "graph_node_list"),
-        ToolDefinition(graph_node_get, "graph_node_get"),
-        ToolDefinition(graph_node_create, "graph_node_create"),
-        ToolDefinition(graph_node_update, "graph_node_update"),
-        ToolDefinition(graph_node_delete, "graph_node_delete"),
-        ToolDefinition(graph_node_payload_get, "graph_node_payload_get"),
-        ToolDefinition(graph_node_payload_set, "graph_node_payload_set"),
-        ToolDefinition(graph_edge_list, "graph_edge_list"),
-        ToolDefinition(graph_edge_get, "graph_edge_get"),
-        ToolDefinition(graph_edge_create, "graph_edge_create"),
-        ToolDefinition(graph_edge_update, "graph_edge_update"),
-        ToolDefinition(graph_edge_delete, "graph_edge_delete"),
-    ]
-
-
-def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefinition]:
-    """Build authenticated MCP tools for graph-content access."""
-
-    async def graph_overview(graph_id: str, ctx: Context) -> GraphOverview:
-        """Return one managed graph overview for the authenticated MCP user."""
-        return await _call_graph_content(
-            services,
-            "get_graph_overview",
-            graph_id=graph_id,
-            current_user=await _require_mcp_user(services, ctx),
-        )
-
-    async def graph_schema_list(
-        graph_id: str,
-        ctx: Context,
-        kind: str = "",
-    ) -> GraphSchemaList:
-        """List graph schemas for the authenticated MCP user."""
-        return await _call_graph_content(
-            services,
-            "list_graph_schemas",
-            graph_id=graph_id,
-            kind=kind,
-            current_user=await _require_mcp_user(services, ctx),
-        )
-
+        access=GRAPH_TOOL_ACCESS,
+    )
     async def graph_schema_get(
-        graph_id: str, name: str, ctx: Context
+        graph_id: str,
+        name: str,
+        ctx: InvocationContext = inject_context(),
     ) -> GraphSchemaDetail:
-        """Return one graph schema for the authenticated MCP user."""
-        return await _call_graph_content(
+        """Return one graph schema for the authenticated caller."""
+        return await _call_graph_content_from_context(
             services,
             "get_graph_schema",
+            ctx,
             graph_id=graph_id,
             name=name,
-            current_user=await _require_mcp_user(services, ctx),
         )
 
+    @service.tool(
+        name="graph_schema_create",
+        surfaces=_graph_surface_specs(cli_renderer=CLI_ALIAS_JSON_RENDERER),
+        access=GRAPH_TOOL_ACCESS,
+        codecs={"json_schema": JSON_OBJECT_CODEC},
+    )
     async def graph_schema_create(
         graph_id: str,
         name: str,
         json_schema: dict[str, object],
-        ctx: Context,
         kind: str = "node",
+        ctx: InvocationContext = inject_context(),
     ) -> GraphSchemaDetail:
-        """Create one graph schema for the authenticated MCP user."""
-        return await _call_graph_content(
+        """Create one graph schema for the authenticated caller."""
+        return await _call_graph_content_from_context(
             services,
             "create_graph_schema",
+            ctx,
             graph_id=graph_id,
             name=name,
-            json_schema=_coerce_json_object_argument(
-                json_schema, argument_name="json_schema"
-            ),
+            json_schema=json_schema,
             kind=kind,
-            current_user=await _require_mcp_user(services, ctx),
         )
 
+    @service.tool(
+        name="graph_schema_update",
+        surfaces=_graph_surface_specs(cli_renderer=CLI_ALIAS_JSON_RENDERER),
+        access=GRAPH_TOOL_ACCESS,
+        codecs={"json_schema": JSON_OBJECT_CODEC},
+    )
     async def graph_schema_update(
         graph_id: str,
         name: str,
         json_schema: dict[str, object],
-        ctx: Context,
         kind: str = "node",
+        ctx: InvocationContext = inject_context(),
     ) -> GraphSchemaDetail:
-        """Update one graph schema for the authenticated MCP user."""
-        return await _call_graph_content(
+        """Update one graph schema for the authenticated caller."""
+        return await _call_graph_content_from_context(
             services,
             "update_graph_schema",
+            ctx,
             graph_id=graph_id,
             name=name,
-            json_schema=_coerce_json_object_argument(
-                json_schema, argument_name="json_schema"
-            ),
+            json_schema=json_schema,
             kind=kind,
-            current_user=await _require_mcp_user(services, ctx),
         )
 
+    @service.tool(
+        name="graph_schema_delete",
+        surfaces=_graph_surface_specs(cli_renderer=CLI_ALIAS_JSON_RENDERER),
+        access=GRAPH_TOOL_ACCESS,
+    )
     async def graph_schema_delete(
         graph_id: str,
         name: str,
-        ctx: Context,
+        ctx: InvocationContext = inject_context(),
     ) -> GraphSchemaDetail:
-        """Delete one graph schema for the authenticated MCP user."""
-        return await _call_graph_content(
+        """Delete one graph schema for the authenticated caller."""
+        return await _call_graph_content_from_context(
             services,
             "delete_graph_schema",
+            ctx,
             graph_id=graph_id,
             name=name,
-            current_user=await _require_mcp_user(services, ctx),
         )
 
+    @service.tool(
+        name="graph_node_list",
+        surfaces=_graph_surface_specs(http_method="GET"),
+        access=GRAPH_TOOL_ACCESS,
+    )
     async def graph_node_list(
         graph_id: str,
-        ctx: Context,
         type: str = "",
         schema_name: str = "",
         parent_id: str = "",
         limit: int = 50,
         offset: int = 0,
         sort: str = "created_at_desc",
+        ctx: InvocationContext = inject_context(),
     ) -> GraphNodeList:
-        """List graph nodes for the authenticated MCP user."""
-        return await _call_graph_content(
+        """List graph nodes for the authenticated caller."""
+        return await _call_graph_content_from_context(
             services,
             "list_graph_nodes",
+            ctx,
             graph_id=graph_id,
             type=type,
             schema_name=schema_name,
@@ -1126,28 +837,44 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             limit=limit,
             offset=offset,
             sort=sort,
-            current_user=await _require_mcp_user(services, ctx),
         )
 
+    @service.tool(
+        name="graph_node_get",
+        surfaces=_graph_surface_specs(
+            http_method="GET",
+            cli_renderer=CLI_ALIAS_JSON_RENDERER,
+        ),
+        access=GRAPH_TOOL_ACCESS,
+    )
     async def graph_node_get(
         graph_id: str,
         node_id: str,
-        ctx: Context,
+        ctx: InvocationContext = inject_context(),
     ) -> GraphNodeDetail:
-        """Return one graph node for the authenticated MCP user."""
-        return await _call_graph_content(
+        """Return one graph node for the authenticated caller."""
+        return await _call_graph_content_from_context(
             services,
             "get_graph_node",
+            ctx,
             graph_id=graph_id,
             node_id=node_id,
-            current_user=await _require_mcp_user(services, ctx),
         )
 
+    @service.tool(
+        name="graph_node_create",
+        surfaces=_graph_surface_specs(cli_renderer=CLI_ALIAS_JSON_RENDERER),
+        access=GRAPH_TOOL_ACCESS,
+        codecs={
+            "data": JSON_OBJECT_CODEC,
+            "tags": TAGS_CODEC,
+            "payload_base64": OPTIONAL_PAYLOAD_BASE64_CODEC,
+        },
+    )
     async def graph_node_create(
         graph_id: str,
         type: str,
         data: dict[str, object],
-        ctx: Context,
         name: str = "",
         schema_name: str = "",
         owner_id: str = "",
@@ -1156,31 +883,41 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         payload_base64: str | None = None,
         payload_mime: str = "",
         payload_filename: str = "",
+        ctx: InvocationContext = inject_context(),
     ) -> GraphNodeDetail:
-        """Create one graph node for the authenticated MCP user."""
-        return await _call_graph_content(
+        """Create one graph node for the authenticated caller."""
+        return await _call_graph_content_from_context(
             services,
             "create_graph_node",
+            ctx,
             graph_id=graph_id,
             type=type,
             name=name,
             schema_name=schema_name,
             owner_id=owner_id,
             parent_id=parent_id,
-            tags=_coerce_tags_argument(tags),
-            data=_coerce_json_object_argument(data, argument_name="data"),
-            payload=_coerce_optional_payload_base64_argument(payload_base64),
+            tags=tags,
+            data=data,
+            payload=payload_base64,
             payload_mime=payload_mime,
             payload_filename=payload_filename,
-            current_user=await _require_mcp_user(services, ctx),
         )
 
+    @service.tool(
+        name="graph_node_update",
+        surfaces=_graph_surface_specs(cli_renderer=CLI_ALIAS_JSON_RENDERER),
+        access=GRAPH_TOOL_ACCESS,
+        codecs={
+            "data": JSON_OBJECT_CODEC,
+            "tags": TAGS_CODEC,
+            "payload_base64": OPTIONAL_PAYLOAD_BASE64_CODEC,
+        },
+    )
     async def graph_node_update(
         graph_id: str,
         node_id: str,
         type: str,
         data: dict[str, object],
-        ctx: Context,
         name: str = "",
         schema_name: str = "",
         owner_id: str = "",
@@ -1190,11 +927,13 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         payload_mime: str = "",
         payload_filename: str = "",
         clear_payload: bool = False,
+        ctx: InvocationContext = inject_context(),
     ) -> GraphNodeDetail:
-        """Update one graph node for the authenticated MCP user."""
-        return await _call_graph_content(
+        """Update one graph node for the authenticated caller."""
+        return await _call_graph_content_from_context(
             services,
             "update_graph_node",
+            ctx,
             graph_id=graph_id,
             node_id=node_id,
             type=type,
@@ -1202,66 +941,88 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             schema_name=schema_name,
             owner_id=owner_id,
             parent_id=parent_id,
-            tags=_coerce_tags_argument(tags),
-            data=_coerce_json_object_argument(data, argument_name="data"),
-            payload=_coerce_optional_payload_base64_argument(payload_base64),
+            tags=tags,
+            data=data,
+            payload=payload_base64,
             payload_mime=payload_mime,
             payload_filename=payload_filename,
             clear_payload=clear_payload,
-            current_user=await _require_mcp_user(services, ctx),
         )
 
+    @service.tool(
+        name="graph_node_delete",
+        surfaces=_graph_surface_specs(cli_renderer=CLI_ALIAS_JSON_RENDERER),
+        access=GRAPH_TOOL_ACCESS,
+    )
     async def graph_node_delete(
         graph_id: str,
         node_id: str,
-        ctx: Context,
+        ctx: InvocationContext = inject_context(),
     ) -> GraphNodeDetail:
-        """Delete one graph node for the authenticated MCP user."""
-        return await _call_graph_content(
+        """Delete one graph node for the authenticated caller."""
+        return await _call_graph_content_from_context(
             services,
             "delete_graph_node",
+            ctx,
             graph_id=graph_id,
             node_id=node_id,
-            current_user=await _require_mcp_user(services, ctx),
         )
 
+    @service.tool(
+        name="graph_node_payload_get",
+        surfaces=_graph_surface_specs(
+            http_method="GET",
+            cli_renderer=CLI_ALIAS_JSON_RENDERER,
+        ),
+        access=GRAPH_TOOL_ACCESS,
+    )
     async def graph_node_payload_get(
         graph_id: str,
         node_id: str,
-        ctx: Context,
+        ctx: InvocationContext = inject_context(),
     ) -> GraphNodePayload:
-        """Return one graph node payload for the authenticated MCP user."""
-        return await _call_graph_content(
+        """Return one graph node payload for the authenticated caller."""
+        return await _call_graph_content_from_context(
             services,
             "get_graph_node_payload",
+            ctx,
             graph_id=graph_id,
             node_id=node_id,
-            current_user=await _require_mcp_user(services, ctx),
         )
 
+    @service.tool(
+        name="graph_node_payload_set",
+        surfaces=_graph_surface_specs(cli_renderer=CLI_ALIAS_JSON_RENDERER),
+        access=GRAPH_TOOL_ACCESS,
+        codecs={"payload_base64": PAYLOAD_BASE64_CODEC},
+    )
     async def graph_node_payload_set(
         graph_id: str,
         node_id: str,
         payload_base64: str,
-        ctx: Context,
         mime: str = "",
         payload_filename: str = "",
+        ctx: InvocationContext = inject_context(),
     ) -> GraphNodeDetail:
-        """Set one graph node payload for the authenticated MCP user."""
-        return await _call_graph_content(
+        """Set one graph node payload for the authenticated caller."""
+        return await _call_graph_content_from_context(
             services,
             "set_graph_node_payload",
+            ctx,
             graph_id=graph_id,
             node_id=node_id,
-            payload=_coerce_payload_base64_argument(payload_base64),
+            payload=payload_base64,
             mime=mime,
             payload_filename=payload_filename,
-            current_user=await _require_mcp_user(services, ctx),
         )
 
+    @service.tool(
+        name="graph_edge_list",
+        surfaces=_graph_surface_specs(http_method="GET"),
+        access=GRAPH_TOOL_ACCESS,
+    )
     async def graph_edge_list(
         graph_id: str,
-        ctx: Context,
         type: str = "",
         schema_name: str = "",
         source_id: str = "",
@@ -1269,11 +1030,13 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         limit: int = 50,
         offset: int = 0,
         sort: str = "created_at_desc",
+        ctx: InvocationContext = inject_context(),
     ) -> GraphEdgeList:
-        """List graph edges for the authenticated MCP user."""
-        return await _call_graph_content(
+        """List graph edges for the authenticated caller."""
+        return await _call_graph_content_from_context(
             services,
             "list_graph_edges",
+            ctx,
             graph_id=graph_id,
             type=type,
             schema_name=schema_name,
@@ -1282,47 +1045,66 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
             limit=limit,
             offset=offset,
             sort=sort,
-            current_user=await _require_mcp_user(services, ctx),
         )
 
+    @service.tool(
+        name="graph_edge_get",
+        surfaces=_graph_surface_specs(
+            http_method="GET",
+            cli_renderer=CLI_ALIAS_JSON_RENDERER,
+        ),
+        access=GRAPH_TOOL_ACCESS,
+    )
     async def graph_edge_get(
         graph_id: str,
         edge_id: str,
-        ctx: Context,
+        ctx: InvocationContext = inject_context(),
     ) -> GraphEdgeDetail:
-        """Return one graph edge for the authenticated MCP user."""
-        return await _call_graph_content(
+        """Return one graph edge for the authenticated caller."""
+        return await _call_graph_content_from_context(
             services,
             "get_graph_edge",
+            ctx,
             graph_id=graph_id,
             edge_id=edge_id,
-            current_user=await _require_mcp_user(services, ctx),
         )
 
+    @service.tool(
+        name="graph_edge_create",
+        surfaces=_graph_surface_specs(cli_renderer=CLI_ALIAS_JSON_RENDERER),
+        access=GRAPH_TOOL_ACCESS,
+        codecs={"data": JSON_OBJECT_CODEC, "tags": TAGS_CODEC},
+    )
     async def graph_edge_create(
         graph_id: str,
         type: str,
         source_id: str,
         target_id: str,
         data: dict[str, object],
-        ctx: Context,
         schema_name: str = "",
         tags: str = "",
+        ctx: InvocationContext = inject_context(),
     ) -> GraphEdgeDetail:
-        """Create one graph edge for the authenticated MCP user."""
-        return await _call_graph_content(
+        """Create one graph edge for the authenticated caller."""
+        return await _call_graph_content_from_context(
             services,
             "create_graph_edge",
+            ctx,
             graph_id=graph_id,
             type=type,
             source_id=source_id,
             target_id=target_id,
             schema_name=schema_name,
-            tags=_coerce_tags_argument(tags),
-            data=_coerce_json_object_argument(data, argument_name="data"),
-            current_user=await _require_mcp_user(services, ctx),
+            tags=tags,
+            data=data,
         )
 
+    @service.tool(
+        name="graph_edge_update",
+        surfaces=_graph_surface_specs(cli_renderer=CLI_ALIAS_JSON_RENDERER),
+        access=GRAPH_TOOL_ACCESS,
+        codecs={"data": JSON_OBJECT_CODEC, "tags": TAGS_CODEC},
+    )
     async def graph_edge_update(
         graph_id: str,
         edge_id: str,
@@ -1330,59 +1112,45 @@ def _build_mcp_graph_content_tools(services: AdminServices) -> list[ToolDefiniti
         source_id: str,
         target_id: str,
         data: dict[str, object],
-        ctx: Context,
         schema_name: str = "",
         tags: str = "",
+        ctx: InvocationContext = inject_context(),
     ) -> GraphEdgeDetail:
-        """Update one graph edge for the authenticated MCP user."""
-        return await _call_graph_content(
+        """Update one graph edge for the authenticated caller."""
+        return await _call_graph_content_from_context(
             services,
             "update_graph_edge",
+            ctx,
             graph_id=graph_id,
             edge_id=edge_id,
             type=type,
             source_id=source_id,
             target_id=target_id,
             schema_name=schema_name,
-            tags=_coerce_tags_argument(tags),
-            data=_coerce_json_object_argument(data, argument_name="data"),
-            current_user=await _require_mcp_user(services, ctx),
+            tags=tags,
+            data=data,
         )
 
+    @service.tool(
+        name="graph_edge_delete",
+        surfaces=_graph_surface_specs(cli_renderer=CLI_ALIAS_JSON_RENDERER),
+        access=GRAPH_TOOL_ACCESS,
+    )
     async def graph_edge_delete(
         graph_id: str,
         edge_id: str,
-        ctx: Context,
+        ctx: InvocationContext = inject_context(),
     ) -> GraphEdgeDetail:
-        """Delete one graph edge for the authenticated MCP user."""
-        return await _call_graph_content(
+        """Delete one graph edge for the authenticated caller."""
+        return await _call_graph_content_from_context(
             services,
             "delete_graph_edge",
+            ctx,
             graph_id=graph_id,
             edge_id=edge_id,
-            current_user=await _require_mcp_user(services, ctx),
         )
 
-    return [
-        ToolDefinition(graph_overview, "graph_overview"),
-        ToolDefinition(graph_schema_list, "graph_schema_list"),
-        ToolDefinition(graph_schema_get, "graph_schema_get"),
-        ToolDefinition(graph_schema_create, "graph_schema_create"),
-        ToolDefinition(graph_schema_update, "graph_schema_update"),
-        ToolDefinition(graph_schema_delete, "graph_schema_delete"),
-        ToolDefinition(graph_node_list, "graph_node_list"),
-        ToolDefinition(graph_node_get, "graph_node_get"),
-        ToolDefinition(graph_node_create, "graph_node_create"),
-        ToolDefinition(graph_node_update, "graph_node_update"),
-        ToolDefinition(graph_node_delete, "graph_node_delete"),
-        ToolDefinition(graph_node_payload_get, "graph_node_payload_get"),
-        ToolDefinition(graph_node_payload_set, "graph_node_payload_set"),
-        ToolDefinition(graph_edge_list, "graph_edge_list"),
-        ToolDefinition(graph_edge_get, "graph_edge_get"),
-        ToolDefinition(graph_edge_create, "graph_edge_create"),
-        ToolDefinition(graph_edge_update, "graph_edge_update"),
-        ToolDefinition(graph_edge_delete, "graph_edge_delete"),
-    ]
+    return service
 
 
 def _build_cli_api_key_tools(services: AdminServices) -> list[ToolDefinition]:
@@ -1391,33 +1159,29 @@ def _build_cli_api_key_tools(services: AdminServices) -> list[ToolDefinition]:
     async def api_key_list(username: str) -> list[dict[str, object]]:
         """List API keys for one local admin user."""
         user = await _require_user_by_username(services, username)
-        result = [
+        return [
             _serialize_api_key(item)
             for item in await services.admin_store.list_api_keys_for_user(user.id)
         ]
-        return _emit_cli_result(result)
 
     async def api_key_create(username: str, label: str) -> dict[str, object]:
         """Create an API key for one local admin user."""
         user = await _require_user_by_username(services, username)
-        result = await _create_api_key_for_user(services, user_id=user.id, label=label)
-        return _emit_cli_result(result)
+        return await _create_api_key_for_user(services, user_id=user.id, label=label)
 
     async def api_key_reveal(username: str, key_id: str) -> dict[str, object]:
         """Reveal one API key owned by the named local user."""
         user = await _require_user_by_username(services, username)
-        result = await _reveal_api_key_for_user(
+        return await _reveal_api_key_for_user(
             services, user_id=user.id, key_id=key_id
         )
-        return _emit_cli_result(result)
 
     async def api_key_revoke(username: str, key_id: str) -> dict[str, object]:
         """Revoke one API key owned by the named local user."""
         user = await _require_user_by_username(services, username)
-        result = await _revoke_api_key_for_user(
+        return await _revoke_api_key_for_user(
             services, user_id=user.id, key_id=key_id
         )
-        return _emit_cli_result(result)
 
     return [
         ToolDefinition(api_key_list, "api_key_list"),
@@ -1430,27 +1194,38 @@ def _build_cli_api_key_tools(services: AdminServices) -> list[ToolDefinition]:
 def _build_mcp_api_key_tools(services: AdminServices) -> list[ToolDefinition]:
     """Build authenticated MCP tools for current-user API key management."""
 
-    async def api_key_list_me(ctx: Context) -> list[dict[str, object]]:
+    async def api_key_list_me(
+        ctx: InvocationContext = inject_context(),
+    ) -> list[dict[str, object]]:
         """List API keys for the authenticated MCP user."""
-        user = await _require_mcp_user(services, ctx)
+        user = _require_context_user(ctx)
         return [
             _serialize_api_key(item)
             for item in await services.admin_store.list_api_keys_for_user(user.id)
         ]
 
-    async def api_key_create_me(label: str, ctx: Context) -> dict[str, object]:
+    async def api_key_create_me(
+        label: str,
+        ctx: InvocationContext = inject_context(),
+    ) -> dict[str, object]:
         """Create an API key for the authenticated MCP user."""
-        user = await _require_mcp_user(services, ctx)
+        user = _require_context_user(ctx)
         return await _create_api_key_for_user(services, user_id=user.id, label=label)
 
-    async def api_key_reveal_me(key_id: str, ctx: Context) -> dict[str, object]:
+    async def api_key_reveal_me(
+        key_id: str,
+        ctx: InvocationContext = inject_context(),
+    ) -> dict[str, object]:
         """Reveal one API key owned by the authenticated MCP user."""
-        user = await _require_mcp_user(services, ctx)
+        user = _require_context_user(ctx)
         return await _reveal_api_key_for_user(services, user_id=user.id, key_id=key_id)
 
-    async def api_key_revoke_me(key_id: str, ctx: Context) -> dict[str, object]:
+    async def api_key_revoke_me(
+        key_id: str,
+        ctx: InvocationContext = inject_context(),
+    ) -> dict[str, object]:
         """Revoke one API key owned by the authenticated MCP user."""
-        user = await _require_mcp_user(services, ctx)
+        user = _require_context_user(ctx)
         return await _revoke_api_key_for_user(services, user_id=user.id, key_id=key_id)
 
     return [
@@ -1469,23 +1244,6 @@ async def _require_user_by_username(services: AdminServices, username: str):
     user = await admin_store.get_user_by_username(username.strip())
     if user is None or not user.is_active:
         raise ValueError(f"User '{username}' was not found.")
-    return user
-
-
-async def _require_mcp_user(services: AdminServices, ctx: Context):
-    """Return the authenticated MCP user for the current request."""
-    admin_store = services.admin_store
-    if admin_store is None:
-        raise RuntimeError("Admin store is not ready yet.")
-    access_token = get_access_token()
-    if access_token is None:
-        raise RuntimeError("Authenticated MCP API key required.")
-    user_id = str(access_token.claims.get("user_id", "")).strip()
-    if not user_id:
-        raise RuntimeError("Authenticated MCP token is missing a user id.")
-    user = await admin_store.get_user_by_id(user_id)
-    if user is None or not user.is_active:
-        raise RuntimeError("Authenticated MCP user is no longer active.")
     return user
 
 
@@ -1576,20 +1334,6 @@ def _require_graph_content(services: AdminServices):
     if graph_content is None:
         raise RuntimeError("Graph content service is not ready yet.")
     return graph_content
-
-
-def _require_rest_user(request: Request):
-    """Return the authenticated REST user set by API-key middleware."""
-    current_user = getattr(request.state, "current_user", None)
-    if current_user is None:
-        raise RuntimeError("Authenticated REST API key required.")
-    return current_user
-
-
-def _emit_cli_result(result):
-    """Print a JSON-formatted CLI result and return it for tests."""
-    print(json.dumps(result, indent=2, sort_keys=True))
-    return result
 
 
 def _coerce_json_object_argument(raw_value, *, argument_name: str) -> dict[str, object]:

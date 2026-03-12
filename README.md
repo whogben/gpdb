@@ -56,7 +56,7 @@ for node in result.items:
 - the `gpdb` console command
 - a browser-based admin app
 - a REST API under `/api`
-- an MCP server exposed over SSE
+- an MCP server exposed over Streamable HTTP
 
 ### Admin install
 
@@ -83,7 +83,7 @@ Once the service is running, the current runtime exposes:
 - the admin web app at `/`
 - a health endpoint at `/health`
 - the REST status endpoint at `POST /api/status`
-- the MCP SSE endpoint at `/mcp/gpdb/sse`
+- the MCP endpoint at `/mcp/gpdb/mcp`
 
 The CLI also exposes the current status command directly:
 
