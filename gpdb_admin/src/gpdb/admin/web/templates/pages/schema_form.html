@@ -15,7 +15,9 @@
       <li>Name: {{ schema_detail.schema.name }}.</li>
       <li>Kind: {{ schema_detail.schema.kind }}.</li>
       <li>Current version: {{ schema_detail.schema.version }}.</li>
-      <li>Usage: {{ schema_detail.schema.usage.node_count }} node{{ "" if schema_detail.schema.usage.node_count == 1 else "s" }}, {{ schema_detail.schema.usage.edge_count }} edge{{ "" if schema_detail.schema.usage.edge_count == 1 else "s" }}.</li>
+      <li>Usage: {{ schema_detail.schema.usage.node_count }} node{{ "" if schema_detail.schema.usage.node_count == 1
+        else "s" }}, {{ schema_detail.schema.usage.edge_count }} edge{{ "" if schema_detail.schema.usage.edge_count == 1
+        else "s" }}.</li>
     </ul>
     {% endif %}
   </div>
@@ -45,22 +47,95 @@
         <span>Kind</span>
         <select name="kind">
           {% for schema_kind in ("node", "edge") %}
-          <option value="{{ schema_kind }}" {% if (form_data or {}).get('kind', 'node') == schema_kind %}selected{% endif %}>{{ schema_kind }}</option>
+          <option value="{{ schema_kind }}" {% if (form_data or {}).get('kind', 'node' )==schema_kind %}selected{% endif
+            %}>{{ schema_kind }}</option>
           {% endfor %}
         </select>
       </label>
       {% endif %}
 
-      <label class="field">
-        <span>JSON Schema</span>
-        <textarea name="json_schema" rows="18" required>{{ (form_data or {}).get('json_schema', '') }}</textarea>
-      </label>
+      <!-- JSONJoy Builder Editor Container -->
+      <section class="schema-editor-card" data-jsonjoy-root>
+        <div class="schema-editor-card__header">
+          <h3>JSON Schema Editor</h3>
+          <button class="button button-secondary" type="button" data-jsonjoy-refresh>
+            Reset to Original
+          </button>
+        </div>
+        <div class="schema-editor-card__body" id="jsonjoy-editor-mount"></div>
+        <p class="schema-editor-card__status" data-jsonjoy-status></p>
+      </section>
+
+      <!-- Hidden input for form submission -->
+      <input type="hidden" name="json_schema" id="schema-json-field"
+        value="{{ (form_data or {}).get('json_schema', '') }}">
 
       <div class="button-row">
         <button class="button" type="submit">{% if is_edit %}Save changes{% else %}Create schema{% endif %}</button>
-        <a class="button button-secondary" href="{% if is_edit %}{{ web_app.url_path_for('graph_schema_detail_page', graph_id=overview.graph.id, schema_name=schema_detail.schema.name) }}{% else %}{{ web_app.url_path_for('graph_schema_list_page', graph_id=overview.graph.id) }}{% endif %}">Back</a>
+        <a class="button button-secondary"
+          href="{% if is_edit %}{{ web_app.url_path_for('graph_schema_detail_page', graph_id=overview.graph.id, schema_name=schema_detail.schema.name) }}{% else %}{{ web_app.url_path_for('graph_schema_list_page', graph_id=overview.graph.id) }}{% endif %}">Back</a>
       </div>
     </form>
   </div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ web_app.url_path_for('static', path='js/jsonjoy-builder.bundle.js') }}"></script>
+<script src="{{ web_app.url_path_for('static', path='js/jsonjoy-wrapper.js') }}"></script>
+<script>
+  (function () {
+    const EDITOR_ID = 'jsonjoy-editor-mount';
+    const SCHEMA_FIELD_ID = 'schema-json-field';
+
+    const schemaField = document.getElementById(SCHEMA_FIELD_ID);
+    const statusEl = document.querySelector('[data-jsonjoy-status]');
+    const refreshBtn = document.querySelector('[data-jsonjoy-refresh]');
+
+    let initialSchema = {};
+
+    // Parse initial schema from form data
+    try {
+      initialSchema = JSON.parse(schemaField.value || '{}');
+    } catch (e) {
+      initialSchema = { type: 'object' };
+      if (statusEl) {
+        statusEl.textContent = 'Invalid initial schema, using default.';
+        statusEl.dataset.state = 'warning';
+      }
+    }
+
+    // Mount the editor
+    window.JsonJoyEditor.mount(EDITOR_ID, initialSchema, {
+      readOnly: false,
+      textarea: schemaField,
+      onChange: function (newSchema) {
+        if (statusEl) {
+          statusEl.textContent = '';
+          delete statusEl.dataset.state;
+        }
+      },
+    });
+
+    // Reset button handler
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', function () {
+        window.JsonJoyEditor.destroy(EDITOR_ID);
+        window.JsonJoyEditor.mount(EDITOR_ID, initialSchema, {
+          readOnly: false,
+          textarea: schemaField,
+        });
+        if (statusEl) {
+          statusEl.textContent = 'Schema reset to original.';
+          delete statusEl.dataset.state;
+        }
+      });
+    }
+
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', function () {
+      window.JsonJoyEditor.destroy(EDITOR_ID);
+    });
+  })();
+</script>
 {% endblock %}

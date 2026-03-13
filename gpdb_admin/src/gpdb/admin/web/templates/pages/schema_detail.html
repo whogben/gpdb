@@ -11,10 +11,14 @@
       where this schema is currently attached in graph content.
     </p>
     <div class="button-row">
-      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_schema_list_page', graph_id=schema_detail.graph.id) }}">Back to schemas</a>
-      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_overview_page', graph_id=schema_detail.graph.id) }}">Graph overview</a>
+      <a class="button button-secondary"
+        href="{{ web_app.url_path_for('graph_schema_list_page', graph_id=schema_detail.graph.id) }}">Back to schemas</a>
+      <a class="button button-secondary"
+        href="{{ web_app.url_path_for('graph_overview_page', graph_id=schema_detail.graph.id) }}">Graph overview</a>
       {% if current_user.is_owner %}
-      <a class="button" href="{{ web_app.url_path_for('graph_schema_edit_page', graph_id=schema_detail.graph.id, schema_name=schema_detail.schema.name) }}">Edit schema</a>
+      <a class="button"
+        href="{{ web_app.url_path_for('graph_schema_edit_page', graph_id=schema_detail.graph.id, schema_name=schema_detail.schema.name) }}">Edit
+        schema</a>
       {% endif %}
     </div>
   </div>
@@ -23,8 +27,10 @@
     <h2>Usage</h2>
     <ul class="feature-list">
       <li>Kind: {{ schema_detail.schema.kind }}.</li>
-      <li>{{ schema_detail.schema.usage.node_count }} node{{ "" if schema_detail.schema.usage.node_count == 1 else "s" }} reference this schema.</li>
-      <li>{{ schema_detail.schema.usage.edge_count }} edge{{ "" if schema_detail.schema.usage.edge_count == 1 else "s" }} reference this schema.</li>
+      <li>{{ schema_detail.schema.usage.node_count }} node{{ "" if schema_detail.schema.usage.node_count == 1 else "s"
+        }} reference this schema.</li>
+      <li>{{ schema_detail.schema.usage.edge_count }} edge{{ "" if schema_detail.schema.usage.edge_count == 1 else "s"
+        }} reference this schema.</li>
       <li>Instance: {{ schema_detail.instance.display_name }}.</li>
       <li>Prefix: {{ schema_detail.graph.table_prefix_label }}.</li>
     </ul>
@@ -51,7 +57,8 @@
       <div class="resource-header">
         <div>
           <h3>{{ schema_detail.schema.name }}</h3>
-          <p class="resource-subtitle">{{ schema_detail.schema.kind }} schema · Version {{ schema_detail.schema.version }}</p>
+          <p class="resource-subtitle">{{ schema_detail.schema.kind }} schema · Version {{ schema_detail.schema.version
+            }}</p>
         </div>
       </div>
       <dl class="resource-meta">
@@ -76,9 +83,14 @@
       {% endif %}
       {% if current_user.is_owner %}
       <div class="button-row">
-        <a class="button button-secondary" href="{{ web_app.url_path_for('graph_schema_edit_page', graph_id=schema_detail.graph.id, schema_name=schema_detail.schema.name) }}">Edit schema</a>
-        <form class="inline-form" action="{{ web_app.url_path_for('graph_schema_delete', graph_id=schema_detail.graph.id, schema_name=schema_detail.schema.name) }}" method="post">
-          <button class="button button-danger" type="submit" {% if schema_detail.schema.usage.node_count or schema_detail.schema.usage.edge_count %}disabled{% endif %}>Delete schema</button>
+        <a class="button button-secondary"
+          href="{{ web_app.url_path_for('graph_schema_edit_page', graph_id=schema_detail.graph.id, schema_name=schema_detail.schema.name) }}">Edit
+          schema</a>
+        <form class="inline-form"
+          action="{{ web_app.url_path_for('graph_schema_delete', graph_id=schema_detail.graph.id, schema_name=schema_detail.schema.name) }}"
+          method="post">
+          <button class="button button-danger" type="submit" {% if schema_detail.schema.usage.node_count or
+            schema_detail.schema.usage.edge_count %}disabled{% endif %}>Delete schema</button>
         </form>
       </div>
       <p class="resource-note">
@@ -98,8 +110,37 @@
           <p class="resource-subtitle">Stored schema body</p>
         </div>
       </div>
-      <pre class="code-block">{{ schema_json }}</pre>
+      <!-- Read-only JSONJoy Editor -->
+      <section class="schema-editor-card" data-jsonjoy-root data-mode="readonly">
+        <div class="schema-editor-card__body" id="jsonjoy-viewer-mount"></div>
+        <p class="schema-editor-card__status" data-jsonjoy-status></p>
+      </section>
     </article>
   </div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+{% if schema_json %}
+<script src="{{ web_app.url_path_for('static', path='js/jsonjoy-builder.bundle.js') }}"></script>
+<script src="{{ web_app.url_path_for('static', path='js/jsonjoy-wrapper.js') }}"></script>
+<script>
+  (function () {
+    const VIEWER_ID = 'jsonjoy-viewer-mount';
+
+    // Schema is passed via template variable
+    const schema = {{ schema_json | safe }};
+
+  // Mount read-only viewer
+  window.JsonJoyEditor.mount(VIEWER_ID, schema, {
+    readOnly: true,
+  });
+
+  // Cleanup on page unload
+  window.addEventListener('beforeunload', function () {
+    window.JsonJoyEditor.destroy(VIEWER_ID);
+  });
+}) ();
+</script>
+{% endif %}
 {% endblock %}

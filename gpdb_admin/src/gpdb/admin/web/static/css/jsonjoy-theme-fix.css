@@ -1,0 +1,57 @@
+/* CSS isolation for JSONJoy Builder - prevents dark theme from affecting editor */
+
+.jsonjoy,
+.jsonjoy *,
+.jsonjoy *::before,
+.jsonjoy *::after {
+    color: var(--jsonjoy-foreground, #020817) !important;
+}
+
+.jsonjoy {
+    background-color: var(--jsonjoy-background, #f8fafc) !important;
+}
+
+/* Force specific text elements to use JSONJoy colors */
+.jsonjoy h1,
+.jsonjoy h2,
+.jsonjoy h3,
+.jsonjoy h4,
+.jsonjoy h5,
+.jsonjoy h6,
+.jsonjoy p,
+.jsonjoy span,
+.jsonjoy label,
+.jsonjoy button,
+.jsonjoy input,
+.jsonjoy textarea,
+.jsonjoy select,
+.jsonjoy div {
+    color: var(--jsonjoy-foreground, #020817) !important;
+}
+
+/* Ensure cards and panels use JSONJoy background */
+.jsonjoy [class*="card"],
+.jsonjoy [class*="panel"],
+.jsonjoy [class*="container"] {
+    background-color: var(--jsonjoy-card, #ffffff) !important;
+}
+
+/* Fix any muted/secondary text */
+.jsonjoy [class*="muted"],
+.jsonjoy [class*="secondary"],
+.jsonjoy [class*="description"] {
+    color: var(--jsonjoy-muted-foreground, #64748b) !important;
+}
+
+/* Ensure borders use JSONJoy colors */
+.jsonjoy [class*="border"],
+.jsonjoy hr {
+    border-color: var(--jsonjoy-border, #e2e8f0) !important;
+}
+
+/* Fix fullscreen expand: remove backdrop-filter containing block from auth-card
+   when it contains a JSONJoy editor. This allows position:fixed fullscreen
+   to use the viewport as its containing block instead of being clipped. */
+.auth-card:has(.jsonjoy) {
+    backdrop-filter: none !important;
+}
