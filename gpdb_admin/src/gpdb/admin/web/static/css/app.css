@@ -312,6 +312,10 @@ a {
   place-items: start;
 }
 
+[data-filters-panel][hidden] {
+  display: none !important;
+}
+
 .resource-header {
   display: flex;
   align-items: start;

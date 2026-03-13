@@ -36,11 +36,11 @@
       <h2>Filters</h2>
     </div>
     <button class="button button-secondary" type="button" data-filters-toggle>
-      Toggle filters
+      Hide filters
     </button>
   </div>
 
-  <article class="resource-card" data-filters-panel hidden>
+  <article class="resource-card" data-filters-panel>
     <form class="auth-form" action="{{ web_app.url_path_for('graph_node_list_page', graph_id=node_list.graph.id) }}" method="get">
       <label class="field">
         <span>Type</span>
@@ -163,13 +163,17 @@
     var panel = document.querySelector("[data-filters-panel]");
     if (!toggle || !panel) return;
 
+    function updateButtonText() {
+      toggle.textContent = panel.hasAttribute("hidden") ? "Show filters" : "Hide filters";
+    }
+
     toggle.addEventListener("click", function () {
-      var isHidden = panel.hasAttribute("hidden");
-      if (isHidden) {
+      if (panel.hasAttribute("hidden")) {
         panel.removeAttribute("hidden");
       } else {
         panel.setAttribute("hidden", "hidden");
       }
+      updateButtonText();
     });
   })();
 </script>
