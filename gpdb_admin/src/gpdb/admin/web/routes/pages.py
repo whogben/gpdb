@@ -6,6 +6,7 @@ import re
 
 from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
+from urllib.parse import urlencode
 
 from gpdb.admin.auth import (
     SESSION_COOKIE_NAME,
@@ -89,10 +90,13 @@ async def login_page(request: Request) -> HTMLResponse:
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
+    prefill_username = request.query_params.get("username") or ""
+
     return render(
         request,
         "pages/login.html",
         page_title="Sign In",
+        form_data={"username": prefill_username} if prefill_username else None,
     )
 
 
@@ -149,8 +153,10 @@ async def setup_owner(
             form_data={"username": username, "display_name": display_name},
         )
 
+    login_url = request.app.url_path_for("login")
+    login_with_username = f"{login_url}?{urlencode({'username': username})}"
     response = RedirectResponse(
-        url=request.app.url_path_for("login"),
+        url=login_with_username,
         status_code=status.HTTP_303_SEE_OTHER,
     )
     response.delete_cookie(SESSION_COOKIE_NAME)

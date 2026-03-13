@@ -93,11 +93,11 @@ def test_first_run_setup_and_login_flow(tmp_path):
             follow_redirects=False,
         )
         assert response.status_code == 303
-        assert response.headers["location"] == "/login"
+        assert response.headers["location"].startswith("/login")
 
         response = client.get("/", follow_redirects=False)
         assert response.status_code == 303
-        assert response.headers["location"] == "/login"
+        assert response.headers["location"].startswith("/login")
 
         response = client.get("/login")
         assert response.status_code == 200
@@ -887,7 +887,7 @@ def test_graph_node_schema_editor_slice_renders_vendored_assets(tmp_path):
 
         response = client.get(f"/graphs/{graph_id}/nodes/{node_id}/edit")
         assert response.status_code == 200
-        assert "Reload from JSON" in response.text
+        assert "Schema Editor" in response.text
         assert "Schema backed node" in response.text
         assert (
             '<option value="task_schema" selected' in response.text
@@ -979,7 +979,7 @@ def test_graph_edge_schema_editor_slice_renders_vendored_assets(tmp_path):
 
         response = client.get(f"/graphs/{graph_id}/edges/{edge_id}/edit")
         assert response.status_code == 200
-        assert "Reload from JSON" in response.text
+        assert "Schema Editor" in response.text
         assert "Schema backed edge" in response.text
         assert '<option value="edge_schema" selected' in response.text
 
@@ -2490,7 +2490,7 @@ def _bootstrap_owner(client: TestClient) -> None:
         follow_redirects=False,
     )
     assert response.status_code == 303
-    assert response.headers["location"] == "/login"
+    assert response.headers["location"].startswith("/login")
 
 
 def _login(
@@ -2570,7 +2570,7 @@ def _extract_instance_action(html: str, instance_name: str, action: str) -> str:
 
 
 def _extract_revealed_api_key(html: str) -> str:
-    match = re.search(r'<input readonly value="([^"]+)"', html)
+    match = re.search(r'<input[^>]*readonly[^>]*value="([^"]+)"', html)
     assert match is not None
     return match.group(1)
 

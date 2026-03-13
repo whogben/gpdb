@@ -30,13 +30,6 @@
   </div>
 </section>
 
-{% if error_message %}
-<p class="form-error">{{ error_message }}</p>
-{% endif %}
-{% if success_message %}
-<p class="form-success">{{ success_message }}</p>
-{% endif %}
-
 <section class="dashboard-section">
   <div class="section-heading">
     <div>
@@ -126,31 +119,33 @@
       {% endif %}
     </article>
 
-    {% if schema_json %}
-    <article class="resource-card">
-      <div class="resource-header">
+    <article class="resource-card" id="node-data-card">
+      <div class="resource-header" style="flex-wrap: wrap; gap: 0.75rem;">
         <div>
-          <h3>Schema View</h3>
-          <p class="resource-subtitle">{{ node_detail.node.schema_name }}</p>
+          <h3>Data</h3>
+          <p class="resource-subtitle">{% if schema_json %}{{ node_detail.node.schema_name }}{% else %}Stored node body{% endif %}</p>
         </div>
+        {% if schema_json %}
+        <button type="button" class="button button-secondary" id="node-data-view-toggle" aria-pressed="false">Show JSON</button>
+        {% endif %}
       </div>
-      <section class="schema-editor-card" data-jedison-root data-mode="readonly">
-        <div class="schema-editor-card__body" data-jedison-mount></div>
-        <p class="schema-editor-card__status" data-jedison-status></p>
-        <script type="application/json" data-jedison-schema>{{ schema_json | tojson }}</script>
-        <script type="application/json" data-jedison-data>{{ node_detail.node.data | tojson }}</script>
-      </section>
-    </article>
-    {% endif %}
-
-    <article class="resource-card">
-      <div class="resource-header">
-        <div>
-          <h3>JSON Data</h3>
-          <p class="resource-subtitle">Stored node body</p>
-        </div>
+      {% if schema_json %}
+      <div id="node-data-schema-view" class="data-view-panel">
+        <section class="schema-editor-card" data-jedison-root data-mode="readonly">
+          <div class="schema-editor-card__body" data-jedison-mount></div>
+          <p class="schema-editor-card__status" data-jedison-status></p>
+          <script type="application/json" data-jedison-schema>{{ schema_json | tojson }}</script>
+          <script type="application/json" data-jedison-data>{{ node_detail.node.data | tojson }}</script>
+        </section>
       </div>
-      <pre class="code-block">{{ node_json }}</pre>
+      <div id="node-data-json-view" class="data-view-panel" hidden>
+        <pre class="code-block">{{ node_json }}</pre>
+      </div>
+      {% else %}
+      <div class="data-view-panel">
+        <pre class="code-block">{{ node_json }}</pre>
+      </div>
+      {% endif %}
     </article>
   </div>
 </section>
@@ -210,4 +205,26 @@
 <script src="{{ web_app.url_path_for('static', path='js/jedison.umd.js') }}"></script>
 <script src="{{ web_app.url_path_for('static', path='js/jedison-form.js') }}"></script>
 {% endif %}
+<script>
+(function () {
+  var toggle = document.getElementById("node-data-view-toggle");
+  if (!toggle) return;
+  var schemaPanel = document.getElementById("node-data-schema-view");
+  var jsonPanel = document.getElementById("node-data-json-view");
+  toggle.addEventListener("click", function () {
+    var showJson = !schemaPanel.hidden;
+    if (showJson) {
+      schemaPanel.hidden = true;
+      jsonPanel.hidden = false;
+      toggle.textContent = "Show schema view";
+      toggle.setAttribute("aria-pressed", "true");
+    } else {
+      schemaPanel.hidden = false;
+      jsonPanel.hidden = true;
+      toggle.textContent = "Show JSON";
+      toggle.setAttribute("aria-pressed", "false");
+    }
+  });
+})();
+</script>
 {% endblock %}

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="auth-layout">
+<section class="auth-layout auth-layout--full-width">
   <div class="auth-copy">
     <p class="eyebrow">Graph</p>
     <h1>{% if mode == "create" %}Add a graph.{% else %}Edit graph metadata.{% endif %}</h1>
@@ -13,9 +13,6 @@
 
   <div class="auth-card">
     <h2>{% if mode == "create" %}New graph{% else %}{{ graph.display_name }}{% endif %}</h2>
-    {% if error_message %}
-    <p class="form-error">{{ error_message }}</p>
-    {% endif %}
     <form class="auth-form" action="{{ submit_url }}" method="post">
       {% if mode == "create" %}
       <label class="field">

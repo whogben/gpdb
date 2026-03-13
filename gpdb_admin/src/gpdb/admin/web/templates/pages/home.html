@@ -6,9 +6,7 @@
     <p class="eyebrow">Graphs</p>
     <h1>All graphs across all managed instances.</h1>
     <p class="hero-text">
-      Signed in as <strong>{{ current_user.display_name }}</strong>. The admin runtime
-      continuously checks managed instances and surfaces each discovered graph as an
-      instance plus exact table prefix.
+      Signed in as <strong>{{ current_user.display_name }}</strong>.
     </p>
   </div>
 
@@ -20,6 +18,7 @@
       <a class="button button-secondary" href="{{ web_app.url_path_for('instance_create_page') }}">Add instance</a>
       {% endif %}
       <a class="button button-secondary" href="{{ web_app.url_path_for('api_keys_page') }}">Manage API keys</a>
+      <a class="button button-secondary" href="/api/docs">API docs</a>
       <form action="{{ web_app.url_path_for('logout') }}" method="post">
         <button class="button button-secondary" type="submit">Sign out</button>
       </form>
@@ -28,17 +27,9 @@
       <li>{{ graphs|length }} graph{{ "" if graphs|length == 1 else "s" }} visible.</li>
       <li>{{ instances|length }} managed instance{{ "" if instances|length == 1 else "s" }} registered.</li>
       <li>{{ api_keys|length }} API key{{ "" if api_keys|length == 1 else "s" }} for your account.</li>
-      <li>Statuses update from live connection checks.</li>
     </ul>
   </div>
 </section>
-
-{% if error_message %}
-<p class="form-error">{{ error_message }}</p>
-{% endif %}
-{% if success_message %}
-<p class="form-success">{{ success_message }}</p>
-{% endif %}
 
 <section class="dashboard-section">
   <div class="section-heading">

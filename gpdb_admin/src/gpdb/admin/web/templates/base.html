@@ -21,6 +21,10 @@
     </header>
 
     <main class="site-main">
+      {% block page_messages %}
+      {% if error_message %}<p class="form-error">{{ error_message }}</p>{% endif %}
+      {% if success_message %}<p class="form-success">{{ success_message }}</p>{% endif %}
+      {% endblock %}
       {% block content %}{% endblock %}
     </main>
   </div>

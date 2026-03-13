@@ -14,12 +14,6 @@
 
   <div class="hero-panel">
     <h2>Create key</h2>
-    {% if error_message %}
-    <p class="form-error">{{ error_message }}</p>
-    {% endif %}
-    {% if success_message %}
-    <p class="form-success">{{ success_message }}</p>
-    {% endif %}
     <form class="auth-form" action="{{ web_app.url_path_for('api_key_create') }}" method="post">
       <label class="field">
         <span>Label</span>
@@ -44,7 +38,12 @@
     </div>
     <label class="field">
       <span>Copyable value</span>
-      <input readonly value="{{ revealed_api_key }}">
+      <div class="copy-field">
+        <input id="revealed-api-key" readonly value="{{ revealed_api_key }}">
+        <button class="button button-secondary" type="button" data-copy-target="revealed-api-key">
+          Copy
+        </button>
+      </div>
     </label>
   </div>
 </section>
@@ -110,4 +109,29 @@
     {% endfor %}
   </div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest("[data-copy-target]");
+    if (!button) return;
+
+    var inputId = button.getAttribute("data-copy-target");
+    var input = document.getElementById(inputId);
+    if (!input) return;
+
+    input.select();
+    input.setSelectionRange(0, 99999);
+    try {
+      document.execCommand("copy");
+      button.textContent = "Copied";
+      setTimeout(function () {
+        button.textContent = "Copy";
+      }, 2000);
+    } catch (e) {
+      // If copying fails, leave the button text unchanged.
+    }
+  });
+</script>
 {% endblock %}

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="auth-layout">
+<section class="auth-layout auth-layout--full-width">
   <div class="auth-copy">
     <p class="eyebrow">Schema</p>
     <h1>{% if is_edit %}Edit{% else %}Create{% endif %} a schema for {{ overview.graph.display_name }}.</h1>
@@ -24,9 +24,6 @@
 
   <div class="auth-card">
     <h2>{% if is_edit %}Update schema{% else %}New schema{% endif %}</h2>
-    {% if error_message %}
-    <p class="form-error">{{ error_message }}</p>
-    {% endif %}
     <form class="auth-form" action="{{ submit_url }}" method="post">
       {% if is_edit %}
       <label class="field">

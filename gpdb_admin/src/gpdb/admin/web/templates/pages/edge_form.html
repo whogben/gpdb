@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="auth-layout">
+<section class="auth-layout auth-layout--full-width">
   <div class="auth-copy">
     <p class="eyebrow">Edge</p>
     <h1>{% if is_edit %}Edit{% else %}Create{% endif %} an edge for {{ overview.graph.display_name }}.</h1>
@@ -21,9 +21,6 @@
 
   <div class="auth-card">
     <h2>{% if is_edit %}Update edge{% else %}New edge{% endif %}</h2>
-    {% if error_message %}
-    <p class="form-error">{{ error_message }}</p>
-    {% endif %}
     <form class="auth-form" action="{{ submit_url }}" method="post">
       {% if is_edit and edge_detail %}
       <label class="field">
@@ -72,9 +69,6 @@
       >
         <div class="schema-editor-card__header">
           <h3>Schema Editor</h3>
-          <button class="button button-secondary" type="button" data-jedison-refresh>
-            Reload from JSON
-          </button>
         </div>
         <div class="schema-editor-card__body" data-jedison-mount></div>
         <p class="schema-editor-card__status" data-jedison-status></p>

@@ -87,8 +87,11 @@
 
       if (!schemaName || !schema) {
         setStatus(statusEl, "");
+        rootEl.style.display = "none";
         return;
       }
+
+      rootEl.style.display = "";
 
       try {
         editor = createEditor(mountEl, schema, parseJson(jsonField.value || "{}"));
@@ -107,9 +110,7 @@
     }
 
     schemaSelect.addEventListener("change", mountEditorFromTextarea);
-    if (refreshButton) {
-      refreshButton.addEventListener("click", mountEditorFromTextarea);
-    }
+    jsonField.addEventListener("blur", mountEditorFromTextarea);
 
     mountEditorFromTextarea();
   }

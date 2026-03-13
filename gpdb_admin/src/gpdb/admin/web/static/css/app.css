@@ -118,6 +118,10 @@ a {
   gap: 1.5rem;
 }
 
+.auth-layout.auth-layout--full-width {
+  grid-template-columns: 1fr;
+}
+
 .auth-copy,
 .auth-card {
   padding: 1.75rem;
@@ -225,6 +229,16 @@ a {
   gap: 0.75rem;
 }
 
+.copy-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.copy-field input {
+  flex: 1 1 auto;
+}
+
 .inline-form {
   margin: 0;
 }
@@ -245,6 +259,20 @@ a {
   border-radius: 0.9rem;
   background: rgba(46, 160, 67, 0.1);
   color: #2a7c3b;
+}
+
+.hero + .dashboard-section {
+  margin-top: 2rem;
+}
+
+.hero + .form-error,
+.hero + .form-success {
+  margin-top: 1.5rem;
+}
+
+.form-error + .dashboard-section,
+.form-success + .dashboard-section {
+  margin-top: 1rem;
 }
 
 .dashboard-section + .dashboard-section {
@@ -367,6 +395,53 @@ a {
   word-break: break-word;
 }
 
+/* Data view (node/edge detail): card gives content a growing row, panels fill height */
+#node-data-card,
+#edge-data-card {
+  grid-template-rows: auto 1fr;
+  min-height: 20rem;
+}
+
+#node-data-card .data-view-panel,
+#edge-data-card .data-view-panel {
+  grid-row: 2;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+#node-data-card .data-view-panel[hidden],
+#edge-data-card .data-view-panel[hidden] {
+  display: none !important;
+}
+
+#node-data-card .data-view-panel .schema-editor-card,
+#edge-data-card .data-view-panel .schema-editor-card,
+#node-data-card .data-view-panel .code-block,
+#edge-data-card .data-view-panel .code-block {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+#node-data-card .data-view-panel .schema-editor-card__body,
+#edge-data-card .data-view-panel .schema-editor-card__body {
+  flex: 1;
+  min-height: 0;
+}
+
+#node-data-card .data-view-panel .schema-editor-card__body > *,
+#edge-data-card .data-view-panel .schema-editor-card__body > * {
+  height: 100%;
+  min-height: 0;
+}
+
+#node-data-card .data-view-panel .code-block,
+#edge-data-card .data-view-panel .code-block {
+  overflow: auto;
+}
+
 .schema-editor-card {
   display: grid;
   gap: 1rem;
@@ -398,6 +473,7 @@ a {
 .schema-editor-card__body {
   min-height: 5rem;
 }
+
 
 .schema-editor-card__body:empty::before {
   content: "No schema selected.";

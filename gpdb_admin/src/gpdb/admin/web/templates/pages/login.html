@@ -13,9 +13,6 @@
 
   <div class="auth-card">
     <h2>Login</h2>
-    {% if error_message %}
-    <p class="form-error">{{ error_message }}</p>
-    {% endif %}
     <form class="auth-form" action="{{ web_app.url_path_for('login_submit') }}" method="post">
       <label class="field">
         <span>Username</span>

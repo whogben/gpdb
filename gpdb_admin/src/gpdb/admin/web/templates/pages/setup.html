@@ -13,9 +13,6 @@
 
   <div class="auth-card">
     <h2>Owner setup</h2>
-    {% if error_message %}
-    <p class="form-error">{{ error_message }}</p>
-    {% endif %}
     <form class="auth-form" action="{{ web_app.url_path_for('setup') }}" method="post">
       <label class="field">
         <span>Username</span>
