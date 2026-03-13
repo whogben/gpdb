@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from gpdb import Filter, FilterGroup, GPGraph, Logic, NodeRead, NodeUpsert, SearchQuery
 from gpdb.admin.auth import parse_api_key
 from gpdb.admin.secrets import SecretCipher
+from sqlalchemy.orm.exc import StaleDataError
 
 
 ADMIN_TABLE_PREFIX = "admin"
@@ -301,7 +302,9 @@ class AdminStore:
         node = await self.db.get_node(api_key_id)
         if node is None or node.type != API_KEY_NODE_TYPE:
             return None
-        return self._decrypt_instance_secret(_optional_string(node.data.get("key_value")))
+        return self._decrypt_instance_secret(
+            _optional_string(node.data.get("key_value"))
+        )
 
     async def revoke_api_key(self, api_key_id: str) -> AdminAPIKey | None:
         """Revoke one API key and prevent future authentication."""
@@ -356,16 +359,20 @@ class AdminStore:
 
         updated_data = dict(node.data)
         updated_data["last_used_at"] = _timestamp_now()
-        updated = await self.db.set_node(
-            NodeUpsert(
-                id=node.id,
-                type=node.type,
-                name=node.name,
-                parent_id=node.parent_id,
-                data=updated_data,
+        try:
+            updated = await self.db.set_node(
+                NodeUpsert(
+                    id=node.id,
+                    type=node.type,
+                    name=node.name,
+                    parent_id=node.parent_id,
+                    data=updated_data,
+                )
             )
-        )
-        return user, _admin_api_key_from_node(updated)
+            return user, _admin_api_key_from_node(updated)
+        except StaleDataError:
+            # Concurrent update on last_used_at - non-critical, return success
+            return user, _admin_api_key_from_node(node)
 
     async def list_instances(self) -> list[ManagedInstance]:
         """Return all managed instance records."""
@@ -429,9 +436,13 @@ class AdminStore:
             "database": None,
             "username": None,
             "password": None,
-            "status": existing.data.get("status", "checking") if existing else "checking",
+            "status": (
+                existing.data.get("status", "checking") if existing else "checking"
+            ),
             "status_message": existing.data.get("status_message") if existing else None,
-            "last_checked_at": existing.data.get("last_checked_at") if existing else None,
+            "last_checked_at": (
+                existing.data.get("last_checked_at") if existing else None
+            ),
         }
         node = await self.db.set_node(
             NodeUpsert(
@@ -515,7 +526,9 @@ class AdminStore:
             updated_data["username"] = username or ""
             if password is None:
                 updated_data["password"] = self._encrypt_instance_secret(
-                    self._decrypt_instance_secret(_optional_string(updated_data.get("password")))
+                    self._decrypt_instance_secret(
+                        _optional_string(updated_data.get("password"))
+                    )
                 )
             else:
                 updated_data["password"] = self._encrypt_instance_secret(password)
@@ -725,9 +738,11 @@ class AdminStore:
                     or current_data.get("display_name")
                     or _default_graph_display_name(table_prefix, instance.display_name),
                     "status": status or current_data.get("status", "checking"),
-                    "status_message": status_message
-                    if status_message is not None
-                    else current_data.get("status_message"),
+                    "status_message": (
+                        status_message
+                        if status_message is not None
+                        else current_data.get("status_message")
+                    ),
                     "last_checked_at": _timestamp_now(),
                     "exists_in_instance": (
                         exists_in_instance

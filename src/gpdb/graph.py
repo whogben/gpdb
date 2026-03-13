@@ -1436,38 +1436,36 @@ class GPGraph:
         Note: If node.payload is provided, it will be stored.
         For updating only payload, use set_node_payload().
         """
-        # Preserve existing schema_name if updating and not provided
-        schema_to_validate = node.schema_name
-        if node.id and node.schema_name is None:
-            async with self._get_session() as session:
-                existing = await session.get(self._Node, node.id)
-                if existing and existing.schema_name:
-                    schema_to_validate = existing.schema_name
-                    # Update DTO to ensure schema persistence
-                    node.schema_name = schema_to_validate
-
-        # Validate data against schema if schema_name is provided
-        if schema_to_validate:
-            await self._validate_data(
-                schema_to_validate,
-                node.data,
-                expected_kind="node",
-            )
-
         async with self._get_session() as session:
             # Check if node exists (for update)
             existing = None
             if node.id:
                 existing = await session.get(self._Node, node.id)
 
+            # Preserve existing schema_name if updating and not provided
+            schema_to_validate = node.schema_name
+            if existing and node.schema_name is None and existing.schema_name:
+                schema_to_validate = existing.schema_name
+                node.schema_name = schema_to_validate
+
+            # Validate data against schema if schema_name is provided
+            if schema_to_validate:
+                await self._validate_data(
+                    schema_to_validate,
+                    node.data,
+                    expected_kind="node",
+                )
+
             # Convert DTO to ORM
             orm = _node_upsert_to_orm(node, existing, self._Node)
 
-            # Merge and flush
-            merged = await session.merge(orm)
+            # Add or update
+            if existing is None:
+                session.add(orm)
+
             await session.flush()
-            await session.refresh(merged)
-            return _node_orm_to_read(merged)
+            await session.refresh(orm)
+            return _node_orm_to_read(orm)
 
     async def get_node(self, id: str) -> NodeRead | None:
         """
