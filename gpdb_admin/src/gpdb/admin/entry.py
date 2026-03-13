@@ -294,8 +294,17 @@ class CLIServer(ToolaccessCLIServer):
 
             async def runner_with_lifespan():
                 if self.manager and self.manager.lifespan_ctx:
-                    async with self.manager.lifespan_ctx(self.manager.app):
-                        return await runner()
+                    app = self.manager.app
+                    services = getattr(app.state, "services", None)
+                    if isinstance(services, AdminServices):
+                        if getattr(app.state, "admin_lifespan_active", False):
+                            return await runner()
+                        admin_lifespan = create_admin_lifespan(services)
+                        async with admin_lifespan(app):
+                            return await runner()
+                    else:
+                        async with self.manager.lifespan_ctx(app):
+                            return await runner()
                 return await runner()
 
             try:

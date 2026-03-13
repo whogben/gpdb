@@ -125,6 +125,10 @@ def create_admin_lifespan(services: AdminServices):
 
     @asynccontextmanager
     async def lifespan(app):
+        if not hasattr(app.state, "admin_lifespan_active"):
+            app.state.admin_lifespan_active = False
+        app.state.admin_lifespan_active = True
+
         data_dir = Path(services.resolved_config.runtime.data_dir)
         data_dir.mkdir(parents=True, exist_ok=True)
         pgdata = data_dir / "pgdata"
@@ -170,9 +174,12 @@ def create_admin_lifespan(services: AdminServices):
                 captive_url_factory=server.get_uri,
             )
             app.state.services = services
-            yield
-            await instance_monitor.stop()
-            await admin_store.close()
+            try:
+                yield
+            finally:
+                await instance_monitor.stop()
+                await admin_store.close()
+                app.state.admin_lifespan_active = False
 
     return lifespan
 
