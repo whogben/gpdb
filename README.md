@@ -185,7 +185,61 @@ result = await db.search_nodes(SearchQuery(
 result = await db.search_nodes(SearchQuery(filter="type = user and data.role = admin"))
 ```
 
-Supported operators: `eq`, `gt`, `lt`, `contains` (ilike), `in`.
+### Query DSL
+
+The DSL string syntax supports natural comparison operators for filtering nodes and edges:
+
+```python
+# Equality (= or ==)
+result = await db.search_nodes(SearchQuery(filter='name == "alice"'))
+result = await db.search_nodes(SearchQuery(filter="type = user"))
+
+# Not equal (!=)
+result = await db.search_nodes(SearchQuery(filter='status != "deleted"'))
+
+# Greater than (>) and greater than or equal (>=)
+result = await db.search_nodes(SearchQuery(filter="age >= 18"))
+result = await db.search_nodes(SearchQuery(filter="score > 100"))
+
+# Less than (<) and less than or equal (<=)
+result = await db.search_nodes(SearchQuery(filter="created_at < 2024-01-01"))
+result = await db.search_nodes(SearchQuery(filter="price <= 50.00"))
+
+# Contains (~) - case-insensitive substring match
+result = await db.search_nodes(SearchQuery(filter='name ~ "john"'))
+
+# In - match any value in a list
+result = await db.search_nodes(SearchQuery(filter="type in (user, admin, guest)"))
+
+# Combining conditions with and/or
+result = await db.search_nodes(SearchQuery(filter='type = user and age >= 18'))
+result = await db.search_nodes(SearchQuery(filter='status = active or role = admin'))
+
+# Parentheses for grouping
+result = await db.search_nodes(SearchQuery(filter='(type = user and active = true) or role = superuser'))
+```
+
+**Supported operators:**
+
+| Operator | Aliases | Meaning |
+|----------|---------|---------|
+| `=` | `==`, `:`, `eq` | Equal |
+| `!=` | `ne` | Not equal |
+| `>` | `gt`, `after` | Greater than |
+| `>=` | `gte` | Greater than or equal |
+| `<` | `lt`, `before` | Less than |
+| `<=` | `lte` | Less than or equal |
+| `~` | `contains` | Contains (case-insensitive) |
+| `in` | — | Match any value in list |
+
+**JSON path filtering:**
+
+Use dot notation to filter on nested JSONB data:
+
+```python
+result = await db.search_nodes(SearchQuery(filter="data.role = admin"))
+result = await db.search_nodes(SearchQuery(filter="data.metadata.version >= 2"))
+```
 
 Field projections are available via `search_nodes_projection()` for returning only selected columns.
 

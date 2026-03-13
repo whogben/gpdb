@@ -119,6 +119,9 @@ class Op(str, Enum):
     EQ = "eq"
     GT = "gt"
     LT = "lt"
+    GTE = "gte"
+    LTE = "lte"
+    NE = "ne"
     CONTAINS = "contains"
     IN = "in"
 
@@ -1734,6 +1737,12 @@ class GPGraph:
                 return expr > item.value
             if item.op == Op.LT:
                 return expr < item.value
+            if item.op == Op.GTE:
+                return expr >= item.value
+            if item.op == Op.LTE:
+                return expr <= item.value
+            if item.op == Op.NE:
+                return expr != item.value
             if item.op == Op.CONTAINS:
                 return expr.ilike(f"%{item.value}%")
             if item.op == Op.IN and isinstance(item.value, (list, tuple)):
@@ -1883,10 +1892,14 @@ _OP_MAP = {
     # Symbols & Aliases
     ":": Op.EQ,
     "=": Op.EQ,
+    "==": Op.EQ,
     ">": Op.GT,
+    ">=": Op.GTE,
     "after": Op.GT,
     "<": Op.LT,
+    "<=": Op.LTE,
     "before": Op.LT,
+    "!=": Op.NE,
     "~": Op.CONTAINS,
 }
 
@@ -1925,10 +1938,15 @@ def _tokenize(text: str) -> List[Any]:
 
         char = text[i]
 
-        # 1. Structural chars and simple operators
-        if char in "()=<>:,":
-            tokens.append(char)
-            i += 1
+        # 1. Structural chars and operators (including multi-char like >=, <=, ==, !=)
+        if char in "()=<>:,!":
+            # Check for multi-character operators
+            if char in "=<>!" and i + 1 < len(text) and text[i + 1] == "=":
+                tokens.append(char + "=")
+                i += 2
+            else:
+                tokens.append(char)
+                i += 1
             continue
 
         # 2. Strings
