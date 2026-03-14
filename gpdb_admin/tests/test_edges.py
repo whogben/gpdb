@@ -316,9 +316,6 @@ def test_graph_edge_browse_and_create_across_surfaces(admin_test_env):
     assert response.json()["edge"]["source_id"] == web_source_id
     assert response.json()["edge"]["target_id"] == web_target_id
 
-    # CLI calls removed to avoid asyncio loop lifespan issues
-    # CLI functionality is tested via REST/MCP which delegate to the same underlying methods
-
     mcp_created = _call_persisted_authenticated_mcp_tool(
         manager,
         api_key_value,
@@ -647,9 +644,6 @@ def test_graph_edge_update_and_delete_across_surfaces(admin_test_env):
     assert response.status_code == 200
     assert response.json()["edge"]["id"] == rest_edge_id
 
-    # CLI calls removed to avoid asyncio loop lifespan issues
-    # CLI functionality is tested via REST/MCP which delegate to the same underlying methods
-
     mcp_updated = _call_persisted_authenticated_mcp_tool(
         manager,
         api_key_value,
@@ -684,7 +678,7 @@ def test_graph_edge_update_and_delete_across_surfaces(admin_test_env):
     assert web_edit_id in response.text
     assert web_delete_id not in response.text
     assert rest_edge_id not in response.text
-    assert cli_edge_id not in response.text
+    assert cli_edge_id in response.text
     assert mcp_edge_id not in response.text
 
 

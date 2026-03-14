@@ -57,6 +57,7 @@ for node in result.items:
 - a browser-based admin app
 - a REST API under `/api`
 - an MCP server exposed over Streamable HTTP
+- embeddable runtime for mounting into host applications
 
 ### Admin install
 
@@ -115,6 +116,49 @@ At startup, `gpdb-admin` will generate and persist `auth.session_secret` automat
 ### Admin storage model
 
 The admin runtime manages its own local data directory and starts a captive PostgreSQL instance for admin state. Admin identity data is stored using GPDB tables with the `admin` table prefix, separate from the application graph data you manage with the core library.
+
+### Embedding admin in host applications
+
+The admin runtime can be embedded into existing ToolAccess-based applications using the `AdminRuntime` container and `attach_admin_to_manager()` function. This allows you to mount the admin UI and APIs under custom prefixes within your own application's ServerManager.
+
+```python
+from gpdb.admin.entry import attach_admin_to_manager
+from toolaccess import ServerManager
+
+def build_main_manager() -> ServerManager:
+    # Host creates its own manager
+    manager = ServerManager(name="my-main-app")
+
+    # Attach admin under /gpdb
+    admin = attach_admin_to_manager(
+        manager,
+        http_root="/gpdb",
+        api_path_prefix="/api",
+        mcp_name="gpdb",
+        cli_root_name=None,  # Host controls CLI
+    )
+
+    # Host can mount admin ToolServices into its own CLI
+    # my_cli.mount(admin.graph_service)
+
+    return manager
+```
+
+The `AdminRuntime` exposes the following ToolServices for host integration:
+
+- `admin_service` — Admin tools (status, etc.)
+- `graph_service` — Graph content tools
+- `cli_api_key_service` — CLI API key management
+- `mcp_api_key_service` — MCP API key management
+
+**Mount point parameters:**
+
+- `http_root` — Web UI mount prefix (e.g., `/gpdb`)
+- `api_path_prefix` — REST API mount prefix (e.g., `/api`)
+- `mcp_name` — MCP server name (e.g., `"gpdb"` or `"gpdb-admin"`)
+- `cli_root_name` — CLI root command (set to `None` to skip CLI creation)
+
+When embedded, the admin runtime shares the host's ServerManager lifecycle, and upgrading `gpdb-admin` automatically updates all embedded surfaces.
 
 ### Current scope
 

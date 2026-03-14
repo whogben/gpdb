@@ -127,7 +127,38 @@ def create_admin_lifespan(services: AdminServices):
     async def lifespan(app):
         if not hasattr(app.state, "admin_lifespan_active"):
             app.state.admin_lifespan_active = False
+        if not hasattr(app.state, "admin_lifespan_depth"):
+            app.state.admin_lifespan_depth = 0
+
+        if app.state.admin_lifespan_active:
+            app.state.admin_lifespan_depth += 1
+            previous_admin_store = services.admin_store
+            previous_graph_content = services.graph_content
+            nested_admin_store: AdminStore | None = None
+            try:
+                session_secret = services.resolved_config.auth.session_secret
+                if services.captive_server is not None and session_secret:
+                    nested_admin_store = AdminStore(
+                        services.captive_server.get_uri(),
+                        instance_secret=session_secret,
+                    )
+                    await nested_admin_store.initialize()
+                    services.admin_store = nested_admin_store
+                    services.graph_content = GraphContentService(
+                        admin_store=nested_admin_store,
+                        captive_url_factory=services.captive_server.get_uri,
+                    )
+                yield
+            finally:
+                if nested_admin_store is not None:
+                    await nested_admin_store.close()
+                services.admin_store = previous_admin_store
+                services.graph_content = previous_graph_content
+                app.state.admin_lifespan_depth -= 1
+            return
+
         app.state.admin_lifespan_active = True
+        app.state.admin_lifespan_depth = 1
 
         data_dir = Path(services.resolved_config.runtime.data_dir)
         data_dir.mkdir(parents=True, exist_ok=True)
@@ -179,6 +210,7 @@ def create_admin_lifespan(services: AdminServices):
             finally:
                 await instance_monitor.stop()
                 await admin_store.close()
+                app.state.admin_lifespan_depth = 0
                 app.state.admin_lifespan_active = False
 
     return lifespan

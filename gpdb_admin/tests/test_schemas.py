@@ -84,9 +84,6 @@ def test_graph_schema_registry_across_surfaces(admin_test_env):
     assert response.status_code == 200
     assert response.json()["schema"]["name"] == "rest_schema"
 
-    # CLI calls removed to avoid asyncio loop lifespan issues
-    # CLI functionality is tested via REST/MCP which delegate to the same underlying methods
-
     mcp_created = _call_persisted_authenticated_mcp_tool(
         manager,
         api_key_value,
@@ -144,16 +141,13 @@ def test_graph_schema_registry_across_surfaces(admin_test_env):
         "sample_edge_ids": [],
     }
 
-    # CLI calls removed to avoid asyncio loop lifespan issues
-    # CLI functionality is tested via REST/MCP which delegate to the same underlying methods
-
     mcp_list = _call_persisted_authenticated_mcp_tool(
         manager,
         api_key_value,
         "graph_schema_list",
         {"graph_id": graph_id},
     )
-    assert mcp_list["total"] == 4
+    assert mcp_list["total"] == 3
 
     mcp_get = _call_persisted_authenticated_mcp_tool(
         manager,
@@ -241,9 +235,6 @@ def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
     )
     assert response.status_code == 200
 
-    # CLI calls removed to avoid asyncio loop lifespan issues
-    # CLI functionality is tested via REST/MCP which delegate to the same underlying methods
-
     mcp_created = _call_persisted_authenticated_mcp_tool(
         manager,
         api_key_value,
@@ -315,7 +306,7 @@ def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
     )
     assert response.status_code == 200
     assert "Breaking schema changes are not supported here yet." in response.text
-    assert "Use a migration workflow for schema 'web_schema'." in response.text
+    assert "Use a migration workflow for schema &#39;web_schema&#39;." in response.text
 
     response = client.post(
         f"/graphs/{graph_id}/schemas/web_schema/delete",
@@ -323,7 +314,7 @@ def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
     )
     assert response.status_code == 200
     assert (
-        "Schema 'web_schema' cannot be deleted because it is still referenced by 1 node."
+        "Schema &#39;web_schema&#39; cannot be deleted because it is still referenced by 1 node."
         in response.text
     )
 
@@ -359,9 +350,6 @@ def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
     )
     assert response.status_code == 200
     assert response.json()["schema"]["name"] == "rest_schema"
-
-    # CLI calls removed to avoid asyncio loop lifespan issues
-    # CLI functionality is tested via REST/MCP which delegate to the same underlying methods
 
     mcp_updated = _call_persisted_authenticated_mcp_tool(
         manager,

@@ -10,8 +10,8 @@ import json
 import logging
 import secrets
 import sys
-from dataclasses import asdict
-from typing import Any, Union, get_args, get_origin
+from dataclasses import asdict, dataclass
+from typing import Any, Callable, Union, get_args, get_origin
 
 import uvicorn
 from fastapi import HTTPException, Request
@@ -89,6 +89,150 @@ CLI_ALIAS_JSON_RENDERER = PydanticJsonRenderer(
     indent=2,
     sort_keys=True,
 )
+
+
+@dataclass
+class AdminRuntime:
+    """Container for all admin runtime components."""
+
+    services: AdminServices
+    resolved_config: ResolvedConfig
+    config_store: ConfigStore
+    lifespan: Callable
+    web_app: MountableApp
+    rest_api: OpenAPIServer
+    mcp_server: SSEMCPServer
+    cli_server: CLIServer | None
+    # Expose ToolServices for host CLI integration
+    admin_service: ToolService
+    graph_service: ToolService
+    cli_api_key_service: ToolService
+    mcp_api_key_service: ToolService
+
+
+def create_admin_runtime(
+    *,
+    config_store: ConfigStore | None = None,
+    resolved_config: ResolvedConfig | None = None,
+    http_root: str = "",
+    api_path_prefix: str = "/api",
+    mcp_name: str = "gpdb",
+    cli_root_name: str | None = "gpdb",
+) -> AdminRuntime:
+    """Build admin runtime without creating a ServerManager.
+
+    Args:
+        config_store: Config store (created from sources if None)
+        resolved_config: Resolved config (derived from store if None)
+        http_root: Web UI mount prefix (e.g., "/gpdb")
+        api_path_prefix: REST API mount prefix (e.g., "/api")
+        mcp_name: MCP server name (e.g., "gpdb" or "gpdb-admin")
+        cli_root_name: CLI root command (None to skip CLI creation)
+    """
+    # Config resolution (existing behavior)
+    if config_store is None:
+        config_store = ConfigStore.from_sources()
+    if resolved_config is None:
+        resolved_config = _ensure_runtime_config(config_store)
+
+    # Services and lifespan
+    services = AdminServices(
+        resolved_config=resolved_config,
+        config_store=config_store,
+    )
+    lifespan = create_admin_lifespan(services)
+
+    # Tool services
+    admin_service = ToolService("admin", [status])
+    graph_service = _build_graph_content_service(services)
+    cli_api_key_service = ToolService("admin-cli", _build_cli_api_key_tools(services))
+    mcp_api_key_service = ToolService("admin-mcp", _build_mcp_api_key_tools(services))
+
+    # Web app (unprefixed internally, wrapped in MountableApp)
+    fastapi_app = create_web_app(
+        resolved_config=resolved_config,
+        config_store=config_store,
+        services=services,
+        http_root=http_root,
+    )
+    web_app = MountableApp(fastapi_app, path_prefix=http_root, name="web")
+
+    # REST API (combine http_root + api_path_prefix)
+    rest_prefix = f"{http_root.rstrip('/')}{api_path_prefix}"
+    rest_api = OpenAPIServer(
+        path_prefix=rest_prefix,
+        title="GPDB Admin API",
+        principal_resolver=_build_rest_principal_resolver(),
+    )
+    rest_api.mount(admin_service)
+    rest_api.mount(graph_service)
+    _install_api_key_auth(rest_api, services)
+
+    # MCP server
+    mcp_server = SSEMCPServer(
+        mcp_name,
+        auth_provider=_AdminAPIKeyTokenVerifier(services),
+        principal_resolver=_build_mcp_principal_resolver(services),
+    )
+    mcp_server.mount(admin_service)
+    mcp_server.mount(graph_service)
+    mcp_server.mount(mcp_api_key_service)
+
+    # CLI (optional)
+    cli_server = None
+    if cli_root_name is not None:
+        cli_server = CLIServer(cli_root_name)
+        cli_server.mount(admin_service)
+        cli_server.mount(graph_service)
+        cli_server.mount(cli_api_key_service)
+
+    return AdminRuntime(
+        services=services,
+        resolved_config=resolved_config,
+        config_store=config_store,
+        lifespan=lifespan,
+        web_app=web_app,
+        rest_api=rest_api,
+        mcp_server=mcp_server,
+        cli_server=cli_server,
+        admin_service=admin_service,
+        graph_service=graph_service,
+        cli_api_key_service=cli_api_key_service,
+        mcp_api_key_service=mcp_api_key_service,
+    )
+
+
+def attach_admin_to_manager(
+    manager: ServerManager,
+    *,
+    http_root: str = "/gpdb",
+    api_path_prefix: str = "/api",
+    mcp_name: str = "gpdb",
+    cli_root_name: str | None = None,
+    config_store: ConfigStore | None = None,
+    resolved_config: ResolvedConfig | None = None,
+) -> AdminRuntime:
+    """Attach admin runtime to an existing ServerManager.
+
+    This is the primary integration point for host applications.
+    CLI is not attached by default (host typically has its own).
+    """
+    runtime = create_admin_runtime(
+        config_store=config_store,
+        resolved_config=resolved_config,
+        http_root=http_root,
+        api_path_prefix=api_path_prefix,
+        mcp_name=mcp_name,
+        cli_root_name=cli_root_name,
+    )
+
+    manager.add_server(runtime.web_app)
+    manager.add_server(runtime.rest_api)
+    manager.add_server(runtime.mcp_server)
+    if runtime.cli_server:
+        manager.add_server(runtime.cli_server)
+
+    return runtime
 
 
 async def _invoke_tool_raw(
@@ -186,7 +330,9 @@ class OpenAPIServer(ToolaccessOpenAPIServer):
         route_handler.__annotations__ = annotations
         route_handler.__doc__ = tool.description
         route_handler.__name__ = tool.name
-        router(f"/{tool.name}", name=tool.name, description=tool.description)(route_handler)
+        router(f"/{tool.name}", name=tool.name, description=tool.description)(
+            route_handler
+        )
 
 
 class SSEMCPServer(ToolaccessStreamableHTTPMCPServer):
@@ -411,65 +557,28 @@ def create_manager(
     resolved_config: ResolvedConfig | None = None,
     config_store: ConfigStore | None = None,
 ) -> ServerManager:
-    """Build the combined admin runtime."""
-    if config_store is None:
-        config_store = ConfigStore.from_sources()
-    if resolved_config is None:
-        resolved_config = _ensure_runtime_config(config_store)
-
-    services = AdminServices(
-        resolved_config=resolved_config,
+    """Create standalone admin ServerManager (backwards compatible)."""
+    runtime = create_admin_runtime(
         config_store=config_store,
-    )
-    admin_service = ToolService("admin", [status])
-    graph_service = _build_graph_content_service(services)
-    cli_api_key_service = ToolService("admin-cli", _build_cli_api_key_tools(services))
-    mcp_api_key_service = ToolService("admin-mcp", _build_mcp_api_key_tools(services))
-
-    rest_api = OpenAPIServer(
-        path_prefix="/api",
-        title="GPDB Admin API",
-        principal_resolver=_build_rest_principal_resolver(),
-    )
-    rest_api.mount(admin_service)
-    rest_api.mount(graph_service)
-    _install_api_key_auth(rest_api, services)
-
-    mcp_server = SSEMCPServer(
-        "gpdb",
-        auth_provider=_AdminAPIKeyTokenVerifier(services),
-        principal_resolver=_build_mcp_principal_resolver(services),
-    )
-    mcp_server.mount(admin_service)
-    mcp_server.mount(graph_service)
-    mcp_server.mount(mcp_api_key_service)
-
-    cli = CLIServer("gpdb")
-    cli.mount(admin_service)
-    cli.mount(graph_service)
-    cli.mount(cli_api_key_service)
-
-    web_app = MountableApp(
-        create_web_app(
-            resolved_config=resolved_config,
-            config_store=config_store,
-            services=services,
-        ),
-        path_prefix="",
-        name="web",
+        resolved_config=resolved_config,
+        http_root="",
+        api_path_prefix="/api",
+        mcp_name="gpdb",
+        cli_root_name="gpdb",
     )
 
-    manager = ServerManager(
-        name="gpdb-admin",
-        lifespan=create_admin_lifespan(services),
-    )
-    manager.app.state.config = resolved_config
-    manager.app.state.config_store = config_store
-    manager.app.state.services = services
-    manager.add_server(web_app)
-    manager.add_server(rest_api)
-    manager.add_server(mcp_server)
-    manager.add_server(cli)
+    manager = ServerManager(name="gpdb-admin", lifespan=runtime.lifespan)
+    manager.add_server(runtime.web_app)
+    manager.add_server(runtime.rest_api)
+    manager.add_server(runtime.mcp_server)
+    if runtime.cli_server:
+        manager.add_server(runtime.cli_server)
+
+    # Expose runtime components for backwards compatibility
+    manager.app.state.config = runtime.resolved_config
+    manager.app.state.config_store = runtime.config_store
+    manager.app.state.services = runtime.services
+    manager.app.state.admin_runtime = runtime
     return manager
 
 
@@ -1181,16 +1290,12 @@ def _build_cli_api_key_tools(services: AdminServices) -> list[ToolDefinition]:
     async def api_key_reveal(username: str, key_id: str) -> dict[str, object]:
         """Reveal one API key owned by the named local user."""
         user = await _require_user_by_username(services, username)
-        return await _reveal_api_key_for_user(
-            services, user_id=user.id, key_id=key_id
-        )
+        return await _reveal_api_key_for_user(services, user_id=user.id, key_id=key_id)
 
     async def api_key_revoke(username: str, key_id: str) -> dict[str, object]:
         """Revoke one API key owned by the named local user."""
         user = await _require_user_by_username(services, username)
-        return await _revoke_api_key_for_user(
-            services, user_id=user.id, key_id=key_id
-        )
+        return await _revoke_api_key_for_user(services, user_id=user.id, key_id=key_id)
 
     return [
         ToolDefinition(api_key_list, "api_key_list"),

@@ -1,11 +1,15 @@
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
+from gpdb import GPGraph
 from gpdb.admin import entry
 from gpdb.admin.config import ConfigStore
+from gpdb.admin.store import AdminStore
 
 
 @pytest.fixture(scope="session")
@@ -21,6 +25,54 @@ def admin_test_env(tmp_path_factory):
     manager = _create_test_manager(tmp)
     with TestClient(manager.app) as client:
         yield SimpleNamespace(manager=manager, client=client)
+
+
+@pytest.fixture(autouse=True)
+def _reset_admin_test_env(admin_test_env):
+    """Reset the shared admin runtime to a fresh state before each test."""
+    services = admin_test_env.manager.app.state.services
+    assert services.captive_server is not None
+    assert services.resolved_config.auth.session_secret is not None
+
+    admin_test_env.client.cookies.clear()
+    asyncio.run(
+        _reset_captive_database(
+            services.captive_server.get_uri(),
+            services.resolved_config.auth.session_secret,
+        )
+    )
+
+
+async def _reset_captive_database(url: str, session_secret: str) -> None:
+    db = GPGraph(url)
+    store = AdminStore(url, instance_secret=session_secret)
+    try:
+        async with db.sqla_engine.begin() as conn:
+            result = await conn.execute(
+                text(
+                    "select tablename from pg_tables "
+                    "where schemaname = current_schema()"
+                )
+            )
+            for table_name in result.scalars().all():
+                quoted_name = str(table_name).replace('"', '""')
+                await conn.execute(
+                    text(f'DROP TABLE IF EXISTS "{quoted_name}" CASCADE')
+                )
+
+        await store.initialize()
+        await db.create_tables()
+        builtin_instance = await store.ensure_builtin_instance()
+        await store.upsert_graph_metadata(
+            instance_id=builtin_instance.id,
+            table_prefix="",
+            display_name="Default graph",
+            exists_in_instance=True,
+            source="managed",
+        )
+    finally:
+        await store.close()
+        await db.sqla_engine.dispose()
 
 
 def _create_test_manager(tmp_path: Path):

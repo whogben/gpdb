@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -66,3 +68,31 @@ def test_rest_api_public_docs_and_health_endpoints(admin_test_env):
 
     response = client.post("/api/status")
     assert response.status_code == 401
+
+
+def test_nested_admin_lifespan_reuses_active_services(admin_test_env):
+    """Ensure nested admin lifespans do not replace the active captive server."""
+    manager = admin_test_env.manager
+    client = admin_test_env.client
+    services = manager.app.state.services
+    assert services.captive_server is not None
+    active_uri = services.captive_server.get_uri()
+
+    async def _run():
+        admin_lifespan = entry.create_admin_lifespan(services)
+        async with admin_lifespan(manager.app):
+            assert services.captive_server is not None
+            assert services.captive_server.get_uri() == active_uri
+            assert manager.app.state.admin_lifespan_active is True
+            assert manager.app.state.admin_lifespan_depth == 2
+
+    asyncio.run(_run())
+
+    assert services.captive_server is not None
+    assert services.captive_server.get_uri() == active_uri
+    assert manager.app.state.admin_lifespan_active is True
+    assert manager.app.state.admin_lifespan_depth == 1
+
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "Create the initial owner user." in response.text

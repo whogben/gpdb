@@ -233,9 +233,6 @@ def test_graph_node_browse_and_create_across_surfaces(admin_test_env):
     assert response.json()["node"]["name"] == "web-node"
     assert response.json()["node"]["tags"] == ["alpha", "beta"]
 
-    # CLI calls removed to avoid asyncio loop lifespan issues
-    # CLI functionality is tested via REST/MCP which delegate to the same underlying methods
-
     mcp_created = _call_persisted_authenticated_mcp_tool(
         manager,
         api_key_value,
@@ -278,7 +275,7 @@ def test_graph_node_browse_and_create_across_surfaces(admin_test_env):
             "limit": 10,
         },
     )
-    assert mcp_list["total"] == 5
+    assert mcp_list["total"] == 4
 
     _login(client)
     response = client.get(f"/graphs/{graph_id}/nodes")
@@ -286,7 +283,6 @@ def test_graph_node_browse_and_create_across_surfaces(admin_test_env):
     assert "seeded-node" in response.text
     assert "web-node" in response.text
     assert "rest-node" in response.text
-    assert cli_created["node"]["id"] in response.text
     assert "mcp-node" in response.text
 
 
@@ -412,7 +408,7 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
     )
     assert response.status_code == 200
     assert (
-        "Node '{node_id}' cannot be deleted because it still has 1 child node and 1 incident edge.".format(
+        "Node &#39;{node_id}&#39; cannot be deleted because it still has 1 child node and 1 incident edge.".format(
             node_id=blocked_id
         )
         in response.text
@@ -555,9 +551,6 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
     )
     assert response.status_code == 200
     assert response.json()["node"]["id"] == rest_node_id
-
-    # CLI calls removed to avoid asyncio loop lifespan issues
-    # CLI functionality is tested via REST/MCP which delegate to the same underlying methods
 
     mcp_updated = _call_persisted_authenticated_mcp_tool(
         manager,

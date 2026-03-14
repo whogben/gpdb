@@ -23,6 +23,8 @@ def create_web_app(
     resolved_config: ResolvedConfig,
     config_store: ConfigStore,
     services: AdminServices,
+    *,
+    http_root: str = "",  # For template context, not path prefixing
 ) -> FastAPI:
     """Create the admin web application."""
     app = FastAPI(
@@ -31,21 +33,35 @@ def create_web_app(
         redoc_url=None,
         openapi_url=None,
     )
+
     templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
     app.state.templates = templates
     app.state.config = resolved_config
     app.state.config_store = config_store
     app.state.services = services
+    app.state.http_root = http_root  # Store for potential route use
+
+    # Compute API docs URL based on mount point
+    api_docs_url = f"{http_root}/api/docs" if http_root else "/api/docs"
 
     def _inject_web_app(request):
-        return {"web_app": app, "resolved_config": resolved_config}
+        return {
+            "web_app": app,
+            "resolved_config": resolved_config,
+            "mount_prefix": http_root,
+            "api_docs_url": api_docs_url,
+        }
 
     templates.context_processors.append(_inject_web_app)
 
+    # Include routers (routes are relative, MountableApp handles prefix)
     app.include_router(pages_router)
     app.include_router(graph_overview_router)
     app.include_router(graph_schemas_router)
     app.include_router(graph_nodes_router)
     app.include_router(graph_edges_router)
+
+    # Static files at /static (MountableApp will prefix if needed)
     app.mount("/static", StaticFiles(directory=str(WEB_ROOT / "static")), name="static")
+
     return app
