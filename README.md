@@ -167,7 +167,7 @@ When embedded, the admin runtime shares the host's ServerManager lifecycle, and 
 - **Service** — startup via `gpdb start`; health and status across CLI, REST, and MCP
 - **Auth** — first-run owner bootstrap; login/logout for the web app; API keys for CLI and MCP
 - **Instances and graphs** — create and manage Postgres instances and graphs (table prefixes)
-- **Graph content** — schemas (list/get/create/update/delete); nodes and edges (list/get/create/update/delete); node payload get/set
+- **Graph content** — schemas (list/get/create/update/delete); nodes and edges (list/get/create/update/delete); node payload get/set; node and edge list endpoints accept an optional `filter` query parameter (DSL string, same syntax as the core Query DSL)
 - **Surfaces** — all graph and admin tools are exposed on REST, CLI, and MCP
 - **Web UI** — dashboard, graph browser, and forms for nodes, edges, and schemas
 

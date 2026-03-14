@@ -43,6 +43,7 @@ async def graph_node_list_page(request: Request, graph_id: str) -> HTMLResponse:
         "type": request.query_params.get("type", "").strip(),
         "schema_name": request.query_params.get("schema_name", "").strip(),
         "parent_id": request.query_params.get("parent_id", "").strip(),
+        "filter": request.query_params.get("filter", "").strip(),
         "sort": request.query_params.get("sort", DEFAULT_NODE_SORT).strip()
         or DEFAULT_NODE_SORT,
         "limit": _parse_int_query_param(
@@ -64,6 +65,7 @@ async def graph_node_list_page(request: Request, graph_id: str) -> HTMLResponse:
             type=filter_form["type"],
             schema_name=filter_form["schema_name"],
             parent_id=filter_form["parent_id"],
+            filter_dsl=filter_form["filter"] or None,
             limit=filter_form["limit"],
             offset=filter_form["offset"],
             sort=filter_form["sort"],
@@ -80,6 +82,7 @@ async def graph_node_list_page(request: Request, graph_id: str) -> HTMLResponse:
             type=filter_form["type"],
             schema_name=filter_form["schema_name"],
             parent_id=filter_form["parent_id"],
+            filter=filter_form["filter"],
             sort=filter_form["sort"],
             limit=filter_form["limit"],
             offset=max(0, payload["offset"] - payload["limit"]),
@@ -92,6 +95,7 @@ async def graph_node_list_page(request: Request, graph_id: str) -> HTMLResponse:
             type=filter_form["type"],
             schema_name=filter_form["schema_name"],
             parent_id=filter_form["parent_id"],
+            filter=filter_form["filter"],
             sort=filter_form["sort"],
             limit=filter_form["limit"],
             offset=payload["offset"] + payload["limit"],
@@ -652,6 +656,7 @@ def _build_node_list_url(
     type: str,
     schema_name: str,
     parent_id: str,
+    filter: str,
     sort: str,
     limit: int,
     offset: int,
@@ -667,6 +672,8 @@ def _build_node_list_url(
         params["schema_name"] = schema_name
     if parent_id:
         params["parent_id"] = parent_id
+    if filter:
+        params["filter"] = filter
     return (
         f"{request.app.url_path_for('graph_node_list_page', graph_id=graph_id)}"
         f"?{urlencode(params)}"

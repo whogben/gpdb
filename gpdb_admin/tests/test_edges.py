@@ -365,6 +365,89 @@ def test_graph_edge_browse_and_create_across_surfaces(admin_test_env):
     assert mcp_created["edge"]["id"] in response.text
 
 
+def test_edge_list_filter_dsl(admin_test_env):
+    """Test edge list page with valid and invalid DSL filter."""
+    manager = admin_test_env.manager
+    client = admin_test_env.client
+
+    _bootstrap_owner(client)
+    _login(client)
+
+    response = client.get("/graphs/new")
+    assert response.status_code == 200
+    default_instance_id = _extract_instance_option_value(
+        response.text, "Default instance"
+    )
+
+    response = client.post(
+        "/graphs",
+        data={
+            "instance_id": default_instance_id,
+            "table_prefix": "dsl_filter_edges",
+            "display_name": "DSL Filter Edges",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    graph = _read_graph_by_prefix(manager, table_prefix="dsl_filter_edges")
+    assert graph is not None
+    graph_id = graph.id
+
+    a_id = _seed_node_record(
+        manager,
+        table_prefix="dsl_filter_edges",
+        type="n",
+        name="a",
+        data={},
+    )
+    b_id = _seed_node_record(
+        manager,
+        table_prefix="dsl_filter_edges",
+        type="n",
+        name="b",
+        data={},
+    )
+    c_id = _seed_node_record(
+        manager,
+        table_prefix="dsl_filter_edges",
+        type="n",
+        name="c",
+        data={},
+    )
+    _seed_edge_record(
+        manager,
+        table_prefix="dsl_filter_edges",
+        type="follows",
+        source_id=a_id,
+        target_id=b_id,
+        data={},
+    )
+    _seed_edge_record(
+        manager,
+        table_prefix="dsl_filter_edges",
+        type="blocks",
+        source_id=b_id,
+        target_id=c_id,
+        data={},
+    )
+
+    response = client.get(
+        f"/graphs/{graph_id}/edges",
+        params={"filter": "type = follows"},
+    )
+    assert response.status_code == 200
+    assert "1 edge" in response.text
+
+    response = client.get(
+        f"/graphs/{graph_id}/edges",
+        params={"filter": "("},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert "error=" in response.headers.get("location", "")
+
+
 def test_graph_edge_update_and_delete_across_surfaces(admin_test_env):
     """Test edge update/delete flow across web, REST, CLI, and MCP."""
     manager = admin_test_env.manager

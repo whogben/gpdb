@@ -286,6 +286,68 @@ def test_graph_node_browse_and_create_across_surfaces(admin_test_env):
     assert "mcp-node" in response.text
 
 
+def test_node_list_filter_dsl(admin_test_env):
+    """Test node list page with valid and invalid DSL filter."""
+    manager = admin_test_env.manager
+    client = admin_test_env.client
+
+    _bootstrap_owner(client)
+    _login(client)
+
+    response = client.get("/graphs/new")
+    assert response.status_code == 200
+    default_instance_id = _extract_instance_option_value(
+        response.text, "Default instance"
+    )
+
+    response = client.post(
+        "/graphs",
+        data={
+            "instance_id": default_instance_id,
+            "table_prefix": "dsl_filter_nodes",
+            "display_name": "DSL Filter Nodes",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    graph = _read_graph_by_prefix(manager, table_prefix="dsl_filter_nodes")
+    assert graph is not None
+    graph_id = graph.id
+
+    _seed_node_record(
+        manager,
+        table_prefix="dsl_filter_nodes",
+        type="task",
+        name="a-task",
+        data={"n": 1},
+    )
+    _seed_node_record(
+        manager,
+        table_prefix="dsl_filter_nodes",
+        type="other",
+        name="other-node",
+        data={"n": 2},
+    )
+
+    response = client.get(
+        f"/graphs/{graph_id}/nodes",
+        params={"filter": "type = task"},
+    )
+    assert response.status_code == 200
+    assert "a-task" in response.text
+    assert "1 node" in response.text
+    assert "other-node" not in response.text
+
+    response = client.get(
+        f"/graphs/{graph_id}/nodes",
+        params={"filter": "("},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert "error=" in response.headers.get("location", "")
+
+
 def test_graph_node_update_delete_and_payload_across_surfaces(
     admin_test_env,
 ):

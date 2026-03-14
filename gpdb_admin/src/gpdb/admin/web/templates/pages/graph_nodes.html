@@ -58,6 +58,12 @@
       </label>
 
       <label class="field">
+        <span>Filter (DSL)</span>
+        <input name="filter" value="{{ filter_form.filter }}" placeholder="e.g. type = user and data.role = admin">
+        <small class="field-hint">Optional. Leave empty to use the fields above. Same syntax as the API.</small>
+      </label>
+
+      <label class="field">
         <span>Sort</span>
         <select name="sort">
           {% for value, label in sort_options %}

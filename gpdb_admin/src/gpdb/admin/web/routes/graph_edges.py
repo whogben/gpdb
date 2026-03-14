@@ -43,6 +43,7 @@ async def graph_edge_list_page(request: Request, graph_id: str) -> HTMLResponse:
         "schema_name": request.query_params.get("schema_name", "").strip(),
         "source_id": request.query_params.get("source_id", "").strip(),
         "target_id": request.query_params.get("target_id", "").strip(),
+        "filter": request.query_params.get("filter", "").strip(),
         "sort": request.query_params.get("sort", DEFAULT_EDGE_SORT).strip()
         or DEFAULT_EDGE_SORT,
         "limit": _parse_int_query_param(
@@ -65,6 +66,7 @@ async def graph_edge_list_page(request: Request, graph_id: str) -> HTMLResponse:
             schema_name=filter_form["schema_name"],
             source_id=filter_form["source_id"],
             target_id=filter_form["target_id"],
+            filter_dsl=filter_form["filter"] or None,
             limit=filter_form["limit"],
             offset=filter_form["offset"],
             sort=filter_form["sort"],
@@ -82,6 +84,7 @@ async def graph_edge_list_page(request: Request, graph_id: str) -> HTMLResponse:
             schema_name=filter_form["schema_name"],
             source_id=filter_form["source_id"],
             target_id=filter_form["target_id"],
+            filter=filter_form["filter"],
             sort=filter_form["sort"],
             limit=filter_form["limit"],
             offset=max(0, payload["offset"] - payload["limit"]),
@@ -95,6 +98,7 @@ async def graph_edge_list_page(request: Request, graph_id: str) -> HTMLResponse:
             schema_name=filter_form["schema_name"],
             source_id=filter_form["source_id"],
             target_id=filter_form["target_id"],
+            filter=filter_form["filter"],
             sort=filter_form["sort"],
             limit=filter_form["limit"],
             offset=payload["offset"] + payload["limit"],
@@ -515,6 +519,7 @@ def _build_edge_list_url(
     schema_name: str,
     source_id: str,
     target_id: str,
+    filter: str,
     sort: str,
     limit: int,
     offset: int,
@@ -532,6 +537,8 @@ def _build_edge_list_url(
         params["source_id"] = source_id
     if target_id:
         params["target_id"] = target_id
+    if filter:
+        params["filter"] = filter
     return (
         f"{request.app.url_path_for('graph_edge_list_page', graph_id=graph_id)}"
         f"?{urlencode(params)}"

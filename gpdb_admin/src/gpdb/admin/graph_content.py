@@ -117,6 +117,7 @@ class GraphNodeFilters(BaseModel):
     type: str | None = None
     schema_name: str | None = None
     parent_id: str | None = None
+    filter_dsl: str | None = None
     sort: str = "created_at_desc"
 
 
@@ -202,6 +203,7 @@ class GraphEdgeFilters(BaseModel):
     schema_name: str | None = None
     source_id: str | None = None
     target_id: str | None = None
+    filter_dsl: str | None = None
     sort: str = "created_at_desc"
 
 
@@ -516,6 +518,7 @@ class GraphContentService:
         type: str | None = None,
         schema_name: str | None = None,
         parent_id: str | None = None,
+        filter_dsl: str | None = None,
         limit: int = 50,
         offset: int = 0,
         sort: str = "created_at_desc",
@@ -528,12 +531,23 @@ class GraphContentService:
             permission_kind="view",
         )
         try:
-            query = SearchQuery(
-                filter=self._build_node_filter(
+            clean_filter_dsl = self._normalize_optional_text(filter_dsl)
+            if clean_filter_dsl:
+                try:
+                    parsed_filter = FilterGroup.from_dsl(clean_filter_dsl)
+                except ValueError as exc:
+                    raise GraphContentValidationError(
+                        f"Invalid filter (DSL): {exc}"
+                    ) from exc
+                filter_value: Filter | FilterGroup | None = parsed_filter
+            else:
+                filter_value = self._build_node_filter(
                     type=type,
                     schema_name=schema_name,
                     parent_id=parent_id,
-                ),
+                )
+            query = SearchQuery(
+                filter=filter_value,
                 sort=[self._parse_node_sort(sort)],
                 limit=self._validate_page_limit(limit),
                 offset=self._validate_page_offset(offset),
@@ -550,6 +564,7 @@ class GraphContentService:
                     type=self._normalize_optional_text(type),
                     schema_name=self._normalize_optional_text(schema_name),
                     parent_id=self._normalize_optional_text(parent_id),
+                    filter_dsl=clean_filter_dsl,
                     sort=sort,
                 ),
             )
@@ -866,6 +881,7 @@ class GraphContentService:
         schema_name: str | None = None,
         source_id: str | None = None,
         target_id: str | None = None,
+        filter_dsl: str | None = None,
         limit: int = 50,
         offset: int = 0,
         sort: str = "created_at_desc",
@@ -878,13 +894,24 @@ class GraphContentService:
             permission_kind="view",
         )
         try:
-            query = SearchQuery(
-                filter=self._build_edge_filter(
+            clean_filter_dsl = self._normalize_optional_text(filter_dsl)
+            if clean_filter_dsl:
+                try:
+                    parsed_filter = FilterGroup.from_dsl(clean_filter_dsl)
+                except ValueError as exc:
+                    raise GraphContentValidationError(
+                        f"Invalid filter (DSL): {exc}"
+                    ) from exc
+                filter_value: Filter | FilterGroup | None = parsed_filter
+            else:
+                filter_value = self._build_edge_filter(
                     type=type,
                     schema_name=schema_name,
                     source_id=source_id,
                     target_id=target_id,
-                ),
+                )
+            query = SearchQuery(
+                filter=filter_value,
                 sort=[self._parse_edge_sort(sort)],
                 limit=self._validate_page_limit(limit),
                 offset=self._validate_page_offset(offset),
@@ -902,6 +929,7 @@ class GraphContentService:
                     schema_name=self._normalize_optional_text(schema_name),
                     source_id=self._normalize_optional_text(source_id),
                     target_id=self._normalize_optional_text(target_id),
+                    filter_dsl=clean_filter_dsl,
                     sort=sort,
                 ),
             )
