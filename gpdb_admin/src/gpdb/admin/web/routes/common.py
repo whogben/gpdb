@@ -4,11 +4,40 @@ from __future__ import annotations
 
 from urllib.parse import urlencode
 
-from fastapi import Request, status
+from fastapi import HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from gpdb.admin.auth import SESSION_COOKIE_NAME
+from gpdb.admin.auth import SESSION_COOKIE_NAME, SessionSigner
 from gpdb.admin.graph_content import GraphContentNotReadyError
+from gpdb.admin.instances import ManagedInstanceMonitor
+from gpdb.admin.store import AdminStore
+
+
+SERVICE_UNAVAILABLE = "Service temporarily unavailable."
+
+
+def get_admin_store(request: Request) -> AdminStore:
+    """Return the admin store; raise 503 if not ready."""
+    store = request.app.state.services.admin_store
+    if store is None:
+        raise HTTPException(status_code=503, detail=SERVICE_UNAVAILABLE)
+    return store
+
+
+def get_session_signer(request: Request) -> SessionSigner:
+    """Return the session signer; raise 503 if not ready."""
+    signer = request.app.state.services.session_signer
+    if signer is None:
+        raise HTTPException(status_code=503, detail=SERVICE_UNAVAILABLE)
+    return signer
+
+
+def get_instance_monitor(request: Request) -> ManagedInstanceMonitor:
+    """Return the instance monitor; raise 503 if not ready."""
+    monitor = request.app.state.services.instance_monitor
+    if monitor is None:
+        raise HTTPException(status_code=503, detail=SERVICE_UNAVAILABLE)
+    return monitor
 
 
 def _prefixed_url(request: Request, route_name: str, **route_params) -> str:
@@ -61,8 +90,8 @@ async def require_authenticated_user(request: Request):
 async def current_user_from_request(request: Request):
     """Resolve the signed session cookie into the current user, if any."""
     services = request.app.state.services
-    assert services.admin_store is not None
-    assert services.session_signer is not None
+    if services.admin_store is None or services.session_signer is None:
+        raise HTTPException(status_code=503, detail=SERVICE_UNAVAILABLE)
 
     cookie_value = request.cookies.get(SESSION_COOKIE_NAME)
     if not cookie_value:

@@ -115,9 +115,12 @@ class _PathSafePostgresServer(PostgresServer):
                 postgres_server_module._logger.info("Not ready yet; waiting a bit longer.")
                 postgres_server_module.time.sleep(1.0)
 
-        assert self._postmaster_info is not None
-        assert self._postmaster_info.is_running()
-        assert self._postmaster_info.status == "ready"
+        if (
+            self._postmaster_info is None
+            or not self._postmaster_info.is_running()
+            or self._postmaster_info.status != "ready"
+        ):
+            raise RuntimeError("Postgres server failed to reach ready state")
 
 
 def create_admin_lifespan(services: AdminServices):

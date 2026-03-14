@@ -25,6 +25,9 @@ from gpdb.admin.store import (
 from gpdb.admin.web.routes.common import (
     _prefixed_url,
     current_user_from_request,
+    get_admin_store,
+    get_instance_monitor,
+    get_session_signer,
     redirect_with_message,
     render,
     require_authenticated_user,
@@ -39,10 +42,10 @@ TABLE_PREFIX_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
 @router.get("/", response_class=HTMLResponse, name="home")
 async def home(request: Request) -> HTMLResponse:
     """Render setup, login, or the authenticated admin dashboard."""
+    admin_store = get_admin_store(request)
     services = request.app.state.services
-    assert services.admin_store is not None
 
-    if not await services.admin_store.owner_exists():
+    if not await admin_store.owner_exists():
         return render(
             request,
             "pages/setup.html",
@@ -64,9 +67,9 @@ async def home(request: Request) -> HTMLResponse:
         "pages/home.html",
         page_title="GPDB Admin",
         current_user=current_user,
-        instances=await services.admin_store.list_instances(),
-        graphs=await services.admin_store.list_graphs(),
-        api_keys=await services.admin_store.list_api_keys_for_user(current_user.id),
+        instances=await admin_store.list_instances(),
+        graphs=await admin_store.list_graphs(),
+        api_keys=await admin_store.list_api_keys_for_user(current_user.id),
         error_message=request.query_params.get("error"),
         success_message=request.query_params.get("success"),
     )
@@ -75,10 +78,9 @@ async def home(request: Request) -> HTMLResponse:
 @router.get("/login", response_class=HTMLResponse, name="login")
 async def login_page(request: Request) -> HTMLResponse:
     """Render the username/password login form."""
-    services = request.app.state.services
-    assert services.admin_store is not None
+    admin_store = get_admin_store(request)
 
-    if not await services.admin_store.owner_exists():
+    if not await admin_store.owner_exists():
         return RedirectResponse(
             url=_prefixed_url(request, "home"),
             status_code=status.HTTP_303_SEE_OTHER,
@@ -110,10 +112,9 @@ async def setup_owner(
     display_name: str = Form(""),
 ):
     """Create the initial owner user on a fresh install."""
-    services = request.app.state.services
-    assert services.admin_store is not None
+    admin_store = get_admin_store(request)
 
-    if await services.admin_store.owner_exists():
+    if await admin_store.owner_exists():
         return RedirectResponse(
             url=_prefixed_url(request, "login"),
             status_code=status.HTTP_303_SEE_OTHER,
@@ -140,7 +141,7 @@ async def setup_owner(
         )
 
     try:
-        await services.admin_store.create_initial_owner(
+        await admin_store.create_initial_owner(
             username=username,
             password_hash=hash_password(password),
             display_name=display_name or username,
@@ -171,17 +172,16 @@ async def login_submit(
     password: str = Form(...),
 ):
     """Authenticate a user and issue the signed session cookie."""
-    services = request.app.state.services
-    assert services.admin_store is not None
-    assert services.session_signer is not None
+    admin_store = get_admin_store(request)
+    session_signer = get_session_signer(request)
 
-    if not await services.admin_store.owner_exists():
+    if not await admin_store.owner_exists():
         return RedirectResponse(
             url=_prefixed_url(request, "home"),
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
-    user = await services.admin_store.verify_user_credentials(
+    user = await admin_store.verify_user_credentials(
         username=username.strip(),
         password=password,
         verify_password=verify_password,
@@ -201,7 +201,7 @@ async def login_submit(
     )
     response.set_cookie(
         SESSION_COOKIE_NAME,
-        services.session_signer.dumps(
+        session_signer.dumps(
             SessionData(user_id=user.id, auth_version=user.auth_version)
         ),
         httponly=True,
@@ -224,8 +224,7 @@ async def logout(request: Request) -> RedirectResponse:
 @router.get("/apikeys", response_class=HTMLResponse, name="api_keys_page")
 async def api_keys_page(request: Request) -> HTMLResponse:
     """Render the current user's API key management page."""
-    services = request.app.state.services
-    assert services.admin_store is not None
+    admin_store = get_admin_store(request)
 
     current_user = await require_authenticated_user(request)
     if isinstance(current_user, RedirectResponse):
@@ -236,7 +235,7 @@ async def api_keys_page(request: Request) -> HTMLResponse:
         "pages/api_keys.html",
         page_title="API Keys",
         current_user=current_user,
-        api_keys=await services.admin_store.list_api_keys_for_user(current_user.id),
+        api_keys=await admin_store.list_api_keys_for_user(current_user.id),
         revealed_api_key=None,
         selected_api_key_id=None,
         error_message=request.query_params.get("error"),
@@ -247,14 +246,13 @@ async def api_keys_page(request: Request) -> HTMLResponse:
 @router.get("/apikeys/{api_key_id}", response_class=HTMLResponse, name="api_key_detail_page")
 async def api_key_detail_page(request: Request, api_key_id: str) -> HTMLResponse:
     """Render one API key detail view with the full revealable value."""
-    services = request.app.state.services
-    assert services.admin_store is not None
+    admin_store = get_admin_store(request)
 
     current_user = await require_authenticated_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
 
-    api_key = await services.admin_store.get_api_key_by_id(api_key_id)
+    api_key = await admin_store.get_api_key_by_id(api_key_id)
     if api_key is None or api_key.user_id != current_user.id:
         return redirect_with_message(request, "api_keys_page", error="API key not found.")
 
@@ -263,8 +261,8 @@ async def api_key_detail_page(request: Request, api_key_id: str) -> HTMLResponse
         "pages/api_keys.html",
         page_title="API Keys",
         current_user=current_user,
-        api_keys=await services.admin_store.list_api_keys_for_user(current_user.id),
-        revealed_api_key=await services.admin_store.reveal_api_key(api_key_id),
+        api_keys=await admin_store.list_api_keys_for_user(current_user.id),
+        revealed_api_key=await admin_store.reveal_api_key(api_key_id),
         selected_api_key_id=api_key_id,
         error_message=request.query_params.get("error"),
         success_message=request.query_params.get("success"),
@@ -277,8 +275,7 @@ async def api_key_create(
     label: str = Form(...),
 ):
     """Create one API key for the current user."""
-    services = request.app.state.services
-    assert services.admin_store is not None
+    admin_store = get_admin_store(request)
 
     current_user = await require_authenticated_user(request)
     if isinstance(current_user, RedirectResponse):
@@ -291,7 +288,7 @@ async def api_key_create(
             "pages/api_keys.html",
             page_title="API Keys",
             current_user=current_user,
-            api_keys=await services.admin_store.list_api_keys_for_user(current_user.id),
+            api_keys=await admin_store.list_api_keys_for_user(current_user.id),
             revealed_api_key=None,
             selected_api_key_id=None,
             error_message="Label is required.",
@@ -299,7 +296,7 @@ async def api_key_create(
         )
 
     generated = generate_api_key()
-    api_key = await services.admin_store.create_api_key(
+    api_key = await admin_store.create_api_key(
         user_id=current_user.id,
         label=label,
         key_id=generated.key_id,
@@ -318,17 +315,16 @@ async def api_key_create(
 @router.post("/apikeys/{api_key_id}/revoke", name="api_key_revoke")
 async def api_key_revoke(request: Request, api_key_id: str) -> RedirectResponse:
     """Revoke one API key owned by the current user."""
-    services = request.app.state.services
-    assert services.admin_store is not None
+    admin_store = get_admin_store(request)
 
     current_user = await require_authenticated_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
 
-    api_key = await services.admin_store.get_api_key_by_id(api_key_id)
+    api_key = await admin_store.get_api_key_by_id(api_key_id)
     if api_key is None or api_key.user_id != current_user.id:
         return redirect_with_message(request, "api_keys_page", error="API key not found.")
-    await services.admin_store.revoke_api_key(api_key_id)
+    await admin_store.revoke_api_key(api_key_id)
     return redirect_with_message(request, "api_keys_page", success="API key revoked.")
 
 
@@ -364,9 +360,8 @@ async def instance_create(
     password: str = Form(""),
 ):
     """Create a new external managed instance."""
-    services = request.app.state.services
-    assert services.admin_store is not None
-    assert services.instance_monitor is not None
+    admin_store = get_admin_store(request)
+    instance_monitor = get_instance_monitor(request)
 
     current_user = await require_owner_user(request)
     if isinstance(current_user, RedirectResponse):
@@ -397,7 +392,7 @@ async def instance_create(
         )
 
     try:
-        instance = await services.admin_store.create_instance(
+        instance = await admin_store.create_instance(
             slug=form_data["slug"],
             display_name=form_data["display_name"],
             description=form_data["description"],
@@ -407,7 +402,7 @@ async def instance_create(
             username=form_data["username"],
             password=form_data["password"],
         )
-        await services.instance_monitor.refresh_instance(instance.id)
+        await instance_monitor.refresh_instance(instance.id)
     except InstanceAlreadyExistsError as exc:
         return render(
             request,
@@ -443,14 +438,13 @@ async def instance_create(
 @router.get("/instances/{instance_id}/edit", response_class=HTMLResponse, name="instance_edit_page")
 async def instance_edit_page(request: Request, instance_id: str) -> HTMLResponse:
     """Render the edit-instance form."""
-    services = request.app.state.services
-    assert services.admin_store is not None
+    admin_store = get_admin_store(request)
 
     current_user = await require_owner_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
 
-    instance = await services.admin_store.get_instance_by_id(instance_id)
+    instance = await admin_store.get_instance_by_id(instance_id)
     if instance is None:
         return redirect_with_message(request, "home", error="Instance not found.")
 
@@ -488,15 +482,14 @@ async def instance_edit(
     is_active: str | None = Form(None),
 ):
     """Update an existing managed instance."""
-    services = request.app.state.services
-    assert services.admin_store is not None
-    assert services.instance_monitor is not None
+    admin_store = get_admin_store(request)
+    instance_monitor = get_instance_monitor(request)
 
     current_user = await require_owner_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
 
-    instance = await services.admin_store.get_instance_by_id(instance_id)
+    instance = await admin_store.get_instance_by_id(instance_id)
     if instance is None:
         return redirect_with_message(request, "home", error="Instance not found.")
 
@@ -530,7 +523,7 @@ async def instance_edit(
             error_message=error_message,
         )
 
-    updated = await services.admin_store.update_instance(
+    updated = await admin_store.update_instance(
         instance_id=instance_id,
         display_name=form_data["display_name"],
         description=form_data["description"],
@@ -544,7 +537,7 @@ async def instance_edit(
     if updated is None:
         return redirect_with_message(request, "home", error="Instance not found.")
 
-    await services.instance_monitor.refresh_instance(updated.id)
+    await instance_monitor.refresh_instance(updated.id)
     return redirect_with_message(
         request,
         "home",
@@ -555,15 +548,14 @@ async def instance_edit(
 @router.post("/instances/{instance_id}/delete", name="instance_delete")
 async def instance_delete(request: Request, instance_id: str) -> RedirectResponse:
     """Delete an external managed instance."""
-    services = request.app.state.services
-    assert services.admin_store is not None
+    admin_store = get_admin_store(request)
 
     current_user = await require_owner_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
 
     try:
-        await services.admin_store.delete_instance(instance_id)
+        await admin_store.delete_instance(instance_id)
     except ValueError as exc:
         return redirect_with_message(request, "home", error=str(exc))
     return redirect_with_message(request, "home", success="Instance removed.")
@@ -572,14 +564,13 @@ async def instance_delete(request: Request, instance_id: str) -> RedirectRespons
 @router.get("/graphs/new", response_class=HTMLResponse, name="graph_create_page")
 async def graph_create_page(request: Request) -> HTMLResponse:
     """Render the add-graph form."""
-    services = request.app.state.services
-    assert services.admin_store is not None
+    admin_store = get_admin_store(request)
 
     current_user = await require_owner_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
 
-    instances = await services.admin_store.list_instances()
+    instances = await admin_store.list_instances()
     return render(
         request,
         "pages/graph_form.html",
@@ -601,15 +592,14 @@ async def graph_create(
     display_name: str = Form(""),
 ):
     """Create a new prefixed graph on one managed instance."""
-    services = request.app.state.services
-    assert services.admin_store is not None
-    assert services.instance_monitor is not None
+    admin_store = get_admin_store(request)
+    instance_monitor = get_instance_monitor(request)
 
     current_user = await require_owner_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
 
-    instances = await services.admin_store.list_instances()
+    instances = await admin_store.list_instances()
     form_data = {
         "instance_id": instance_id,
         "table_prefix": table_prefix.strip(),
@@ -631,7 +621,7 @@ async def graph_create(
         )
 
     try:
-        await services.instance_monitor.create_graph(
+        await instance_monitor.create_graph(
             instance_id=instance_id,
             table_prefix=form_data["table_prefix"],
             display_name=form_data["display_name"] or None,
@@ -656,14 +646,13 @@ async def graph_create(
 @router.get("/graphs/{graph_id}/edit", response_class=HTMLResponse, name="graph_edit_page")
 async def graph_edit_page(request: Request, graph_id: str) -> HTMLResponse:
     """Render the edit-graph form."""
-    services = request.app.state.services
-    assert services.admin_store is not None
+    admin_store = get_admin_store(request)
 
     current_user = await require_owner_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
 
-    graph = await services.admin_store.get_graph_by_id(graph_id)
+    graph = await admin_store.get_graph_by_id(graph_id)
     if graph is None:
         return redirect_with_message(request, "home", error="Graph not found.")
 
@@ -675,7 +664,7 @@ async def graph_edit_page(request: Request, graph_id: str) -> HTMLResponse:
         mode="edit",
         submit_url=request.app.url_path_for("graph_edit", graph_id=graph.id),
         graph=graph,
-        instances=await services.admin_store.list_instances(),
+        instances=await admin_store.list_instances(),
         form_data={
             "display_name": graph.display_name,
         },
@@ -689,41 +678,39 @@ async def graph_edit(
     display_name: str = Form(...),
 ):
     """Update one graph's display name."""
-    services = request.app.state.services
-    assert services.admin_store is not None
-    assert services.instance_monitor is not None
+    admin_store = get_admin_store(request)
+    instance_monitor = get_instance_monitor(request)
 
     current_user = await require_owner_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
 
-    graph = await services.admin_store.get_graph_by_id(graph_id)
+    graph = await admin_store.get_graph_by_id(graph_id)
     if graph is None:
         return redirect_with_message(request, "home", error="Graph not found.")
 
-    updated = await services.admin_store.update_graph(
+    updated = await admin_store.update_graph(
         graph_id=graph_id,
         display_name=display_name.strip() or graph.display_name,
     )
     if updated is None:
         return redirect_with_message(request, "home", error="Graph not found.")
 
-    await services.instance_monitor.refresh_instance(updated.instance_id)
+    await instance_monitor.refresh_instance(updated.instance_id)
     return redirect_with_message(request, "home", success="Graph updated.")
 
 
 @router.post("/graphs/{graph_id}/delete", name="graph_delete")
 async def graph_delete(request: Request, graph_id: str) -> RedirectResponse:
     """Delete one prefixed graph."""
-    services = request.app.state.services
-    assert services.instance_monitor is not None
+    instance_monitor = get_instance_monitor(request)
 
     current_user = await require_owner_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
 
     try:
-        await services.instance_monitor.delete_graph(graph_id)
+        await instance_monitor.delete_graph(graph_id)
     except ValueError as exc:
         return redirect_with_message(request, "home", error=str(exc))
     return redirect_with_message(request, "home", success="Graph deleted.")
