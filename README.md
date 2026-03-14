@@ -162,14 +162,16 @@ When embedded, the admin runtime shares the host's ServerManager lifecycle, and 
 
 ### Current scope
 
-Today, `gpdb-admin` is an early-stage admin surface. It supports:
+`gpdb-admin` provides a full admin surface over the core graph library. It supports:
 
-- service startup via `gpdb start`
-- a first-run owner bootstrap flow
-- login/logout for the admin web app
-- the `status` command across CLI, REST, and MCP
+- **Service** — startup via `gpdb start`; health and status across CLI, REST, and MCP
+- **Auth** — first-run owner bootstrap; login/logout for the web app; API keys for CLI and MCP
+- **Instances and graphs** — create and manage Postgres instances and graphs (table prefixes)
+- **Graph content** — schemas (list/get/create/update/delete); nodes and edges (list/get/create/update/delete); node payload get/set
+- **Surfaces** — all graph and admin tools are exposed on REST, CLI, and MCP
+- **Web UI** — dashboard, graph browser, and forms for nodes, edges, and schemas
 
-It does not yet provide a full multi-user administration console or a broad admin API surface.
+It does not yet provide a full multi-user administration console (e.g. roles and multiple admin users beyond the owner and API-key callers).
 
 ## Core concepts
 
