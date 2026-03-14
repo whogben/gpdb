@@ -30,3 +30,7 @@ Admin Web App:
 Admin Config:
 - Keep file-backed admin config in `gpdb_admin/src/gpdb/admin/config.py`; resolve config path from CLI `--config`, then `GPDB_CONFIG`, then the default user config path.
 - Use `ResolvedConfig` for runtime values and `ConfigStore` for file reads/writes; only persist file-backed values, not env or CLI overrides.
+
+ToolAccess Integration:
+- ToolAccess is a project we also control. When encountering problems that would require workarounds or code that would be better off in ToolAccess, do NOT implement local workarounds in gpdb-admin.
+- Instead, stop and inform the user that we need to get upstream changes in ToolAccess first, and wait until those changes are done before proceeding with gpdb-admin work.

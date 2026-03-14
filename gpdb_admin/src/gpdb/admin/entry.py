@@ -18,7 +18,10 @@ from gpdb.admin.auth import (
     verify_api_key_secret,
 )
 from gpdb.admin.config import ConfigStore, ResolvedConfig, extract_config_arg
-from gpdb.admin.context import _build_mcp_principal_resolver, _build_rest_principal_resolver
+from gpdb.admin.context import (
+    _build_mcp_principal_resolver,
+    _build_rest_principal_resolver,
+)
 from gpdb.admin.graph_content import (
     GraphDetail,
     GraphEdgeDetail,
@@ -35,9 +38,9 @@ from gpdb.admin.graph_content import (
 )
 from gpdb.admin.runtime import AdminServices, create_admin_lifespan
 from gpdb.admin.servers import (
+    AuthMCPServer,
     CLIServer,
     OpenAPIServer,
-    SSEMCPServer,
     _AdminAPIKeyTokenVerifier,
     _invoke_tool_raw,
 )
@@ -76,7 +79,7 @@ class AdminRuntime:
     lifespan: Callable
     web_app: MountableApp
     rest_api: OpenAPIServer
-    mcp_server: SSEMCPServer
+    mcp_server: AuthMCPServer
     cli_server: CLIServer | None
     admin_service: ToolService
     graph_service: ToolService
@@ -137,7 +140,7 @@ def create_admin_runtime(
     rest_api.mount(graph_service)
     _install_api_key_auth(rest_api, services)
 
-    mcp_server = SSEMCPServer(
+    mcp_server = AuthMCPServer(
         mcp_name,
         auth_provider=_AdminAPIKeyTokenVerifier(services),
         principal_resolver=_build_mcp_principal_resolver(services),

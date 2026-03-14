@@ -4,7 +4,8 @@ import asyncio
 import inspect
 import json
 import logging
-from typing import Any, Union, get_args, get_origin
+from functools import wraps
+from typing import Any
 
 from fastapi import HTTPException, Request
 from fastmcp import FastMCP
@@ -94,6 +95,7 @@ class OpenAPIServer(ToolaccessOpenAPIServer):
 
         if inspect.iscoroutinefunction(tool.func):
 
+            @wraps(tool.func)
             async def route_handler(*args, request: Request, **kwargs):
                 ctx = InvocationContext(
                     surface="rest",
@@ -124,6 +126,7 @@ class OpenAPIServer(ToolaccessOpenAPIServer):
 
         else:
 
+            @wraps(tool.func)
             def route_handler(*args, request: Request, **kwargs):
                 ctx = InvocationContext(
                     surface="rest",
@@ -156,14 +159,12 @@ class OpenAPIServer(ToolaccessOpenAPIServer):
 
         route_handler.__signature__ = route_sig
         route_handler.__annotations__ = annotations
-        route_handler.__doc__ = tool.description
-        route_handler.__name__ = tool.name
         router(f"/{tool.name}", name=tool.name, description=tool.description)(
             route_handler
         )
 
 
-class SSEMCPServer(ToolaccessStreamableHTTPMCPServer):
+class AuthMCPServer(ToolaccessStreamableHTTPMCPServer):
     """ToolAccess-compatible MCP server with optional bearer auth."""
 
     def __init__(
@@ -175,67 +176,6 @@ class SSEMCPServer(ToolaccessStreamableHTTPMCPServer):
         super().__init__(name=name, principal_resolver=principal_resolver)
         self.name = name
         self.mcp = FastMCP(name, auth=auth_provider)
-
-    def _wrap_for_mcp(self, tool: ToolDefinition):
-        public_sig, annotations, context_param = get_public_signature(tool.func)
-
-        def process_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
-            processed: dict[str, Any] = {}
-            for key, value in kwargs.items():
-                if not isinstance(value, str):
-                    processed[key] = value
-                    continue
-                parameter = public_sig.parameters.get(key)
-                should_skip = False
-                if parameter is not None:
-                    annotation = parameter.annotation
-                    if annotation is str:
-                        should_skip = True
-                    else:
-                        origin = get_origin(annotation)
-                        if origin is Union:
-                            args = get_args(annotation)
-                            non_none = [arg for arg in args if arg is not type(None)]
-                            if len(non_none) == 1 and non_none[0] is str:
-                                should_skip = True
-                if should_skip:
-                    processed[key] = value
-                    continue
-                try:
-                    processed[key] = json.loads(value)
-                except (json.JSONDecodeError, TypeError):
-                    processed[key] = value
-            return processed
-
-        if inspect.iscoroutinefunction(tool.func):
-
-            async def async_wrapper(*args, **kwargs):
-                return await invoke_tool(
-                    tool=tool,
-                    raw_args=process_kwargs(kwargs),
-                    ctx=InvocationContext(surface="mcp", principal=None),
-                    context_param_name=context_param,
-                    surface_resolver=self.principal_resolver,
-                )
-
-            async_wrapper.__signature__ = public_sig
-            async_wrapper.__annotations__ = annotations
-            return async_wrapper
-
-        def sync_wrapper(*args, **kwargs):
-            return asyncio.run(
-                invoke_tool(
-                    tool=tool,
-                    raw_args=process_kwargs(kwargs),
-                    ctx=InvocationContext(surface="mcp", principal=None),
-                    context_param_name=context_param,
-                    surface_resolver=self.principal_resolver,
-                )
-            )
-
-        sync_wrapper.__signature__ = public_sig
-        sync_wrapper.__annotations__ = annotations
-        return sync_wrapper
 
 
 class CLIServer(ToolaccessCLIServer):

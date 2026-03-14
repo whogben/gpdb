@@ -37,7 +37,7 @@ def test_fastapi_status_command():
 def test_mcp_status_command():
     """Test that the status command is accessible via MCP server."""
     admin_service = entry.ToolService("admin", [entry.status])
-    mcp_server = entry.SSEMCPServer("gpdb")
+    mcp_server = entry.AuthMCPServer("gpdb")
     mcp_server.mount(admin_service)
 
     manager = entry.ServerManager(name="gpdb-admin")
