@@ -11,6 +11,15 @@ from gpdb.admin.auth import SESSION_COOKIE_NAME
 from gpdb.admin.graph_content import GraphContentNotReadyError
 
 
+def _prefixed_url(request: Request, route_name: str, **route_params) -> str:
+    """Return URL for the route, with mount prefix (http_root) when the app is mounted."""
+    path = request.app.url_path_for(route_name, **route_params)
+    root = getattr(request.app.state, "http_root", "") or ""
+    if not root:
+        return path
+    return root.rstrip("/") + path
+
+
 def render(request: Request, template_name: str, **context) -> HTMLResponse:
     """Render a template with the shared template environment."""
     return request.app.state.templates.TemplateResponse(
@@ -43,7 +52,7 @@ async def require_authenticated_user(request: Request):
     current_user = await current_user_from_request(request)
     if current_user is None:
         return RedirectResponse(
-            url=request.app.url_path_for("login"),
+            url=_prefixed_url(request, "login"),
             status_code=status.HTTP_303_SEE_OTHER,
         )
     return current_user
@@ -80,7 +89,7 @@ def redirect_with_message(
     **route_params,
 ) -> RedirectResponse:
     """Redirect to a route and carry a simple status message."""
-    url = request.app.url_path_for(route_name, **route_params)
+    url = _prefixed_url(request, route_name, **route_params)
     params = {}
     if error:
         params["error"] = error

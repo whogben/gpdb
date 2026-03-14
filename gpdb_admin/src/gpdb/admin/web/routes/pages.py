@@ -23,6 +23,7 @@ from gpdb.admin.store import (
     UserAlreadyExistsError,
 )
 from gpdb.admin.web.routes.common import (
+    _prefixed_url,
     current_user_from_request,
     redirect_with_message,
     render,
@@ -51,7 +52,7 @@ async def home(request: Request) -> HTMLResponse:
     current_user = await current_user_from_request(request)
     if current_user is None:
         return RedirectResponse(
-            url=request.app.url_path_for("login"),
+            url=_prefixed_url(request, "login"),
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
@@ -79,14 +80,14 @@ async def login_page(request: Request) -> HTMLResponse:
 
     if not await services.admin_store.owner_exists():
         return RedirectResponse(
-            url=request.app.url_path_for("home"),
+            url=_prefixed_url(request, "home"),
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
     current_user = await current_user_from_request(request)
     if current_user is not None:
         return RedirectResponse(
-            url=request.app.url_path_for("home"),
+            url=_prefixed_url(request, "home"),
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
@@ -114,7 +115,7 @@ async def setup_owner(
 
     if await services.admin_store.owner_exists():
         return RedirectResponse(
-            url=request.app.url_path_for("login"),
+            url=_prefixed_url(request, "login"),
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
@@ -153,7 +154,7 @@ async def setup_owner(
             form_data={"username": username, "display_name": display_name},
         )
 
-    login_url = request.app.url_path_for("login")
+    login_url = _prefixed_url(request, "login")
     login_with_username = f"{login_url}?{urlencode({'username': username})}"
     response = RedirectResponse(
         url=login_with_username,
@@ -176,7 +177,7 @@ async def login_submit(
 
     if not await services.admin_store.owner_exists():
         return RedirectResponse(
-            url=request.app.url_path_for("home"),
+            url=_prefixed_url(request, "home"),
             status_code=status.HTTP_303_SEE_OTHER,
         )
 
@@ -195,7 +196,7 @@ async def login_submit(
         )
 
     response = RedirectResponse(
-        url=request.app.url_path_for("home"),
+        url=_prefixed_url(request, "home"),
         status_code=status.HTTP_303_SEE_OTHER,
     )
     response.set_cookie(
@@ -213,7 +214,7 @@ async def login_submit(
 async def logout(request: Request) -> RedirectResponse:
     """Clear the current browser session."""
     response = RedirectResponse(
-        url=request.app.url_path_for("login"),
+        url=_prefixed_url(request, "login"),
         status_code=status.HTTP_303_SEE_OTHER,
     )
     response.delete_cookie(SESSION_COOKIE_NAME)

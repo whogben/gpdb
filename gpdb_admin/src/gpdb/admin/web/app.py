@@ -1,9 +1,10 @@
 """FastAPI app for the server-rendered admin web UI."""
 
+import os
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.templating import Jinja2Templates
 
 from gpdb.admin.config import ConfigStore, ResolvedConfig
@@ -17,6 +18,7 @@ from .routes.pages import router as pages_router
 
 
 WEB_ROOT = Path(__file__).resolve().parent
+STATIC_DIR = WEB_ROOT / "static"
 
 
 def create_web_app(
@@ -61,7 +63,19 @@ def create_web_app(
     app.include_router(graph_nodes_router)
     app.include_router(graph_edges_router)
 
-    # Static files at /static (MountableApp will prefix if needed)
-    app.mount("/static", StaticFiles(directory=str(WEB_ROOT / "static")), name="static")
+    # Static files: use a route instead of Mount so that when this app is itself
+    # mounted (e.g. at /gpdb), scope["path"] is still /static/... and we strip
+    # the /static prefix ourselves. Starlette's Mount doesn't set the child's
+    # path to the remainder, so StaticFiles would see path=/static/css/... and
+    # look for static/static/css/... (404).
+    @app.get("/static/{path:path}", name="static")
+    def _serve_static(path: str):
+        root = STATIC_DIR.resolve()
+        full = (STATIC_DIR / path).resolve()
+        if not full.is_file():
+            raise HTTPException(status_code=404)
+        if full != root and not str(full).startswith(str(root) + os.sep):
+            raise HTTPException(status_code=404)
+        return FileResponse(full)
 
     return app
