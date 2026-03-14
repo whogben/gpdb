@@ -16,7 +16,7 @@ dependencies = [
     "cryptography",
     "fastmcp",
     "fastapi",
-    "gpdb",
+    "gpdb==0.1.0",
     "jinja2",
     "platformdirs",
     "pixeltable-pgserver>=0.1.0",
