@@ -1673,6 +1673,19 @@ class GPGraph:
             offset=page.offset,
         )
 
+    async def search_edges_projection(
+        self,
+        query: SearchQuery,
+    ) -> Page[Dict[str, Any]]:
+        """
+        Search for Edges with field projection.
+        query.select determines returned fields.
+        Returns paginated dict results.
+        """
+        if not query.select:
+            raise ValueError("query.select is required for projection search")
+        return await self._search(self._Edge, query)
+
     # -------------------------------------------------------------------------
     # Search Engine
     # -------------------------------------------------------------------------

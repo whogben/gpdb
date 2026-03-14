@@ -374,6 +374,7 @@ await scratch.create_tables()   # creates: scratch_nodes, scratch_edges, scratch
 | `get_edge(id)` | Get an edge |
 | `delete_edge(id)` | Delete an edge |
 | `search_edges(SearchQuery)` | Search edges |
+| `search_edges_projection(SearchQuery)` | Search edges with field projection |
 | `register_schema(name, schema, kind="node")` | Register or update a node/edge JSON schema |
 | `get_schema(name)` | Get a schema |
 | `delete_schema(name)` | Delete a schema (fails if in use) |

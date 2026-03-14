@@ -2,6 +2,7 @@ import pytest
 import pytest_asyncio
 from gpdb import (
     GPGraph,
+    EdgeUpsert,
     NodeUpsert,
     NodeRead,
     Filter,
@@ -202,6 +203,68 @@ async def test_search_select_mixed(db: GPGraph):
 
     assert item["type"] == "test"
     assert item["data.val"] == 123
+
+
+@pytest.mark.asyncio
+async def test_search_edges_projection_select_columns(db: GPGraph):
+    """Test selecting specific columns on edges."""
+    n1 = await db.set_node(NodeUpsert(type="a", name="a"))
+    n2 = await db.set_node(NodeUpsert(type="b", name="b"))
+    e1 = await db.set_edge(
+        EdgeUpsert(type="link", source_id=n1.id, target_id=n2.id, data={"weight": 2})
+    )
+
+    query = SearchQuery(
+        select=["id", "type", "source_id", "target_id"],
+        filter=Filter(field="type", op=Op.EQ, value="link"),
+    )
+    result = await db.search_edges_projection(query)
+
+    assert result.total == 1
+    item = result.items[0]
+    assert isinstance(item, dict)
+    assert item["id"] == e1.id
+    assert item["type"] == "link"
+    assert item["source_id"] == n1.id
+    assert item["target_id"] == n2.id
+    assert "data" not in item
+    assert "created_at" not in item
+
+
+@pytest.mark.asyncio
+async def test_search_edges_projection_select_data_and_tags(db: GPGraph):
+    """Test selecting edge data and tags."""
+    n1 = await db.set_node(NodeUpsert(type="x", name="x"))
+    n2 = await db.set_node(NodeUpsert(type="y", name="y"))
+    await db.set_edge(
+        EdgeUpsert(
+            type="rel",
+            source_id=n1.id,
+            target_id=n2.id,
+            data={"score": 10, "meta": {"n": 1}},
+            tags=["foo", "bar"],
+        )
+    )
+
+    query = SearchQuery(
+        select=["id", "data.score", "data.meta.n", "tags"],
+        filter=Filter(field="type", op=Op.EQ, value="rel"),
+    )
+    result = await db.search_edges_projection(query)
+
+    assert result.total == 1
+    item = result.items[0]
+    assert item["data.score"] == 10
+    assert item["data.meta.n"] == 1
+    assert item["tags"] == ["foo", "bar"]
+    assert "source_id" not in item
+
+
+@pytest.mark.asyncio
+async def test_search_edges_projection_requires_select(db: GPGraph):
+    """Test that search_edges_projection requires query.select."""
+    with pytest.raises(ValueError, match="query.select is required"):
+        await db.search_edges_projection(SearchQuery(limit=1))
 
 
 @pytest.mark.asyncio
