@@ -13,6 +13,32 @@ from gpdb.admin.instances import ManagedInstanceMonitor
 from gpdb.admin.store import AdminStore
 
 
+def get_public_url(request: Request) -> str | None:
+    """Get the public base URL from config or auto-detect from request headers.
+
+    Priority:
+    1. Configured public_url (from config file or GPDB_PUBLIC_URL env var)
+    2. Auto-detect from X-Forwarded-* headers (when behind proxy)
+    3. Auto-detect from Host header
+
+    Returns None if no URL can be determined.
+    """
+    # Check configured public_url first
+    configured_url = request.app.state.config.server.public_url
+    if configured_url:
+        return configured_url.rstrip("/")
+
+    # Try to detect from proxy headers
+    headers = request.headers
+    proto = headers.get("x-forwarded-proto", headers.get("x-scheme", "http"))
+    host = headers.get("x-forwarded-host", headers.get("host"))
+
+    if host:
+        return f"{proto}://{host}"
+
+    return None
+
+
 SERVICE_UNAVAILABLE = "Service temporarily unavailable."
 
 

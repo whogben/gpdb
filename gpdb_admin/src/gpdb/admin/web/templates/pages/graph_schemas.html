@@ -10,9 +10,9 @@
       details, including version and current usage across nodes and edges.
     </p>
     <div class="button-row">
-      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_overview_page', graph_id=schema_list.graph.id) }}">Back to overview</a>
+      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_overview_page', graph_id=schema_list.graph.id) }}">Back to overview</a>
       {% if current_user.is_owner %}
-      <a class="button" href="{{ web_app.url_path_for('graph_schema_create_page', graph_id=schema_list.graph.id) }}">New schema</a>
+      <a class="button" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_create_page', graph_id=schema_list.graph.id) }}">New schema</a>
       {% endif %}
     </div>
   </div>
@@ -35,7 +35,7 @@
       <h2>Schema list</h2>
     </div>
     {% if current_user.is_owner %}
-    <a class="button" href="{{ web_app.url_path_for('graph_schema_create_page', graph_id=schema_list.graph.id) }}">New schema</a>
+    <a class="button" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_create_page', graph_id=schema_list.graph.id) }}">New schema</a>
     {% endif %}
   </div>
 
@@ -59,7 +59,7 @@
         </div>
       </dl>
       <div class="button-row">
-        <a class="button button-secondary" href="{{ web_app.url_path_for('graph_schema_detail_page', graph_id=schema_list.graph.id, schema_name=schema.name) }}">Open</a>
+        <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_detail_page', graph_id=schema_list.graph.id, schema_name=schema.name) }}">Open</a>
       </div>
     </article>
     {% else %}

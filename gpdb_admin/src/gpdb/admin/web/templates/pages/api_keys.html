@@ -14,14 +14,14 @@
 
   <div class="hero-panel">
     <h2>Create key</h2>
-    <form class="auth-form" action="{{ web_app.url_path_for('api_key_create') }}" method="post">
+    <form class="auth-form" action="{{ mount_prefix }}{{ web_app.url_path_for('api_key_create') }}" method="post">
       <label class="field">
         <span>Label</span>
         <input name="label" placeholder="Laptop, CI smoke tests, local script" required>
       </label>
       <div class="button-row">
         <button class="button" type="submit">Create API key</button>
-        <a class="button button-secondary" href="{{ web_app.url_path_for('home') }}">Back home</a>
+        <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('home') }}">Back home</a>
       </div>
     </form>
   </div>
@@ -91,9 +91,10 @@
       <p class="resource-note">Revoked at {{ api_key.revoked_at }}.</p>
       {% endif %}
       <div class="button-row">
-        <a class="button button-secondary" href="{{ web_app.url_path_for('api_key_detail_page', api_key_id=api_key.id) }}">Reveal</a>
+        <a class="button button-secondary"
+          href="{{ mount_prefix }}{{ web_app.url_path_for('api_key_detail_page', api_key_id=api_key.id) }}">Reveal</a>
         {% if api_key.is_active %}
-        <form action="{{ web_app.url_path_for('api_key_revoke', api_key_id=api_key.id) }}" method="post">
+        <form action="{{ mount_prefix }}{{ web_app.url_path_for('api_key_revoke', api_key_id=api_key.id) }}" method="post">
           <button class="button button-danger" type="submit">Revoke</button>
         </form>
         {% endif %}

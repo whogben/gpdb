@@ -53,6 +53,7 @@ def create_web_app(
             "resolved_config": resolved_config,
             "mount_prefix": http_root,
             "api_docs_url": api_docs_url,
+            "public_url": resolved_config.server.public_url,
         }
 
     templates.context_processors.append(_inject_web_app)

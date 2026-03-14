@@ -12,12 +12,12 @@
     </p>
     <div class="button-row">
       <a class="button button-secondary"
-        href="{{ web_app.url_path_for('graph_schema_list_page', graph_id=schema_detail.graph.id) }}">Back to schemas</a>
+        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_list_page', graph_id=schema_detail.graph.id) }}">Back to schemas</a>
       <a class="button button-secondary"
-        href="{{ web_app.url_path_for('graph_overview_page', graph_id=schema_detail.graph.id) }}">Graph overview</a>
+        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_overview_page', graph_id=schema_detail.graph.id) }}">Graph overview</a>
       {% if current_user.is_owner %}
       <a class="button"
-        href="{{ web_app.url_path_for('graph_schema_edit_page', graph_id=schema_detail.graph.id, schema_name=schema_detail.schema.name) }}">Edit
+        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_edit_page', graph_id=schema_detail.graph.id, schema_name=schema_detail.schema.name) }}">Edit
         schema</a>
       {% endif %}
     </div>
@@ -77,10 +77,10 @@
       {% if current_user.is_owner %}
       <div class="button-row">
         <a class="button button-secondary"
-          href="{{ web_app.url_path_for('graph_schema_edit_page', graph_id=schema_detail.graph.id, schema_name=schema_detail.schema.name) }}">Edit
+          href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_edit_page', graph_id=schema_detail.graph.id, schema_name=schema_detail.schema.name) }}">Edit
           schema</a>
         <form class="inline-form"
-          action="{{ web_app.url_path_for('graph_schema_delete', graph_id=schema_detail.graph.id, schema_name=schema_detail.schema.name) }}"
+          action="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_delete', graph_id=schema_detail.graph.id, schema_name=schema_detail.schema.name) }}"
           method="post">
           <button class="button button-danger" type="submit" {% if schema_detail.schema.usage.node_count or
             schema_detail.schema.usage.edge_count %}disabled{% endif %}>Delete schema</button>
@@ -115,8 +115,8 @@
 
 {% block scripts %}
 {% if schema_json %}
-<script src="{{ web_app.url_path_for('static', path='js/jsonjoy-builder.bundle.js') }}"></script>
-<script src="{{ web_app.url_path_for('static', path='js/jsonjoy-wrapper.js') }}"></script>
+<script src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/jsonjoy-builder.bundle.js') }}"></script>
+<script src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/jsonjoy-wrapper.js') }}"></script>
 <script>
   (function () {
     const VIEWER_ID = 'jsonjoy-viewer-mount';

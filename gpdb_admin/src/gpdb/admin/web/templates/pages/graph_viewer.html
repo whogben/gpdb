@@ -9,9 +9,9 @@
       Visualize nodes and edges. Use the filters below to narrow what is shown.
     </p>
     <div class="button-row">
-      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_overview_page', graph_id=graph_id) }}">Back to overview</a>
-      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_node_list_page', graph_id=graph_id) }}">Nodes</a>
-      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_edge_list_page', graph_id=graph_id) }}">Edges</a>
+      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_overview_page', graph_id=graph_id) }}">Back to overview</a>
+      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_list_page', graph_id=graph_id) }}">Nodes</a>
+      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_edge_list_page', graph_id=graph_id) }}">Edges</a>
     </div>
   </div>
 </section>
@@ -105,7 +105,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ web_app.url_path_for('static', path='js/cytoscape.min.js') }}"></script>
-<script data-viewer-base="{{ mount_prefix or '' }}" src="{{ web_app.url_path_for('static', path='js/graph-viewer.js') }}"></script>
+<script src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/cytoscape.min.js') }}"></script>
+<script data-viewer-base="{{ mount_prefix or '' }}" src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/graph-viewer.js') }}"></script>
 {% include 'partials/filters_toggle_script.html' %}
 {% endblock %}

@@ -79,6 +79,39 @@ By default the admin service listens on `127.0.0.1:8747`. You can override the b
 gpdb start --host 0.0.0.0 --port 9000
 ```
 
+#### Docker deployment
+
+For Docker deployments, you can set the public URL via environment variable:
+
+```bash
+docker run -e GPDB_PUBLIC_URL=https://gpdb.example.com \
+  -p 8747:8747 \
+  -v gpdb-data:/data \
+  gpdb-admin
+```
+
+Or in docker-compose.yml:
+
+```yaml
+services:
+  gpdb-admin:
+    image: gpdb-admin
+    ports:
+      - "8747"
+    environment:
+      - GPDB_PUBLIC_URL=https://gpdb.example.com
+    volumes:
+      - gpdb-data:/data
+```
+
+The `public_url` is used when generating absolute URLs for:
+- Email notifications (if implemented)
+- API responses with links
+- Shared resource URLs
+- Webhook callbacks
+
+If not set, the application uses relative URLs and auto-detects the base URL from request headers when behind a proxy.
+
 Once the service is running, the current runtime exposes:
 
 - the admin web app at `/`
@@ -108,6 +141,7 @@ The current file-backed config includes:
 
 - `server.host`
 - `server.port`
+- `server.public_url` — Optional public base URL (e.g., `https://gpdb.example.com`). Can also be set via `GPDB_PUBLIC_URL` environment variable. Used for generating absolute URLs in emails, API responses, and shared links.
 - `runtime.data_dir`
 - `auth.session_secret`
 

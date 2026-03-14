@@ -13,7 +13,7 @@
 
   <div class="auth-card">
     <h2>Login</h2>
-    <form class="auth-form" action="{{ web_app.url_path_for('login_submit') }}" method="post">
+    <form class="auth-form" action="{{ mount_prefix }}{{ web_app.url_path_for('login_submit') }}" method="post">
       <label class="field">
         <span>Username</span>
         <input name="username" value="{{ (form_data or {}).get('username', '') }}" required>

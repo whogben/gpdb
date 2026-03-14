@@ -51,7 +51,7 @@
 
       <div class="button-row">
         <button class="button" type="submit">{% if mode == "create" %}Create graph{% else %}Save changes{% endif %}</button>
-        <a class="button button-secondary" href="{{ web_app.url_path_for('home') }}">Back</a>
+        <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('home') }}">Back</a>
       </div>
     </form>
   </div>

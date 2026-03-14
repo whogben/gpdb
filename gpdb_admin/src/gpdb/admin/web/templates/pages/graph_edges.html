@@ -10,10 +10,10 @@
       edges with schema-validated JSON data.
     </p>
     <div class="button-row">
-      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_overview_page', graph_id=edge_list.graph.id) }}">Back to overview</a>
-      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_node_list_page', graph_id=edge_list.graph.id) }}">Nodes</a>
+      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_overview_page', graph_id=edge_list.graph.id) }}">Back to overview</a>
+      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_list_page', graph_id=edge_list.graph.id) }}">Nodes</a>
       {% if current_user.is_owner %}
-      <a class="button" href="{{ web_app.url_path_for('graph_edge_create_page', graph_id=edge_list.graph.id) }}">New edge</a>
+      <a class="button" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_edge_create_page', graph_id=edge_list.graph.id) }}">New edge</a>
       {% endif %}
     </div>
   </div>
@@ -40,7 +40,7 @@
       <h2>Edge list</h2>
     </div>
     {% if current_user.is_owner %}
-    <a class="button" href="{{ web_app.url_path_for('graph_edge_create_page', graph_id=edge_list.graph.id) }}">New edge</a>
+    <a class="button" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_edge_create_page', graph_id=edge_list.graph.id) }}">New edge</a>
     {% endif %}
   </div>
 
@@ -75,7 +75,7 @@
       <p class="resource-note">Tags: {{ edge.tags | join(", ") }}</p>
       {% endif %}
       <div class="button-row">
-        <a class="button button-secondary" href="{{ web_app.url_path_for('graph_edge_detail_page', graph_id=edge_list.graph.id, edge_id=edge.id) }}">Open</a>
+        <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_edge_detail_page', graph_id=edge_list.graph.id, edge_id=edge.id) }}">Open</a>
       </div>
     </article>
     {% else %}

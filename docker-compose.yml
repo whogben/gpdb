@@ -1,0 +1,23 @@
+version: "3.9"
+
+services:
+  gpdb-admin:
+    image: python:3.12-slim
+    ports:
+      - "8747"
+    volumes:
+      - gpdb-data:/data
+    environment:
+      # Set to your actual public URL (e.g., https://gpdb.example.com)
+      # - 'GPDB_PUBLIC_URL=https://gpdb.example.com'
+    working_dir: /app
+    command: >
+      sh -c "
+        pip install --no-cache-dir gpdb-admin &&
+        gpdb start --config /data/admin.toml --host 0.0.0.0
+      "
+    restart: unless-stopped
+
+volumes:
+  gpdb-data:
+    driver: local

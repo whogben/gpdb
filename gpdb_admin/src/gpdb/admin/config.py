@@ -19,6 +19,7 @@ except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.9/3.10
 
 
 CONFIG_ENV_VAR = "GPDB_CONFIG"
+PUBLIC_URL_ENV_VAR = "GPDB_PUBLIC_URL"
 DEFAULT_CONFIG_FILENAME = "admin.toml"
 
 
@@ -35,6 +36,7 @@ class ServerConfig(BaseModel):
 
     host: str = "127.0.0.1"
     port: int = 8747
+    public_url: str | None = None
 
 
 class RuntimeConfig(BaseModel):
@@ -157,12 +159,16 @@ class ConfigStore:
         return cls(resolve_config_location(cli_path=cli_path, environ=environ))
 
     def load(self) -> ResolvedConfig:
-        """Load config from disk and merge it with defaults."""
+        """Load config from disk and merge it with defaults and environment variables."""
         file_config = AdminConfig()
         if self.location.path.exists():
             with self.location.path.open("rb") as handle:
                 data = tomllib.load(handle)
             file_config = AdminConfig.model_validate(data)
+
+        # Override with environment variables
+        if os.environ.get(PUBLIC_URL_ENV_VAR):
+            file_config.server.public_url = os.environ.get(PUBLIC_URL_ENV_VAR)
 
         self.location = self._refresh_location()
         return ResolvedConfig(

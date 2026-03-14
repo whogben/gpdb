@@ -14,12 +14,12 @@
     <h2>Quick actions</h2>
     <div class="button-row">
       {% if current_user.is_owner %}
-      <a class="button" href="{{ web_app.url_path_for('graph_create_page') }}">Add graph</a>
-      <a class="button button-secondary" href="{{ web_app.url_path_for('instance_create_page') }}">Add instance</a>
+      <a class="button" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_create_page') }}">Add graph</a>
+      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('instance_create_page') }}">Add instance</a>
       {% endif %}
-      <a class="button button-secondary" href="{{ web_app.url_path_for('api_keys_page') }}">Manage API keys</a>
+      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('api_keys_page') }}">Manage API keys</a>
       <a class="button button-secondary" href="{{ api_docs_url }}">API docs</a>
-      <form action="{{ web_app.url_path_for('logout') }}" method="post">
+      <form action="{{ mount_prefix }}{{ web_app.url_path_for('logout') }}" method="post">
         <button class="button button-secondary" type="submit">Sign out</button>
       </form>
     </div>
@@ -38,7 +38,7 @@
       <h2>Graphs</h2>
     </div>
     {% if current_user.is_owner %}
-    <a class="button" href="{{ web_app.url_path_for('graph_create_page') }}">Add graph</a>
+    <a class="button" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_create_page') }}">Add graph</a>
     {% endif %}
   </div>
 
@@ -76,11 +76,11 @@
       {% if current_user.is_owner %}
       <div class="button-row">
         <a class="button button-secondary"
-          href="{{ web_app.url_path_for('graph_overview_page', graph_id=graph.id) }}">Open</a>
+          href="{{ mount_prefix }}{{ web_app.url_path_for('graph_overview_page', graph_id=graph.id) }}">Open</a>
         <a class="button button-secondary"
-          href="{{ web_app.url_path_for('graph_edit_page', graph_id=graph.id) }}">Edit</a>
+          href="{{ mount_prefix }}{{ web_app.url_path_for('graph_edit_page', graph_id=graph.id) }}">Edit</a>
         {% if graph.table_prefix %}
-        <form action="{{ web_app.url_path_for('graph_delete', graph_id=graph.id) }}" method="post">
+        <form action="{{ mount_prefix }}{{ web_app.url_path_for('graph_delete', graph_id=graph.id) }}" method="post">
           <button class="button button-danger" type="submit">Delete</button>
         </form>
         {% endif %}
@@ -106,7 +106,7 @@
       <h2>Instances</h2>
     </div>
     {% if current_user.is_owner %}
-    <a class="button" href="{{ web_app.url_path_for('instance_create_page') }}">Add instance</a>
+    <a class="button" href="{{ mount_prefix }}{{ web_app.url_path_for('instance_create_page') }}">Add instance</a>
     {% endif %}
   </div>
 
@@ -147,9 +147,9 @@
       {% if current_user.is_owner %}
       <div class="button-row">
         <a class="button button-secondary"
-          href="{{ web_app.url_path_for('instance_edit_page', instance_id=instance.id) }}">Edit</a>
+          href="{{ mount_prefix }}{{ web_app.url_path_for('instance_edit_page', instance_id=instance.id) }}">Edit</a>
         {% if not instance.is_builtin %}
-        <form action="{{ web_app.url_path_for('instance_delete', instance_id=instance.id) }}" method="post">
+        <form action="{{ mount_prefix }}{{ web_app.url_path_for('instance_delete', instance_id=instance.id) }}" method="post">
           <button class="button button-danger" type="submit">Delete</button>
         </form>
         {% endif %}

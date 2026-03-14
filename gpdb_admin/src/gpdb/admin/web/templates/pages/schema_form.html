@@ -78,8 +78,8 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ web_app.url_path_for('static', path='js/jsonjoy-builder.bundle.js') }}"></script>
-<script src="{{ web_app.url_path_for('static', path='js/jsonjoy-wrapper.js') }}"></script>
+<script src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/jsonjoy-builder.bundle.js') }}"></script>
+<script src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/jsonjoy-wrapper.js') }}"></script>
 <script>
   (function () {
     const EDITOR_ID = 'jsonjoy-editor-mount';

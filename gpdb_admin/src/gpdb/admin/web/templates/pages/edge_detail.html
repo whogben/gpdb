@@ -10,11 +10,11 @@
       <strong>{{ edge_detail.graph.display_name }}</strong>.
     </p>
     <div class="button-row">
-      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_edge_list_page', graph_id=edge_detail.graph.id) }}">Back to edges</a>
-      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_overview_page', graph_id=edge_detail.graph.id) }}">Graph overview</a>
+      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_edge_list_page', graph_id=edge_detail.graph.id) }}">Back to edges</a>
+      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_overview_page', graph_id=edge_detail.graph.id) }}">Graph overview</a>
       {% if current_user.is_owner %}
-      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_edge_edit_page', graph_id=edge_detail.graph.id, edge_id=edge_detail.edge.id) }}">Edit edge</a>
-      <a class="button" href="{{ web_app.url_path_for('graph_edge_create_page', graph_id=edge_detail.graph.id) }}">Create edge</a>
+      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_edge_edit_page', graph_id=edge_detail.graph.id, edge_id=edge_detail.edge.id) }}">Edit edge</a>
+      <a class="button" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_edge_create_page', graph_id=edge_detail.graph.id) }}">Create edge</a>
       {% endif %}
     </div>
   </div>
@@ -83,8 +83,8 @@
       {% endif %}
       {% if current_user.is_owner %}
       <div class="button-row">
-        <a class="button button-secondary" href="{{ web_app.url_path_for('graph_edge_edit_page', graph_id=edge_detail.graph.id, edge_id=edge_detail.edge.id) }}">Edit edge</a>
-        <form class="inline-form" action="{{ web_app.url_path_for('graph_edge_delete', graph_id=edge_detail.graph.id, edge_id=edge_detail.edge.id) }}" method="post">
+        <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_edge_edit_page', graph_id=edge_detail.graph.id, edge_id=edge_detail.edge.id) }}">Edit edge</a>
+        <form class="inline-form" action="{{ mount_prefix }}{{ web_app.url_path_for('graph_edge_delete', graph_id=edge_detail.graph.id, edge_id=edge_detail.edge.id) }}" method="post">
           <button class="button button-danger" type="submit">Delete edge</button>
         </form>
       </div>
@@ -128,8 +128,8 @@
 
 {% block scripts %}
 {% if schema_json %}
-<script src="{{ web_app.url_path_for('static', path='js/jedison.umd.js') }}"></script>
-<script src="{{ web_app.url_path_for('static', path='js/jedison-form.js') }}"></script>
+<script src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/jedison.umd.js') }}"></script>
+<script src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/jedison-form.js') }}"></script>
 {% endif %}
 <script>
 (function () {
