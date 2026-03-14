@@ -53,6 +53,7 @@ include = ["gpdb.admin*"]
 "gpdb.admin.web" = [
     "templates/*.html",
     "templates/pages/*.html",
+    "templates/partials/*.html",
     "static/css/*.css",
     "static/js/*.js",
 ]

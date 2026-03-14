@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-copy">
+    <p class="eyebrow">Graph Viewer</p>
+    <h1>{{ overview.graph.display_name }}</h1>
+    <p class="hero-text">
+      Visualize nodes and edges. Use the filters below to narrow what is shown.
+    </p>
+    <div class="button-row">
+      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_overview_page', graph_id=graph_id) }}">Back to overview</a>
+      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_node_list_page', graph_id=graph_id) }}">Nodes</a>
+      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_edge_list_page', graph_id=graph_id) }}">Edges</a>
+    </div>
+  </div>
+</section>
+
+<section class="dashboard-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Filters</p>
+      <h2>Node and edge filters</h2>
+    </div>
+    <button class="button button-secondary" type="button" data-filters-toggle>
+      Hide filters
+    </button>
+  </div>
+
+  {% if filter_summary %}
+  <p data-filters-summary class="resource-note" style="margin-top: 0;">Filters: {{ filter_summary }}</p>
+  {% endif %}
+
+  <article class="resource-card" data-filters-panel hidden>
+    <div id="viewer-filter-form" data-graph-id="{{ graph_id }}" class="auth-form">
+      <h3 class="resource-subtitle">Node filters</h3>
+      <label class="field">
+        <span>Type</span>
+        <input name="node_type" value="{{ filter_params.node_type }}" placeholder="e.g. user">
+      </label>
+      <label class="field">
+        <span>Schema name</span>
+        <input name="node_schema_name" value="{{ filter_params.node_schema_name }}">
+      </label>
+      <label class="field">
+        <span>Parent ID</span>
+        <input name="node_parent_id" value="{{ filter_params.node_parent_id }}">
+      </label>
+      <label class="field">
+        <span>Filter (DSL)</span>
+        <input name="node_filter" value="{{ filter_params.node_filter }}" placeholder="e.g. type = user">
+        <small class="field-hint">Optional. Same syntax as Nodes list.</small>
+      </label>
+      <label class="field">
+        <span>Node limit</span>
+        <select name="node_limit">
+          {% for option in (50, 100, 200, 500) %}
+          <option value="{{ option }}" {% if filter_params.node_limit == option %}selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <h3 class="resource-subtitle">Edge filters</h3>
+      <label class="field">
+        <span>Type</span>
+        <input name="edge_type" value="{{ filter_params.edge_type }}" placeholder="e.g. follows">
+      </label>
+      <label class="field">
+        <span>Schema name</span>
+        <input name="edge_schema_name" value="{{ filter_params.edge_schema_name }}">
+      </label>
+      <label class="field">
+        <span>Source ID</span>
+        <input name="edge_source_id" value="{{ filter_params.edge_source_id }}">
+      </label>
+      <label class="field">
+        <span>Target ID</span>
+        <input name="edge_target_id" value="{{ filter_params.edge_target_id }}">
+      </label>
+      <label class="field">
+        <span>Filter (DSL)</span>
+        <input name="edge_filter" value="{{ filter_params.edge_filter }}" placeholder="e.g. type = follows">
+        <small class="field-hint">Optional. Same syntax as Edges list.</small>
+      </label>
+      <label class="field">
+        <span>Edge limit</span>
+        <select name="edge_limit">
+          {% for option in (50, 100, 200, 500) %}
+          <option value="{{ option }}" {% if filter_params.edge_limit == option %}selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+  </article>
+</section>
+
+<section class="dashboard-section">
+  <div class="section-heading">
+    <p class="eyebrow">Graph</p>
+    <h2>View</h2>
+  </div>
+  <div id="viewer-status" class="resource-note" aria-live="polite">Loading…</div>
+  <div id="viewer-cy" style="height: 400px; width: 100%; min-height: 300px;"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ web_app.url_path_for('static', path='js/cytoscape.min.js') }}"></script>
+<script data-viewer-base="{{ mount_prefix or '' }}" src="{{ web_app.url_path_for('static', path='js/graph-viewer.js') }}"></script>
+{% include 'partials/filters_toggle_script.html' %}
+{% endblock %}

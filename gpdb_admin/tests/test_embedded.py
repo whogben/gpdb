@@ -158,6 +158,12 @@ def test_embedded_admin_web_under_prefix(embedded_admin_test_env):
         "GET %s/static/css/tokens.css returned %s" % (HTTP_ROOT, response.status_code)
     )
 
+    # Viewer assets (Cytoscape vendored locally)
+    response = client.get(f"{HTTP_ROOT}/static/js/cytoscape.min.js")
+    assert response.status_code == 200, (
+        "GET %s/static/js/cytoscape.min.js returned %s" % (HTTP_ROOT, response.status_code)
+    )
+
 
 # --- Admin REST under prefix ---
 

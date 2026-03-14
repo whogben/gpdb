@@ -1,0 +1,31 @@
+<script>
+  (function () {
+    var toggle = document.querySelector("[data-filters-toggle]");
+    var panel = document.querySelector("[data-filters-panel]");
+    if (!toggle || !panel) return;
+
+    var summaryEl = document.querySelector("[data-filters-summary]");
+
+    function updateButtonText() {
+      toggle.textContent = panel.hasAttribute("hidden") ? "Show filters" : "Hide filters";
+    }
+
+    function updateSummaryVisibility() {
+      if (summaryEl) {
+        summaryEl.hidden = !panel.hasAttribute("hidden");
+      }
+    }
+
+    toggle.addEventListener("click", function () {
+      if (panel.hasAttribute("hidden")) {
+        panel.removeAttribute("hidden");
+      } else {
+        panel.setAttribute("hidden", "hidden");
+      }
+      updateButtonText();
+      updateSummaryVisibility();
+    });
+    updateButtonText();
+    updateSummaryVisibility();
+  })();
+</script>

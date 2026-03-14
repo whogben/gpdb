@@ -247,6 +247,17 @@ class GraphEdgeDetail(BaseModel):
         return self.edge_record
 
 
+class GraphViewerData(BaseModel):
+    """Combined nodes and edges for the graph viewer (Cytoscape-oriented)."""
+
+    graph: dict[str, object]
+    instance: dict[str, object]
+    elements: list[dict[str, object]] = Field(default_factory=list)
+    node_count: int = 0
+    edge_count: int = 0
+    error: str | None = None
+
+
 class GraphContentService:
     """Resolve managed graphs and provide graph-scoped admin operations."""
 
@@ -935,6 +946,93 @@ class GraphContentService:
             )
         finally:
             await db.sqla_engine.dispose()
+
+    async def get_graph_viewer_data(
+        self,
+        *,
+        graph_id: str,
+        current_user: AdminUser | None,
+        allow_local_system: bool = False,
+        node_type: str | None = None,
+        node_schema_name: str | None = None,
+        node_parent_id: str | None = None,
+        node_filter_dsl: str | None = None,
+        node_limit: int = 200,
+        edge_type: str | None = None,
+        edge_schema_name: str | None = None,
+        edge_source_id: str | None = None,
+        edge_target_id: str | None = None,
+        edge_filter_dsl: str | None = None,
+        edge_limit: int = 200,
+    ) -> GraphViewerData:
+        """Return combined filtered nodes and edges for the graph viewer (Cytoscape elements)."""
+        try:
+            node_list = await self.list_graph_nodes(
+                graph_id=graph_id,
+                current_user=current_user,
+                allow_local_system=allow_local_system,
+                type=node_type,
+                schema_name=node_schema_name,
+                parent_id=node_parent_id,
+                filter_dsl=node_filter_dsl,
+                limit=min(node_limit, 500),
+                offset=0,
+                sort="created_at_desc",
+            )
+            edge_list = await self.list_graph_edges(
+                graph_id=graph_id,
+                current_user=current_user,
+                allow_local_system=allow_local_system,
+                type=edge_type,
+                schema_name=edge_schema_name,
+                source_id=edge_source_id,
+                target_id=edge_target_id,
+                filter_dsl=edge_filter_dsl,
+                limit=min(edge_limit, 500),
+                offset=0,
+                sort="created_at_desc",
+            )
+        except GraphContentValidationError as exc:
+            return GraphViewerData(
+                graph={},
+                instance={},
+                elements=[],
+                node_count=0,
+                edge_count=0,
+                error=str(exc),
+            )
+
+        graph = node_list.graph
+        instance = node_list.instance
+        elements: list[dict[str, object]] = []
+
+        for node in node_list.items:
+            elements.append({
+                "group": "nodes",
+                "data": {
+                    "id": node.id,
+                    "label": node.name or node.id,
+                    "type": node.type,
+                },
+            })
+        for edge in edge_list.items:
+            elements.append({
+                "group": "edges",
+                "data": {
+                    "id": edge.id,
+                    "source": edge.source_id,
+                    "target": edge.target_id,
+                    "label": edge.type,
+                },
+            })
+
+        return GraphViewerData(
+            graph=graph,
+            instance=instance,
+            elements=elements,
+            node_count=len(node_list.items),
+            edge_count=len(edge_list.items),
+        )
 
     async def get_graph_edge(
         self,

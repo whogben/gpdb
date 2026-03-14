@@ -14,6 +14,7 @@ from .routes.graph_edges import router as graph_edges_router
 from .routes.graph_overview import router as graph_overview_router
 from .routes.graph_nodes import router as graph_nodes_router
 from .routes.graph_schemas import router as graph_schemas_router
+from .routes.graph_viewer import router as graph_viewer_router
 from .routes.pages import router as pages_router
 
 
@@ -62,6 +63,7 @@ def create_web_app(
     app.include_router(graph_schemas_router)
     app.include_router(graph_nodes_router)
     app.include_router(graph_edges_router)
+    app.include_router(graph_viewer_router)
 
     # Static files: use a route instead of Mount so that when this app is itself
     # mounted (e.g. at /gpdb), scope["path"] is still /static/... and we strip

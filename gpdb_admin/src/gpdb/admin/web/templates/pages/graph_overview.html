@@ -14,6 +14,7 @@
       <a class="button button-secondary" href="{{ web_app.url_path_for('graph_schema_list_page', graph_id=overview.graph.id) }}">Schemas</a>
       <a class="button button-secondary" href="{{ web_app.url_path_for('graph_node_list_page', graph_id=overview.graph.id) }}">Nodes</a>
       <a class="button button-secondary" href="{{ web_app.url_path_for('graph_edge_list_page', graph_id=overview.graph.id) }}">Edges</a>
+      <a class="button button-secondary" href="{{ web_app.url_path_for('graph_viewer_page', graph_id=overview.graph.id) }}">Viewer</a>
       {% if current_user.is_owner %}
       <a class="button" href="{{ web_app.url_path_for('graph_edit_page', graph_id=overview.graph.id) }}">Edit graph</a>
       {% endif %}

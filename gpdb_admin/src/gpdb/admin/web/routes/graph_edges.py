@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from urllib.parse import urlencode
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -14,6 +13,10 @@ from gpdb.admin.web.routes.common import (
     render,
     require_authenticated_user,
     require_graph_content_service,
+)
+from gpdb.admin.web.routes.list_filters import (
+    build_edge_list_url,
+    edge_filter_form_from_request,
 )
 
 
@@ -38,25 +41,11 @@ async def graph_edge_list_page(request: Request, graph_id: str) -> HTMLResponse:
     if isinstance(current_user, RedirectResponse):
         return current_user
 
-    filter_form = {
-        "type": request.query_params.get("type", "").strip(),
-        "schema_name": request.query_params.get("schema_name", "").strip(),
-        "source_id": request.query_params.get("source_id", "").strip(),
-        "target_id": request.query_params.get("target_id", "").strip(),
-        "filter": request.query_params.get("filter", "").strip(),
-        "sort": request.query_params.get("sort", DEFAULT_EDGE_SORT).strip()
-        or DEFAULT_EDGE_SORT,
-        "limit": _parse_int_query_param(
-            request.query_params.get("limit"),
-            default=DEFAULT_EDGE_LIMIT,
-            minimum=1,
-        ),
-        "offset": _parse_int_query_param(
-            request.query_params.get("offset"),
-            default=0,
-            minimum=0,
-        ),
-    }
+    filter_form = edge_filter_form_from_request(
+        request,
+        default_limit=DEFAULT_EDGE_LIMIT,
+        default_sort=DEFAULT_EDGE_SORT,
+    )
 
     try:
         edge_list = await require_graph_content_service(request).list_graph_edges(
@@ -77,7 +66,7 @@ async def graph_edge_list_page(request: Request, graph_id: str) -> HTMLResponse:
     payload = edge_list.model_dump(mode="json")
     previous_url = None
     if payload["offset"] > 0:
-        previous_url = _build_edge_list_url(
+        previous_url = build_edge_list_url(
             request,
             graph_id=graph_id,
             type=filter_form["type"],
@@ -91,7 +80,7 @@ async def graph_edge_list_page(request: Request, graph_id: str) -> HTMLResponse:
         )
     next_url = None
     if payload["offset"] + payload["limit"] < payload["total"]:
-        next_url = _build_edge_list_url(
+        next_url = build_edge_list_url(
             request,
             graph_id=graph_id,
             type=filter_form["type"],
@@ -496,50 +485,3 @@ def _parse_tags_text(tags_text: str) -> list[str]:
     return [item.strip() for item in tags_text.split(",") if item.strip()]
 
 
-def _parse_int_query_param(
-    raw_value: str | None,
-    *,
-    default: int,
-    minimum: int,
-) -> int:
-    if raw_value is None or not raw_value.strip():
-        return default
-    try:
-        parsed = int(raw_value)
-    except ValueError:
-        return default
-    return parsed if parsed >= minimum else default
-
-
-def _build_edge_list_url(
-    request: Request,
-    *,
-    graph_id: str,
-    type: str,
-    schema_name: str,
-    source_id: str,
-    target_id: str,
-    filter: str,
-    sort: str,
-    limit: int,
-    offset: int,
-) -> str:
-    params: dict[str, object] = {
-        "sort": sort,
-        "limit": limit,
-        "offset": offset,
-    }
-    if type:
-        params["type"] = type
-    if schema_name:
-        params["schema_name"] = schema_name
-    if source_id:
-        params["source_id"] = source_id
-    if target_id:
-        params["target_id"] = target_id
-    if filter:
-        params["filter"] = filter
-    return (
-        f"{request.app.url_path_for('graph_edge_list_page', graph_id=graph_id)}"
-        f"?{urlencode(params)}"
-    )

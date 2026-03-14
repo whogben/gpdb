@@ -29,72 +29,9 @@
   </div>
 </section>
 
-<section class="dashboard-section">
-  <div class="section-heading">
-    <div>
-      <p class="eyebrow">Browse</p>
-      <h2>Filters</h2>
-    </div>
-    <button class="button button-secondary" type="button" data-filters-toggle>
-      Hide filters
-    </button>
-  </div>
-
-  <article class="resource-card" data-filters-panel>
-    <form class="auth-form" action="{{ web_app.url_path_for('graph_edge_list_page', graph_id=edge_list.graph.id) }}" method="get">
-      <label class="field">
-        <span>Type</span>
-        <input name="type" value="{{ filter_form.type }}">
-      </label>
-
-      <label class="field">
-        <span>Schema name</span>
-        <input name="schema_name" value="{{ filter_form.schema_name }}">
-      </label>
-
-      <label class="field">
-        <span>Source ID</span>
-        <input name="source_id" value="{{ filter_form.source_id }}">
-      </label>
-
-      <label class="field">
-        <span>Target ID</span>
-        <input name="target_id" value="{{ filter_form.target_id }}">
-      </label>
-
-      <label class="field">
-        <span>Filter (DSL)</span>
-        <input name="filter" value="{{ filter_form.filter }}" placeholder="e.g. type = follows and source_id = abc">
-        <small class="field-hint">Optional. Leave empty to use the fields above. Same syntax as the API.</small>
-      </label>
-
-      <label class="field">
-        <span>Sort</span>
-        <select name="sort">
-          {% for value, label in sort_options %}
-          <option value="{{ value }}" {% if filter_form.sort == value %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </label>
-
-      <label class="field">
-        <span>Page size</span>
-        <select name="limit">
-          {% for option in (10, 20, 50, 100) %}
-          <option value="{{ option }}" {% if filter_form.limit == option %}selected{% endif %}>{{ option }}</option>
-          {% endfor %}
-        </select>
-      </label>
-
-      <input type="hidden" name="offset" value="0">
-
-      <div class="button-row">
-        <button class="button" type="submit">Apply filters</button>
-        <a class="button button-secondary" href="{{ clear_filters_url }}">Clear</a>
-      </div>
-    </form>
-  </article>
-</section>
+{% set form_action = web_app.url_path_for('graph_edge_list_page', graph_id=edge_list.graph.id) %}
+{% set filter_kind = 'edge' %}
+{% include 'partials/list_filter_panel.html' %}
 
 <section class="dashboard-section">
   <div class="section-heading">
@@ -165,24 +102,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-  (function () {
-    var toggle = document.querySelector("[data-filters-toggle]");
-    var panel = document.querySelector("[data-filters-panel]");
-    if (!toggle || !panel) return;
-
-    function updateButtonText() {
-      toggle.textContent = panel.hasAttribute("hidden") ? "Show filters" : "Hide filters";
-    }
-
-    toggle.addEventListener("click", function () {
-      if (panel.hasAttribute("hidden")) {
-        panel.removeAttribute("hidden");
-      } else {
-        panel.setAttribute("hidden", "hidden");
-      }
-      updateButtonText();
-    });
-  })();
-</script>
+{% include 'partials/filters_toggle_script.html' %}
 {% endblock %}
