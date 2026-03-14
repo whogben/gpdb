@@ -11,7 +11,13 @@ from sqlalchemy import text
 from sqlalchemy.engine import URL
 
 from gpdb import GPGraph
-from gpdb.admin.store import ADMIN_TABLE_PREFIX, AdminStore, ManagedGraph, ManagedInstance
+from gpdb.admin.store import (
+    ADMIN_TABLE_PREFIX,
+    AdminStore,
+    GraphAlreadyExistsError,
+    ManagedGraph,
+    ManagedInstance,
+)
 
 HEALTH_CHECK_INTERVAL_SECONDS = 15
 
@@ -105,6 +111,15 @@ class ManagedInstanceMonitor:
         if not table_prefix:
             raise ValueError("New graphs must use a non-empty table prefix")
 
+        # Check if graph already exists
+        existing_graph = await self.admin_store.get_graph_by_scope(
+            instance_id, table_prefix
+        )
+        if existing_graph is not None:
+            raise GraphAlreadyExistsError(
+                f"Graph '{table_prefix}' already exists for instance '{instance_id}'"
+            )
+
         db = GPGraph(self._resolve_instance_url(instance), table_prefix=table_prefix)
         try:
             await db.create_tables()
@@ -135,7 +150,9 @@ class ManagedInstanceMonitor:
         if instance is None:
             raise ValueError("Managed instance was not found")
 
-        db = GPGraph(self._resolve_instance_url(instance), table_prefix=graph.table_prefix)
+        db = GPGraph(
+            self._resolve_instance_url(instance), table_prefix=graph.table_prefix
+        )
         try:
             await db.drop_tables()
         finally:

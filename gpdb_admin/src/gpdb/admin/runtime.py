@@ -36,7 +36,9 @@ class _PathSafePostgresServer(PostgresServer):
 
     def ensure_postgres_running(self) -> None:
         """Start postgres while preserving paths that contain spaces."""
-        postmaster_info = postgres_server_module.PostmasterInfo.read_from_pgdata(self.pgdata)
+        postmaster_info = postgres_server_module.PostmasterInfo.read_from_pgdata(
+            self.pgdata
+        )
         if postmaster_info is not None and postmaster_info.is_running():
             postgres_server_module._logger.info(
                 f"a postgres server is already running: {postmaster_info=} {postmaster_info.process=}"
@@ -48,7 +50,9 @@ class _PathSafePostgresServer(PostgresServer):
                     f"found a postmaster.pid file, but the server is not running: {postmaster_info=}"
                 )
             if postmaster_info is None:
-                postgres_server_module._logger.info(f"no postmaster.pid file found in {self.pgdata}")
+                postgres_server_module._logger.info(
+                    f"no postmaster.pid file found in {self.pgdata}"
+                )
 
             postgres_args: str
             subprocess_kwargs: dict[str, Any]
@@ -62,7 +66,9 @@ class _PathSafePostgresServer(PostgresServer):
                     postgres_server_module.ensure_prefix_permissions(socket_dir)
                     socket_dir.chmod(0o777)
 
-                postgres_args = f'-h "" -k "{_escape_postgres_option_value(socket_dir)}"'
+                postgres_args = (
+                    f'-h "" -k "{_escape_postgres_option_value(socket_dir)}"'
+                )
                 subprocess_kwargs = {}
             else:
                 host = "127.0.0.1"
@@ -106,13 +112,19 @@ class _PathSafePostgresServer(PostgresServer):
                 postgres_server_module._logger.info(
                     "Waiting for postmaster info to show a running process."
                 )
-                pinfo = postgres_server_module.PostmasterInfo.read_from_pgdata(self.pgdata)
-                postgres_server_module._logger.info(f"Running; checking if ready {pinfo=}")
+                pinfo = postgres_server_module.PostmasterInfo.read_from_pgdata(
+                    self.pgdata
+                )
+                postgres_server_module._logger.info(
+                    f"Running; checking if ready {pinfo=}"
+                )
                 if pinfo is not None and pinfo.is_running() and pinfo.status == "ready":
                     self._postmaster_info = pinfo
                     break
 
-                postgres_server_module._logger.info("Not ready yet; waiting a bit longer.")
+                postgres_server_module._logger.info(
+                    "Not ready yet; waiting a bit longer."
+                )
                 postgres_server_module.time.sleep(1.0)
 
         if (
@@ -150,6 +162,7 @@ def create_admin_lifespan(services: AdminServices):
                     services.graph_content = GraphContentService(
                         admin_store=nested_admin_store,
                         captive_url_factory=services.captive_server.get_uri,
+                        instance_monitor=services.instance_monitor,
                     )
                 yield
             finally:
@@ -206,6 +219,7 @@ def create_admin_lifespan(services: AdminServices):
             services.graph_content = GraphContentService(
                 admin_store=admin_store,
                 captive_url_factory=server.get_uri,
+                instance_monitor=instance_monitor,
             )
             app.state.services = services
             try:

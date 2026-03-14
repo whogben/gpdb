@@ -24,8 +24,15 @@ from gpdb import (
     SearchQuery,
     Sort,
 )
-from gpdb.admin.instances import build_postgres_url
-from gpdb.admin.store import AdminStore, AdminUser, ManagedGraph, ManagedInstance
+from gpdb.admin.instances import build_postgres_url, ManagedInstanceMonitor
+from gpdb.admin.store import (
+    AdminStore,
+    AdminUser,
+    GraphAlreadyExistsError,
+    InstanceAlreadyExistsError,
+    ManagedGraph,
+    ManagedInstance,
+)
 
 
 class GraphContentError(RuntimeError):
@@ -247,6 +254,70 @@ class GraphEdgeDetail(BaseModel):
         return self.edge_record
 
 
+class InstanceRecord(BaseModel):
+    """Stable instance payload returned by admin instance APIs."""
+
+    id: str
+    slug: str
+    display_name: str
+    description: str
+    mode: str
+    is_builtin: bool
+    is_default: bool
+    is_active: bool
+    connection_kind: str
+    host: str | None = None
+    port: int | None = None
+    database: str | None = None
+    username: str | None = None
+    status: str
+    status_message: str | None = None
+    last_checked_at: str | None = None
+
+
+class InstanceList(BaseModel):
+    """List response for instances."""
+
+    items: list[InstanceRecord] = Field(default_factory=list)
+    total: int = 0
+
+
+class InstanceDetail(BaseModel):
+    """Detail response for one instance."""
+
+    instance: InstanceRecord
+
+
+class GraphRecord(BaseModel):
+    """Stable graph payload returned by admin graph APIs."""
+
+    id: str
+    instance_id: str
+    instance_slug: str
+    instance_display_name: str
+    display_name: str
+    table_prefix: str
+    status: str
+    status_message: str | None = None
+    last_checked_at: str | None = None
+    exists_in_instance: bool
+    source: str
+    is_default: bool
+
+
+class GraphList(BaseModel):
+    """List response for graphs."""
+
+    items: list[GraphRecord] = Field(default_factory=list)
+    total: int = 0
+
+
+class GraphDetail(BaseModel):
+    """Detail response for one graph."""
+
+    graph: GraphRecord
+
+
 class GraphViewerData(BaseModel):
     """Combined nodes and edges for the graph viewer (Cytoscape-oriented)."""
 
@@ -266,9 +337,11 @@ class GraphContentService:
         *,
         admin_store: AdminStore | None,
         captive_url_factory: Callable[[], str] | None,
+        instance_monitor: ManagedInstanceMonitor | None = None,
     ) -> None:
         self._admin_store = admin_store
         self._captive_url_factory = captive_url_factory
+        self._instance_monitor = instance_monitor
 
     async def get_graph_overview(
         self,
@@ -1007,24 +1080,28 @@ class GraphContentService:
         elements: list[dict[str, object]] = []
 
         for node in node_list.items:
-            elements.append({
-                "group": "nodes",
-                "data": {
-                    "id": node.id,
-                    "label": node.name or node.id,
-                    "type": node.type,
-                },
-            })
+            elements.append(
+                {
+                    "group": "nodes",
+                    "data": {
+                        "id": node.id,
+                        "label": node.name or node.id,
+                        "type": node.type,
+                    },
+                }
+            )
         for edge in edge_list.items:
-            elements.append({
-                "group": "edges",
-                "data": {
-                    "id": edge.id,
-                    "source": edge.source_id,
-                    "target": edge.target_id,
-                    "label": edge.type,
-                },
-            })
+            elements.append(
+                {
+                    "group": "edges",
+                    "data": {
+                        "id": edge.id,
+                        "source": edge.source_id,
+                        "target": edge.target_id,
+                        "label": edge.type,
+                    },
+                }
+            )
 
         return GraphViewerData(
             graph=graph,
@@ -1248,6 +1325,233 @@ class GraphContentService:
             "status_message": instance.status_message,
             "last_checked_at": instance.last_checked_at,
         }
+
+    async def list_instances(
+        self,
+        *,
+        current_user: AdminUser | None,
+        allow_local_system: bool = False,
+    ) -> InstanceList:
+        """Return all managed instances for the authenticated caller."""
+        admin_store = self._require_admin_store()
+        instances = await admin_store.list_instances()
+        items = [self._serialize_instance_record(instance) for instance in instances]
+        return InstanceList(items=items, total=len(items))
+
+    async def list_graphs(
+        self,
+        *,
+        instance_id: str | None = None,
+        current_user: AdminUser | None,
+        allow_local_system: bool = False,
+    ) -> GraphList:
+        """Return all managed graphs for the authenticated caller."""
+        admin_store = self._require_admin_store()
+        if instance_id is not None:
+            graphs = await admin_store.list_graphs_for_instance(instance_id)
+        else:
+            graphs = await admin_store.list_graphs()
+        items = [self._serialize_graph_record(graph) for graph in graphs]
+        return GraphList(items=items, total=len(items))
+
+    async def get_graph(
+        self,
+        *,
+        graph_id: str,
+        current_user: AdminUser | None,
+        allow_local_system: bool = False,
+    ) -> GraphDetail:
+        """Return one managed graph for the authenticated caller."""
+        admin_store = self._require_admin_store()
+        graph = await admin_store.get_graph_by_id(graph_id)
+        if graph is None:
+            raise GraphContentNotFoundError(f"Graph '{graph_id}' was not found.")
+        return GraphDetail(graph=self._serialize_graph_record(graph))
+
+    async def create_graph(
+        self,
+        *,
+        instance_id: str,
+        table_prefix: str,
+        display_name: str | None = None,
+        current_user: AdminUser | None,
+        allow_local_system: bool = False,
+    ) -> GraphDetail:
+        """Create one managed graph for the authenticated caller."""
+        if self._instance_monitor is None:
+            raise GraphContentNotReadyError("Instance monitor is not available.")
+        try:
+            graph = await self._instance_monitor.create_graph(
+                instance_id=instance_id,
+                table_prefix=table_prefix,
+                display_name=display_name,
+            )
+        except GraphAlreadyExistsError as exc:
+            raise GraphContentConflictError(str(exc)) from exc
+        return GraphDetail(graph=self._serialize_graph_record(graph))
+
+    async def update_graph(
+        self,
+        *,
+        graph_id: str,
+        display_name: str,
+        current_user: AdminUser | None,
+        allow_local_system: bool = False,
+    ) -> GraphDetail:
+        """Update one managed graph's display name."""
+        admin_store = self._require_admin_store()
+        graph = await admin_store.update_graph(
+            graph_id=graph_id,
+            display_name=display_name,
+        )
+        if graph is None:
+            raise GraphContentNotFoundError(f"Graph '{graph_id}' was not found.")
+        return GraphDetail(graph=self._serialize_graph_record(graph))
+
+    async def delete_graph(
+        self,
+        *,
+        graph_id: str,
+        current_user: AdminUser | None,
+        allow_local_system: bool = False,
+    ) -> None:
+        """Delete one managed graph for the authenticated caller."""
+        admin_store = self._require_admin_store()
+        graph = await admin_store.get_graph_by_id(graph_id)
+        if graph is None:
+            raise GraphContentNotFoundError(f"Graph '{graph_id}' was not found.")
+        if self._instance_monitor is None:
+            raise GraphContentNotReadyError("Instance monitor is not available.")
+        await self._instance_monitor.delete_graph(graph_id)
+
+    async def get_instance(
+        self,
+        *,
+        instance_id: str,
+        current_user: AdminUser | None,
+        allow_local_system: bool = False,
+    ) -> InstanceDetail:
+        """Return one managed instance for the authenticated caller."""
+        admin_store = self._require_admin_store()
+        instance = await admin_store.get_instance_by_id(instance_id)
+        if instance is None:
+            raise GraphContentNotFoundError(f"Instance '{instance_id}' was not found.")
+        return InstanceDetail(instance=self._serialize_instance_record(instance))
+
+    async def create_instance(
+        self,
+        *,
+        slug: str,
+        display_name: str,
+        description: str,
+        host: str,
+        port: int | None,
+        database: str,
+        username: str,
+        password: str | None,
+        current_user: AdminUser | None,
+        allow_local_system: bool = False,
+    ) -> InstanceDetail:
+        """Create one external managed instance for the authenticated caller."""
+        admin_store = self._require_admin_store()
+        try:
+            instance = await admin_store.create_instance(
+                slug=slug,
+                display_name=display_name,
+                description=description,
+                host=host,
+                port=port,
+                database=database,
+                username=username,
+                password=password,
+            )
+        except InstanceAlreadyExistsError as exc:
+            raise GraphContentConflictError(str(exc)) from exc
+        return InstanceDetail(instance=self._serialize_instance_record(instance))
+
+    async def update_instance(
+        self,
+        *,
+        instance_id: str,
+        display_name: str,
+        description: str,
+        is_active: bool,
+        host: str | None = None,
+        port: int | None = None,
+        database: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        current_user: AdminUser | None,
+        allow_local_system: bool = False,
+    ) -> InstanceDetail:
+        """Update one managed instance's metadata and connection fields."""
+        admin_store = self._require_admin_store()
+        instance = await admin_store.update_instance(
+            instance_id=instance_id,
+            display_name=display_name,
+            description=description,
+            is_active=is_active,
+            host=host,
+            port=port,
+            database=database,
+            username=username,
+            password=password,
+        )
+        if instance is None:
+            raise GraphContentNotFoundError(f"Instance '{instance_id}' was not found.")
+        return InstanceDetail(instance=self._serialize_instance_record(instance))
+
+    async def delete_instance(
+        self,
+        *,
+        instance_id: str,
+        current_user: AdminUser | None,
+        allow_local_system: bool = False,
+    ) -> None:
+        """Delete one external managed instance for the authenticated caller."""
+        admin_store = self._require_admin_store()
+        instance = await admin_store.get_instance_by_id(instance_id)
+        if instance is None:
+            raise GraphContentNotFoundError(f"Instance '{instance_id}' was not found.")
+        await admin_store.delete_instance(instance_id)
+
+    def _serialize_instance_record(self, instance: ManagedInstance) -> InstanceRecord:
+        """Project one managed instance record into a stable admin response."""
+        return InstanceRecord(
+            id=instance.id,
+            slug=instance.slug,
+            display_name=instance.display_name,
+            description=instance.description,
+            mode=instance.mode,
+            is_builtin=instance.is_builtin,
+            is_default=instance.is_default,
+            is_active=instance.is_active,
+            connection_kind=instance.connection_kind,
+            host=instance.host,
+            port=instance.port,
+            database=instance.database,
+            username=instance.username,
+            status=instance.status,
+            status_message=instance.status_message,
+            last_checked_at=instance.last_checked_at,
+        )
+
+    def _serialize_graph_record(self, graph: ManagedGraph) -> GraphRecord:
+        """Project one managed graph record into a stable admin response."""
+        return GraphRecord(
+            id=graph.id,
+            instance_id=graph.instance_id,
+            instance_slug=graph.instance_slug,
+            instance_display_name=graph.instance_display_name,
+            display_name=graph.display_name,
+            table_prefix=graph.table_prefix,
+            status=graph.status,
+            status_message=graph.status_message,
+            last_checked_at=graph.last_checked_at,
+            exists_in_instance=graph.exists_in_instance,
+            source=graph.source,
+            is_default=graph.is_default,
+        )
 
     def _serialize_schema_record(
         self,

@@ -55,14 +55,21 @@ from gpdb.admin.auth import (
 )
 from gpdb.admin.config import ConfigStore, ResolvedConfig, extract_config_arg
 from gpdb.admin.graph_content import (
+    GraphContentConflictError,
+    GraphContentNotFoundError,
+    GraphContentNotReadyError,
+    GraphDetail,
     GraphEdgeDetail,
     GraphEdgeList,
+    GraphList,
     GraphNodeDetail,
     GraphNodeList,
     GraphNodePayload,
     GraphOverview,
     GraphSchemaDetail,
     GraphSchemaList,
+    InstanceDetail,
+    InstanceList,
 )
 from gpdb.admin.runtime import AdminServices, create_admin_lifespan
 from gpdb.admin.web import create_web_app
@@ -292,6 +299,12 @@ class OpenAPIServer(ToolaccessOpenAPIServer):
                         context_param_name=context_param,
                         surface_resolver=self.principal_resolver,
                     )
+                except GraphContentNotFoundError as exc:
+                    raise HTTPException(status_code=404, detail=str(exc)) from exc
+                except GraphContentConflictError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+                except GraphContentNotReadyError as exc:
+                    raise HTTPException(status_code=503, detail=str(exc)) from exc
                 except PermissionError as exc:
                     raise HTTPException(status_code=403, detail=str(exc)) from exc
                 except (ValueError, KeyError, TypeError) as exc:
@@ -318,6 +331,12 @@ class OpenAPIServer(ToolaccessOpenAPIServer):
                             surface_resolver=self.principal_resolver,
                         )
                     )
+                except GraphContentNotFoundError as exc:
+                    raise HTTPException(status_code=404, detail=str(exc)) from exc
+                except GraphContentConflictError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+                except GraphContentNotReadyError as exc:
+                    raise HTTPException(status_code=503, detail=str(exc)) from exc
                 except PermissionError as exc:
                     raise HTTPException(status_code=403, detail=str(exc)) from exc
                 except (ValueError, KeyError, TypeError) as exc:
@@ -926,6 +945,210 @@ def _build_graph_content_service(services: AdminServices) -> ToolService:
             ctx,
             graph_id=graph_id,
             name=name,
+        )
+
+    @service.tool(
+        name="instance_list",
+        surfaces=_graph_surface_specs(http_method="GET"),
+        access=GRAPH_TOOL_ACCESS,
+    )
+    async def instance_list(
+        ctx: InvocationContext = inject_context(),
+    ) -> InstanceList:
+        """List instances for the authenticated caller."""
+        return await _call_graph_content_from_context(
+            services,
+            "list_instances",
+            ctx,
+        )
+
+    @service.tool(
+        name="instance_get",
+        surfaces=_graph_surface_specs(http_method="GET"),
+        access=GRAPH_TOOL_ACCESS,
+    )
+    async def instance_get(
+        instance_id: str,
+        ctx: InvocationContext = inject_context(),
+    ) -> InstanceDetail:
+        """Return one instance for the authenticated caller."""
+        return await _call_graph_content_from_context(
+            services,
+            "get_instance",
+            ctx,
+            instance_id=instance_id,
+        )
+
+    @service.tool(
+        name="instance_create",
+        surfaces=_graph_surface_specs(http_method="POST"),
+        access=GRAPH_TOOL_ACCESS,
+    )
+    async def instance_create(
+        slug: str,
+        display_name: str,
+        description: str,
+        host: str,
+        port: int | None,
+        database: str,
+        username: str,
+        password: str | None,
+        ctx: InvocationContext = inject_context(),
+    ) -> InstanceDetail:
+        """Create one external instance for the authenticated caller."""
+        return await _call_graph_content_from_context(
+            services,
+            "create_instance",
+            ctx,
+            slug=slug,
+            display_name=display_name,
+            description=description,
+            host=host,
+            port=port,
+            database=database,
+            username=username,
+            password=password,
+        )
+
+    @service.tool(
+        name="instance_update",
+        surfaces=_graph_surface_specs(http_method="PUT"),
+        access=GRAPH_TOOL_ACCESS,
+    )
+    async def instance_update(
+        instance_id: str,
+        display_name: str,
+        description: str,
+        is_active: bool,
+        host: str | None = None,
+        port: int | None = None,
+        database: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        ctx: InvocationContext = inject_context(),
+    ) -> InstanceDetail:
+        """Update one instance for the authenticated caller."""
+        return await _call_graph_content_from_context(
+            services,
+            "update_instance",
+            ctx,
+            instance_id=instance_id,
+            display_name=display_name,
+            description=description,
+            is_active=is_active,
+            host=host,
+            port=port,
+            database=database,
+            username=username,
+            password=password,
+        )
+
+    @service.tool(
+        name="instance_delete",
+        surfaces=_graph_surface_specs(http_method="DELETE"),
+        access=GRAPH_TOOL_ACCESS,
+    )
+    async def instance_delete(
+        instance_id: str,
+        ctx: InvocationContext = inject_context(),
+    ) -> None:
+        """Delete one instance for the authenticated caller."""
+        return await _call_graph_content_from_context(
+            services,
+            "delete_instance",
+            ctx,
+            instance_id=instance_id,
+        )
+
+    @service.tool(
+        name="graph_list",
+        surfaces=_graph_surface_specs(http_method="GET"),
+        access=GRAPH_TOOL_ACCESS,
+    )
+    async def graph_list(
+        instance_id: str | None = None,
+        ctx: InvocationContext = inject_context(),
+    ) -> GraphList:
+        """List graphs for the authenticated caller."""
+        return await _call_graph_content_from_context(
+            services,
+            "list_graphs",
+            ctx,
+            instance_id=instance_id,
+        )
+
+    @service.tool(
+        name="graph_get",
+        surfaces=_graph_surface_specs(http_method="GET"),
+        access=GRAPH_TOOL_ACCESS,
+    )
+    async def graph_get(
+        graph_id: str,
+        ctx: InvocationContext = inject_context(),
+    ) -> GraphDetail:
+        """Return one graph for the authenticated caller."""
+        return await _call_graph_content_from_context(
+            services,
+            "get_graph",
+            ctx,
+            graph_id=graph_id,
+        )
+
+    @service.tool(
+        name="graph_create",
+        surfaces=_graph_surface_specs(http_method="POST"),
+        access=GRAPH_TOOL_ACCESS,
+    )
+    async def graph_create(
+        instance_id: str,
+        table_prefix: str,
+        display_name: str | None = None,
+        ctx: InvocationContext = inject_context(),
+    ) -> GraphDetail:
+        """Create one graph for the authenticated caller."""
+        return await _call_graph_content_from_context(
+            services,
+            "create_graph",
+            ctx,
+            instance_id=instance_id,
+            table_prefix=table_prefix,
+            display_name=display_name,
+        )
+
+    @service.tool(
+        name="graph_update",
+        surfaces=_graph_surface_specs(http_method="PUT"),
+        access=GRAPH_TOOL_ACCESS,
+    )
+    async def graph_update(
+        graph_id: str,
+        display_name: str,
+        ctx: InvocationContext = inject_context(),
+    ) -> GraphDetail:
+        """Update one graph for the authenticated caller."""
+        return await _call_graph_content_from_context(
+            services,
+            "update_graph",
+            ctx,
+            graph_id=graph_id,
+            display_name=display_name,
+        )
+
+    @service.tool(
+        name="graph_delete",
+        surfaces=_graph_surface_specs(http_method="DELETE"),
+        access=GRAPH_TOOL_ACCESS,
+    )
+    async def graph_delete(
+        graph_id: str,
+        ctx: InvocationContext = inject_context(),
+    ) -> None:
+        """Delete one graph for the authenticated caller."""
+        return await _call_graph_content_from_context(
+            services,
+            "delete_graph",
+            ctx,
+            graph_id=graph_id,
         )
 
     @service.tool(

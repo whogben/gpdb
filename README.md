@@ -194,6 +194,26 @@ The `AdminRuntime` exposes the following ToolServices for host integration:
 
 When embedded, the admin runtime shares the host's ServerManager lifecycle, and upgrading `gpdb-admin` automatically updates all embedded surfaces.
 
+### Instance and Graph CRUD APIs
+
+`gpdb-admin` provides full CRUD operations for managing PostgreSQL instances and graphs (table prefixes). All endpoints are available on REST, CLI, and MCP surfaces.
+
+**Instance APIs:**
+- `instance_list` — List all managed instances
+- `instance_get` — Get a single instance by ID
+- `instance_create` — Create a new external PostgreSQL instance
+- `instance_update` — Update instance metadata and connection fields
+- `instance_delete` — Delete an instance and its graph metadata
+
+**Graph APIs:**
+- `graph_list` — List all graphs (optionally filtered by instance)
+- `graph_get` — Get a single graph by ID
+- `graph_create` — Create a new graph (table prefix) within an instance
+- `graph_update` — Update graph display name
+- `graph_delete` — Delete a graph and drop its tables
+
+For detailed API documentation including parameters, response models, error conditions, and examples, see [Instance and Graph CRUD APIs](temp_refs/instance_graph_crud_apis.md).
+
 ### Current scope
 
 `gpdb-admin` provides a full admin surface over the core graph library. It supports:

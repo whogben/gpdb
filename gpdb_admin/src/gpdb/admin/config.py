@@ -184,10 +184,11 @@ class ConfigStore:
         path = self.location.path
         path.parent.mkdir(parents=True, exist_ok=True)
 
+        data = config.model_dump(mode="python")
+        data = _drop_none_values(data)
+
         temp_path = path.with_suffix(f"{path.suffix}.tmp")
-        temp_path.write_text(
-            tomli_w.dumps(config.model_dump(mode="python")), encoding="utf-8"
-        )
+        temp_path.write_text(tomli_w.dumps(data), encoding="utf-8")
         temp_path.replace(path)
 
         self.location = self._refresh_location()
@@ -200,6 +201,18 @@ class ConfigStore:
             exists=self.location.path.exists(),
             writable=_path_is_writable(self.location.path),
         )
+
+
+def _drop_none_values(obj: dict) -> dict:
+    """Return a copy of the dict with keys whose value is None removed (recursive)."""
+    out: dict = {}
+    for k, v in obj.items():
+        if v is None:
+            continue
+        if isinstance(v, dict):
+            v = _drop_none_values(v)
+        out[k] = v
+    return out
 
 
 def _path_is_writable(path: Path) -> bool:
