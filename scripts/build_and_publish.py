@@ -9,6 +9,9 @@ This script handles the complete build and publish process:
 4. Builds packages in correct order (gpdb first, then gpdb-admin)
 5. Publishes to PyPI
 
+Requirements:
+    pip install -r scripts/requirements.txt
+
 Usage:
     python scripts/build_and_publish.py              # Publish to production PyPI
     python scripts/build_and_publish.py --test-pypi   # Publish to test PyPI
@@ -151,8 +154,14 @@ def validate_versions(auto_confirm: bool = False) -> tuple[str, str]:
 
     gpdb_dep = None
     for dep in admin_data["project"]["dependencies"]:
-        # Match exact "gpdb" or "gpdb[extras]" pattern
-        if dep == "gpdb" or dep.startswith("gpdb["):
+        # Match "gpdb", "gpdb[extras]", or "gpdb==version" patterns
+        if (
+            dep == "gpdb"
+            or dep.startswith("gpdb[")
+            or dep.startswith("gpdb==")
+            or dep.startswith("gpdb>=")
+            or dep.startswith("gpdb~=")
+        ):
             gpdb_dep = dep
             break
 
@@ -214,19 +223,19 @@ def build_package(package_dir: Path, package_name: str) -> None:
     """Build a package."""
     print_header(f"Building {package_name}")
 
+    # Get absolute path to venv python
+    venv_python = Path.cwd() / ".venv/bin/python"
+
     # Check if build is installed
-    try:
-        run_command(
-            [str(Path(".venv/bin/python")), "-m", "build", "--version"], check=False
-        )
-    except subprocess.CalledProcessError:
+    result = run_command([str(venv_python), "-m", "build", "--version"], check=False)
+    if result.returncode != 0:
         print_error("build module not installed")
-        print_info("Install with: pip install build")
+        print_info("Install with: pip install -r scripts/requirements.txt")
         sys.exit(1)
 
     # Build the package
     try:
-        run_command([str(Path(".venv/bin/python")), "-m", "build"], cwd=package_dir)
+        run_command([str(venv_python), "-m", "build"], cwd=package_dir)
         print_success(f"Built {package_name}")
     except subprocess.CalledProcessError:
         print_error(f"Failed to build {package_name}")
@@ -254,14 +263,14 @@ def publish_package(
     """Publish a package to PyPI."""
     print_header(f"Publishing {package_name}")
 
+    # Get absolute path to venv python
+    venv_python = Path.cwd() / ".venv/bin/python"
+
     # Check if twine is installed
-    try:
-        run_command(
-            [str(Path(".venv/bin/python")), "-m", "twine", "--version"], check=False
-        )
-    except subprocess.CalledProcessError:
+    result = run_command([str(venv_python), "-m", "twine", "--version"], check=False)
+    if result.returncode != 0:
         print_error("twine not installed")
-        print_info("Install with: pip install twine")
+        print_info("Install with: pip install -r scripts/requirements.txt")
         sys.exit(1)
 
     # Determine repository URL
@@ -282,7 +291,7 @@ def publish_package(
     try:
         os.environ["TWINE_PASSWORD"] = pypi_token
         cmd = [
-            str(Path(".venv/bin/python")),
+            str(venv_python),
             "-m",
             "twine",
             "upload",
