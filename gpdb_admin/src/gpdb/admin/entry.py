@@ -17,7 +17,7 @@ from gpdb.admin.auth import (
     hash_api_key_secret,
     verify_api_key_secret,
 )
-from gpdb.admin.config import ConfigStore, ResolvedConfig, extract_config_arg
+from gpdb.admin.config import ConfigStore, ResolvedConfig, extract_data_dir_arg
 from gpdb.admin.context import (
     _build_mcp_principal_resolver,
     _build_rest_principal_resolver,
@@ -243,8 +243,8 @@ def bootstrap_runtime(
 ) -> tuple[ServerManager, ResolvedConfig, list[str]]:
     """Resolve config and create the runtime manager."""
     cli_args = list(sys.argv[1:] if argv is None else argv)
-    config_arg, remaining_args = extract_config_arg(cli_args)
-    config_store = ConfigStore.from_sources(cli_path=config_arg)
+    data_dir_arg, remaining_args = extract_data_dir_arg(cli_args)
+    config_store = ConfigStore.from_sources(cli_data_dir=data_dir_arg)
     resolved_config = _ensure_runtime_config(config_store)
     manager = create_manager(resolved_config=resolved_config, config_store=config_store)
     return manager, resolved_config, remaining_args
@@ -270,7 +270,7 @@ def _run_start_command(
     args = parser.parse_args(argv)
 
     print(
-        f"Using config file: {resolved_config.location.path} ({resolved_config.location.source.value})"
+        f"Using data dir: {resolved_config.location.data_dir} ({resolved_config.location.source.value})"
     )
     print(f"Config writable: {'yes' if resolved_config.location.writable else 'no'}")
     print("🚀 gpdb-admin Server Starting...")

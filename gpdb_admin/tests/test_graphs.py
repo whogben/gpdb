@@ -11,13 +11,7 @@ from sqlalchemy.engine import make_url
 from gpdb import EdgeUpsert, GPGraph, NodeUpsert
 from gpdb.admin import entry
 from gpdb.admin.auth import generate_api_key, hash_api_key_secret, hash_password
-from gpdb.admin.config import (
-    AdminConfig,
-    ConfigPathSource,
-    ConfigStore,
-    extract_config_arg,
-    resolve_config_location,
-)
+from gpdb.admin.config import ConfigStore
 from gpdb.admin.store import AdminStore
 
 
@@ -98,21 +92,19 @@ def test_graph_overview_across_surfaces(admin_test_env):
 
 def _create_test_manager(tmp_path: Path):
     """Create a manager backed by a temporary config and captive data dir."""
-    config_path = tmp_path / "admin.toml"
     data_dir = tmp_path / "admin data"
-    config_path.write_text(
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "admin.toml").write_text(
         (
             "[server]\n"
             'host = "127.0.0.1"\n'
             "port = 8747\n"
-            "[runtime]\n"
-            f'data_dir = "{data_dir.as_posix()}"\n'
             "[auth]\n"
             'session_secret = "test-session-secret"\n'
         ),
         encoding="utf-8",
     )
-    config_store = ConfigStore.from_sources(cli_path=config_path)
+    config_store = ConfigStore.from_sources(cli_data_dir=data_dir)
     resolved_config = config_store.load()
     return entry.create_manager(
         resolved_config=resolved_config, config_store=config_store

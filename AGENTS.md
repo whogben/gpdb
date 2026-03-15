@@ -34,7 +34,7 @@ Admin Web App:
 - Keep `toolaccess` tool endpoints under `/api` and use the mounted web app for browser pages at `/`.
 
 Admin Config:
-- Keep file-backed admin config in `gpdb_admin/src/gpdb/admin/config.py`; resolve config path from CLI `--config`, then `GPDB_CONFIG`, then the default user config path.
+- Keep file-backed admin config in `gpdb_admin/src/gpdb/admin/config.py`; resolve data dir from CLI `--data-dir`/`-d`, then `GPDB_DATA_DIR`, then the default user data dir. Config file is always `{data_dir}/admin.toml`.
 - Use `ResolvedConfig` for runtime values and `ConfigStore` for file reads/writes; only persist file-backed values, not env or CLI overrides.
 
 ToolAccess Integration:

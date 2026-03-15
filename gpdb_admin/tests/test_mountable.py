@@ -11,21 +11,19 @@ from gpdb.admin.config import ConfigStore
 
 def _create_test_config(tmp_path: Path) -> ConfigStore:
     """Create a test config store backed by a temporary file."""
-    config_path = tmp_path / "admin.toml"
     data_dir = tmp_path / "admin data"
-    config_path.write_text(
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "admin.toml").write_text(
         (
             "[server]\n"
             'host = "127.0.0.1"\n'
             "port = 8747\n"
-            "[runtime]\n"
-            f'data_dir = "{data_dir.as_posix()}"\n'
             "[auth]\n"
             'session_secret = "test-session-secret"\n'
         ),
         encoding="utf-8",
     )
-    return ConfigStore.from_sources(cli_path=config_path)
+    return ConfigStore.from_sources(cli_data_dir=data_dir)
 
 
 def test_create_admin_runtime_returns_runtime(tmp_path):

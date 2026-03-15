@@ -77,21 +77,19 @@ async def _reset_captive_database(url: str, session_secret: str) -> None:
 
 def _create_test_manager(tmp_path: Path):
     """Create a manager backed by a temporary config and captive data dir."""
-    config_path = tmp_path / "admin.toml"
     data_dir = tmp_path / "admin data"
-    config_path.write_text(
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "admin.toml").write_text(
         (
             "[server]\n"
             'host = "127.0.0.1"\n'
             "port = 8747\n"
-            "[runtime]\n"
-            f'data_dir = "{data_dir.as_posix()}"\n'
             "[auth]\n"
             'session_secret = "test-session-secret"\n'
         ),
         encoding="utf-8",
     )
-    config_store = ConfigStore.from_sources(cli_path=config_path)
+    config_store = ConfigStore.from_sources(cli_data_dir=data_dir)
     resolved_config = config_store.load()
     return entry.create_manager(
         resolved_config=resolved_config, config_store=config_store

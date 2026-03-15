@@ -8,7 +8,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from platformdirs import user_config_path, user_data_path
+from platformdirs import user_data_path
 from pydantic import BaseModel, Field
 import tomli_w
 
@@ -18,13 +18,13 @@ except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.9/3.10
     import tomli as tomllib
 
 
-CONFIG_ENV_VAR = "GPDB_CONFIG"
+DATA_DIR_ENV_VAR = "GPDB_DATA_DIR"
 PUBLIC_URL_ENV_VAR = "GPDB_PUBLIC_URL"
 DEFAULT_CONFIG_FILENAME = "admin.toml"
 
 
-class ConfigPathSource(str, Enum):
-    """Where the selected config path came from."""
+class DataDirSource(str, Enum):
+    """Where the selected data directory came from."""
 
     CLI = "cli"
     ENV = "env"
@@ -61,12 +61,17 @@ class AdminConfig(BaseModel):
 
 @dataclass(frozen=True)
 class ConfigLocation:
-    """Metadata about the selected config file location."""
+    """Metadata about the selected data directory; config file is always {data_dir}/admin.toml."""
 
-    path: Path
-    source: ConfigPathSource
+    data_dir: Path
+    source: DataDirSource
     exists: bool
     writable: bool
+
+    @property
+    def path(self) -> Path:
+        """Path to the config file (always data_dir / admin.toml)."""
+        return self.data_dir / DEFAULT_CONFIG_FILENAME
 
 
 @dataclass(frozen=True)
@@ -80,71 +85,67 @@ class ResolvedConfig:
     auth: AuthConfig
 
 
-def default_config_path() -> Path:
-    """Return the default config path for the current user."""
-    return user_config_path("gpdb") / DEFAULT_CONFIG_FILENAME
-
-
 def default_data_dir() -> Path:
     """Return the default local data directory for gpdb-admin."""
     return user_data_path("gpdb") / "admin"
 
 
-def extract_config_arg(argv: Sequence[str]) -> tuple[Path | None, list[str]]:
-    """Remove a global --config/-c option from argv and return it."""
-    config_path: Path | None = None
+def extract_data_dir_arg(argv: Sequence[str]) -> tuple[Path | None, list[str]]:
+    """Remove a global --data-dir/-d option from argv and return it."""
+    data_dir: Path | None = None
     remaining: list[str] = []
     index = 0
 
     while index < len(argv):
         arg = argv[index]
-        if arg in {"--config", "-c"}:
+        if arg in {"--data-dir", "-d"}:
             if index + 1 >= len(argv):
-                raise ValueError("--config requires a path")
-            config_path = Path(argv[index + 1]).expanduser()
+                raise ValueError("--data-dir requires a path")
+            data_dir = Path(argv[index + 1]).expanduser()
             index += 2
             continue
-        if arg.startswith("--config="):
+        if arg.startswith("--data-dir="):
             value = arg.split("=", 1)[1]
             if not value:
-                raise ValueError("--config requires a path")
-            config_path = Path(value).expanduser()
+                raise ValueError("--data-dir requires a path")
+            data_dir = Path(value).expanduser()
             index += 1
             continue
         remaining.append(arg)
         index += 1
 
-    return config_path, remaining
+    return data_dir, remaining
 
 
-def resolve_config_location(
-    cli_path: Path | None = None,
+def resolve_data_dir_location(
+    cli_data_dir: Path | None = None,
     environ: Mapping[str, str] | None = None,
 ) -> ConfigLocation:
-    """Resolve the config path from CLI, env, or the default location."""
+    """Resolve the data directory from CLI, env, or the default location."""
     env = environ if environ is not None else os.environ
 
-    if cli_path is not None:
-        path = cli_path.expanduser()
-        source = ConfigPathSource.CLI
-    elif env.get(CONFIG_ENV_VAR):
-        path = Path(env[CONFIG_ENV_VAR]).expanduser()
-        source = ConfigPathSource.ENV
+    if cli_data_dir is not None:
+        data_dir = cli_data_dir.expanduser()
+        source = DataDirSource.CLI
+    elif env.get(DATA_DIR_ENV_VAR):
+        data_dir = Path(env[DATA_DIR_ENV_VAR]).expanduser()
+        source = DataDirSource.ENV
     else:
-        path = default_config_path()
-        source = ConfigPathSource.DEFAULT
+        data_dir = default_data_dir()
+        source = DataDirSource.DEFAULT
 
-    path = _normalize_path(path)
+    data_dir = _normalize_path(data_dir)
+    config_path = data_dir / DEFAULT_CONFIG_FILENAME
     return ConfigLocation(
-        path=path,
+        data_dir=data_dir,
         source=source,
-        exists=path.exists(),
-        writable=_path_is_writable(path),
+        exists=config_path.exists(),
+        writable=_path_is_writable(config_path),
     )
 
 
 class ConfigStore:
-    """Load and save the file-backed admin configuration."""
+    """Load and save the file-backed admin configuration (config file is always {data_dir}/admin.toml)."""
 
     def __init__(self, location: ConfigLocation):
         self.location = location
@@ -152,11 +153,11 @@ class ConfigStore:
     @classmethod
     def from_sources(
         cls,
-        cli_path: Path | None = None,
+        cli_data_dir: Path | None = None,
         environ: Mapping[str, str] | None = None,
     ) -> "ConfigStore":
-        """Create a store from CLI/env/default resolution."""
-        return cls(resolve_config_location(cli_path=cli_path, environ=environ))
+        """Create a store from CLI/env/default data-dir resolution."""
+        return cls(resolve_data_dir_location(cli_data_dir=cli_data_dir, environ=environ))
 
     def load(self) -> ResolvedConfig:
         """Load config from disk and merge it with defaults and environment variables."""
@@ -170,12 +171,16 @@ class ConfigStore:
         if os.environ.get(PUBLIC_URL_ENV_VAR):
             file_config.server.public_url = os.environ.get(PUBLIC_URL_ENV_VAR)
 
+        runtime = file_config.runtime.model_copy(deep=True)
+        # Effective data dir is always the resolved location (never from file).
+        runtime.data_dir = str(self.location.data_dir)
+
         self.location = self._refresh_location()
         return ResolvedConfig(
             file_config=file_config,
             location=self.location,
             server=file_config.server.model_copy(deep=True),
-            runtime=file_config.runtime.model_copy(deep=True),
+            runtime=runtime,
             auth=file_config.auth.model_copy(deep=True),
         )
 
@@ -196,7 +201,7 @@ class ConfigStore:
 
     def _refresh_location(self) -> ConfigLocation:
         return ConfigLocation(
-            path=self.location.path,
+            data_dir=self.location.data_dir,
             source=self.location.source,
             exists=self.location.path.exists(),
             writable=_path_is_writable(self.location.path),

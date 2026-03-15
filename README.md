@@ -81,13 +81,14 @@ gpdb start --host 0.0.0.0 --port 9000
 
 #### Docker deployment
 
-For Docker deployments, you can set the public URL via environment variable:
+Mount a volume on the data dir so config and database persist. Use `--data-dir /data` (or set `GPDB_DATA_DIR=/data`):
 
 ```bash
 docker run -e GPDB_PUBLIC_URL=https://gpdb.example.com \
   -p 8747:8747 \
   -v gpdb-data:/data \
-  gpdb-admin
+  gpdb-admin \
+  gpdb start --data-dir /data --host 0.0.0.0
 ```
 
 Or in docker-compose.yml:
@@ -102,6 +103,7 @@ services:
       - GPDB_PUBLIC_URL=https://gpdb.example.com
     volumes:
       - gpdb-data:/data
+    command: gpdb start --data-dir /data --host 0.0.0.0
 ```
 
 The `public_url` is used when generating absolute URLs for:
@@ -131,21 +133,22 @@ On a fresh install, opening the admin web app takes you through initial owner se
 
 ### Configuration
 
-`gpdb-admin` resolves its config file in this order:
+`gpdb-admin` uses a single **data directory**. All runtime state (config file and database) lives under that directory. You specify only the data dir; the config file is always `admin.toml` inside it.
 
-1. `--config` or `-c`
-2. `GPDB_CONFIG`
-3. the default user config path for `gpdb`
+Data directory is resolved in this order:
 
-The current file-backed config includes:
+1. `--data-dir` or `-d` (e.g. `gpdb start --data-dir /data`)
+2. `GPDB_DATA_DIR` environment variable
+3. The default user data dir for `gpdb` (platform-dependent, e.g. `~/.local/share/gpdb/admin`)
+
+The config file at `{data_dir}/admin.toml` can contain:
 
 - `server.host`
 - `server.port`
 - `server.public_url` — Optional public base URL (e.g., `https://gpdb.example.com`). Can also be set via `GPDB_PUBLIC_URL` environment variable. Used for generating absolute URLs in emails, API responses, and shared links.
-- `runtime.data_dir`
 - `auth.session_secret`
 
-At startup, `gpdb-admin` will generate and persist `auth.session_secret` automatically if it is missing and the selected config file is writable.
+At startup, `gpdb-admin` will generate and persist `auth.session_secret` automatically if it is missing and the data dir is writable.
 
 ### Admin storage model
 

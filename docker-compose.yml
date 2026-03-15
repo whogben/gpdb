@@ -14,7 +14,7 @@ services:
     command: >
       sh -c "
         pip install --no-cache-dir gpdb-admin &&
-        gpdb start --config /data/admin.toml --host 0.0.0.0
+        gpdb start --data-dir /data --host 0.0.0.0
       "
     restart: unless-stopped
 
