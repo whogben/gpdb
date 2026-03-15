@@ -25,6 +25,8 @@ import os
 import shutil
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 
@@ -66,15 +68,19 @@ def run_command(
     check: bool = True,
     timeout: int | None = None,
 ) -> subprocess.CompletedProcess:
-    """Run a command and return the result."""
+    """Run a command and return the result. Always prints stdout/stderr so failures show real errors."""
     print_info(f"Running: {' '.join(cmd)}")
     result = subprocess.run(
-        cmd, cwd=cwd, check=check, capture_output=True, text=True, timeout=timeout
+        cmd, cwd=cwd, check=False, capture_output=True, text=True, timeout=timeout
     )
     if result.stdout:
         print(result.stdout)
     if result.stderr:
         print(result.stderr, file=sys.stderr)
+    if check and result.returncode != 0:
+        raise subprocess.CalledProcessError(
+            result.returncode, cmd, result.stdout, result.stderr
+        )
     return result
 
 
@@ -257,11 +263,45 @@ def build_package(package_dir: Path, package_name: str) -> None:
         print_info(f"  - {artifact.name}")
 
 
+def version_exists_on_pypi(package_name: str, version: str, test_pypi: bool) -> bool:
+    """Return True if this package version already exists on PyPI (or Test PyPI)."""
+    base = "https://test.pypi.org" if test_pypi else "https://pypi.org"
+    url = f"{base}/pypi/{package_name}/{version}/json"
+    try:
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.status == 200
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return False
+        print_warning(f"PyPI check failed ({e.code}): {url}")
+        return False
+    except OSError as e:
+        print_warning(f"PyPI check failed: {e}")
+        return False
+
+
 def publish_package(
-    dist_dir: Path, package_name: str, pypi_token: str, test_pypi: bool = False
-) -> None:
-    """Publish a package to PyPI."""
+    dist_dir: Path,
+    package_name: str,
+    version: str,
+    pypi_token: str,
+    test_pypi: bool = False,
+    auto_confirm: bool = False,
+) -> bool:
+    """Publish a package to PyPI. Returns True if published, False if skipped."""
     print_header(f"Publishing {package_name}")
+
+    if version_exists_on_pypi(package_name, version, test_pypi):
+        print_info(f"{package_name} {version} is already on PyPI.")
+        if auto_confirm:
+            print_info("Auto-confirm: skipping upload.")
+            return False
+        response = input(f"Skip publishing {package_name}? (y/N): ").strip().lower()
+        if response == "y":
+            print_info(f"Skipped {package_name}.")
+            return False
+        print_info("Attempting upload anyway...")
 
     # Get absolute path to venv python
     venv_python = Path.cwd() / ".venv/bin/python"
@@ -304,8 +344,10 @@ def publish_package(
 
         run_command(cmd)
         print_success(f"Published {package_name}")
+        return True
     except subprocess.CalledProcessError:
         print_error(f"Failed to publish {package_name}")
+        print_info("See output above for the actual error (e.g. version already on PyPI).")
         sys.exit(1)
 
 
@@ -363,17 +405,33 @@ def main():
             print_error("PyPI token is required")
             sys.exit(1)
 
-        # Publish gpdb first
-        publish_package(Path("dist"), "gpdb", pypi_token, args.test_pypi)
-
-        # Publish gpdb-admin
-        publish_package(
-            Path("gpdb_admin/dist"), "gpdb-admin", pypi_token, args.test_pypi
+        # Publish gpdb first, then gpdb-admin
+        published_gpdb = publish_package(
+            Path("dist"),
+            "gpdb",
+            gpdb_version,
+            pypi_token,
+            test_pypi=args.test_pypi,
+            auto_confirm=args.yes,
+        )
+        published_admin = publish_package(
+            Path("gpdb_admin/dist"),
+            "gpdb-admin",
+            admin_version,
+            pypi_token,
+            test_pypi=args.test_pypi,
+            auto_confirm=args.yes,
         )
 
         print_header("Publish Complete!")
-        print_success(f"gpdb {gpdb_version} published successfully")
-        print_success(f"gpdb-admin {admin_version} published successfully")
+        if published_gpdb:
+            print_success(f"gpdb {gpdb_version} published successfully")
+        else:
+            print_info(f"gpdb {gpdb_version} skipped (already on PyPI)")
+        if published_admin:
+            print_success(f"gpdb-admin {admin_version} published successfully")
+        else:
+            print_info(f"gpdb-admin {admin_version} skipped (already on PyPI)")
     else:
         print_header("Dry Run Complete!")
         print_success("Packages built successfully (not published)")
