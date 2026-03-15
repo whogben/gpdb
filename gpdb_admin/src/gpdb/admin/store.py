@@ -533,13 +533,8 @@ class AdminStore:
                 updated_data["username"] = username
             if password is not None:
                 updated_data["password"] = self._encrypt_instance_secret(password)
-            elif "password" in updated_data:
-                # Preserve existing encrypted password when not provided
-                updated_data["password"] = self._encrypt_instance_secret(
-                    self._decrypt_instance_secret(
-                        _optional_string(updated_data.get("password"))
-                    )
-                )
+            # When password is not in the update set, updated_data already has the
+            # existing encrypted password from dict(node.data); no decrypt/re-encrypt.
 
         updated = await self.db.set_node(
             NodeUpsert(
