@@ -12,6 +12,12 @@ Working on the Project:
     - handle auth/context (`Request`, CLI trust, MCP `Context`),
     - then delegate into shared helpers like `_call_graph_content(...)`,
     - and keep the REST/OpenAPI, CLI, and MCP signatures and return types stable.
+  - Use a single Pydantic param model that contains all the params for the method, ensuring they will be sent in the body for FastAPI.
+  - Expose REST tool endpoints with POST for every operation (including creates and updates). Do not use PUT; keep a single method for all tool invocations.
+
+Tool parameterization (all future tools):
+- Use exactly ONE Pydantic model per operation for that operation’s parameters. That same model is used for REST (body), CLI, and MCP; do not introduce separate or duplicate param shapes.
+- For update operations: require only identity fields (e.g. `graph_id`, `node_id`, `instance_id`, `name` for schema). Make every other field optional (`... | None = Field(None, ...)`). Omitted fields must be left unchanged by the service (merge-with-existing). This ensures callers can update a single field without knowing or re-sending the rest of the resource, and avoids accidental overwrites (e.g. clearing tags when only changing the name).
 
 Project Layout:
 - `pip install gpdb` for the main package (graph database only; no admin code, no CLI).
@@ -34,3 +40,6 @@ Admin Config:
 ToolAccess Integration:
 - ToolAccess is a project we also control. When encountering problems that would require workarounds or code that would be better off in ToolAccess, do NOT implement local workarounds in gpdb-admin.
 - Instead, stop and inform the user that we need to get upstream changes in ToolAccess first, and wait until those changes are done before proceeding with gpdb-admin work.
+
+Code Style:
+- NEVER lazy import inside a function. Whenever there is an "import" that is not at the top level, move it to the top level and organize it alphabetically by group: standard, 3rd party, project.  (The only exception is inside tests, where a lazy import may be appropriate.)

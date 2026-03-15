@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gpdb"
-version = "0.1.0"
+version = "0.2.0"
 description = "Graph Pydantic DataBase - stores a graph of Pydantic objects in a Postgres database"
 readme = "README.md"
 license = {text = "MIT"}

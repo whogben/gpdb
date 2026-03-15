@@ -507,15 +507,15 @@ class GraphContentService:
         *,
         graph_id: str,
         name: str,
-        json_schema: dict[str, Any],
+        json_schema: dict[str, Any] | None = None,
         current_user: AdminUser | None,
-        kind: str = "node",
+        kind: str | None = None,
         allow_local_system: bool = False,
     ) -> GraphSchemaDetail:
-        """Update one schema in a managed graph when the change is non-breaking."""
+        """Update one schema in a managed graph when the change is non-breaking. Omitted fields are left unchanged."""
         clean_name = self._validate_schema_name(name)
-        clean_kind = self._validate_schema_kind(kind)
-        self._validate_json_schema(json_schema)
+        if json_schema is not None:
+            self._validate_json_schema(json_schema)
 
         graph, instance, db = await self._open_graph(
             graph_id=graph_id,
@@ -527,11 +527,19 @@ class GraphContentService:
             existing = await db.get_schema(clean_name)
             if existing is None:
                 raise GraphContentNotFoundError(f"Schema '{clean_name}' was not found.")
+            json_schema_ = (
+                json_schema if json_schema is not None else existing.json_schema
+            )
+            kind_ = (
+                self._validate_schema_kind(kind)
+                if kind is not None
+                else self._schema_kind_from_record(existing)
+            )
             try:
                 schema = await db.register_schema(
                     clean_name,
-                    json_schema,
-                    kind=clean_kind,
+                    json_schema_,
+                    kind=kind_,
                 )
             except SchemaBreakingChangeError as exc:
                 raise GraphContentValidationError(
@@ -759,8 +767,8 @@ class GraphContentService:
         *,
         graph_id: str,
         node_id: str,
-        type: str,
-        data: dict[str, Any],
+        type: str | None = None,
+        data: dict[str, Any] | None = None,
         current_user: AdminUser | None,
         allow_local_system: bool = False,
         name: str | None = None,
@@ -773,21 +781,16 @@ class GraphContentService:
         payload_filename: str | None = None,
         clear_payload: bool = False,
     ) -> GraphNodeDetail:
-        """Update one node in a managed graph."""
+        """Update one node in a managed graph. Omitted fields are left unchanged."""
         clean_node_id = self._validate_node_id(node_id)
-        clean_type = self._validate_node_type(type)
-        clean_name = self._normalize_optional_text(name)
-        clean_schema_name = self._normalize_optional_text(schema_name)
-        clean_owner_id = self._normalize_optional_text(owner_id)
-        clean_parent_id = self._normalize_optional_text(parent_id)
-        normalized_tags = self._normalize_tag_list(tags)
-        clean_payload_mime = self._normalize_optional_text(payload_mime)
-        clean_payload_filename = self._normalize_optional_text(payload_filename)
-        self._validate_json_object(data, object_name="Node data")
         if payload is not None and clear_payload:
             raise GraphContentValidationError(
                 "Provide either payload bytes or clear_payload, not both."
             )
+        if type is not None:
+            self._validate_node_type(type)
+        if data is not None:
+            self._validate_json_object(data, object_name="Node data")
 
         graph, instance, db = await self._open_graph(
             graph_id=graph_id,
@@ -801,21 +804,73 @@ class GraphContentService:
                 raise GraphContentNotFoundError(
                     f"Node '{clean_node_id}' was not found."
                 )
+            type_ = (
+                self._validate_node_type(type) if type is not None else existing.type
+            )
+            name_ = (
+                self._normalize_optional_text(name)
+                if name is not None
+                else existing.name
+            )
+            schema_name_ = (
+                self._normalize_optional_text(schema_name)
+                if schema_name is not None
+                else existing.schema_name
+            )
+            owner_id_ = (
+                self._normalize_optional_text(owner_id)
+                if owner_id is not None
+                else existing.owner_id
+            )
+            parent_id_ = (
+                self._normalize_optional_text(parent_id)
+                if parent_id is not None
+                else existing.parent_id
+            )
+            data_ = data if data is not None else existing.data
+            tags_ = (
+                self._normalize_tag_list(tags) if tags is not None else (existing.tags or [])
+            )
+            if payload is not None:
+                payload_ = payload
+                payload_mime_ = (
+                    self._normalize_optional_text(payload_mime)
+                    if payload_mime is not None
+                    else (existing.payload_mime or None)
+                )
+                payload_filename_ = (
+                    self._normalize_optional_text(payload_filename)
+                    if payload_filename is not None
+                    else (existing.payload_filename or None)
+                )
+            else:
+                # None means do not change payload; core only assigns when dto.payload is not None
+                payload_ = None
+                payload_mime_ = (
+                    self._normalize_optional_text(payload_mime)
+                    if payload_mime is not None
+                    else existing.payload_mime
+                )
+                payload_filename_ = (
+                    self._normalize_optional_text(payload_filename)
+                    if payload_filename is not None
+                    else existing.payload_filename
+                )
             try:
                 async with db.transaction():
                     node = await db.set_node(
                         NodeUpsert(
                             id=clean_node_id,
-                            type=clean_type,
-                            name=clean_name,
-                            owner_id=clean_owner_id,
-                            parent_id=clean_parent_id,
-                            schema_name=clean_schema_name,
-                            data=data,
-                            tags=normalized_tags,
-                            payload=payload,
-                            payload_mime=clean_payload_mime,
-                            payload_filename=clean_payload_filename,
+                            type=type_,
+                            name=name_,
+                            owner_id=owner_id_,
+                            parent_id=parent_id_,
+                            schema_name=schema_name_,
+                            data=data_,
+                            tags=tags_,
+                            payload=payload_,
+                            payload_mime=payload_mime_,
+                            payload_filename=payload_filename_,
                         )
                     )
                     if clear_payload:
@@ -1199,23 +1254,25 @@ class GraphContentService:
         *,
         graph_id: str,
         edge_id: str,
-        type: str,
-        source_id: str,
-        target_id: str,
-        data: dict[str, Any],
+        type: str | None = None,
+        source_id: str | None = None,
+        target_id: str | None = None,
+        data: dict[str, Any] | None = None,
         current_user: AdminUser | None,
         allow_local_system: bool = False,
         schema_name: str | None = None,
         tags: list[str] | None = None,
     ) -> GraphEdgeDetail:
-        """Update one edge in a managed graph."""
+        """Update one edge in a managed graph. Omitted fields are left unchanged."""
         clean_edge_id = self._validate_edge_id(edge_id)
-        clean_type = self._validate_edge_type(type)
-        clean_source_id = self._validate_related_node_id(source_id, field_name="Source")
-        clean_target_id = self._validate_related_node_id(target_id, field_name="Target")
-        clean_schema_name = self._normalize_optional_text(schema_name)
-        normalized_tags = self._normalize_tag_list(tags)
-        self._validate_json_object(data, object_name="Edge data")
+        if type is not None:
+            self._validate_edge_type(type)
+        if source_id is not None:
+            self._validate_related_node_id(source_id, field_name="Source")
+        if target_id is not None:
+            self._validate_related_node_id(target_id, field_name="Target")
+        if data is not None:
+            self._validate_json_object(data, object_name="Edge data")
 
         graph, instance, db = await self._open_graph(
             graph_id=graph_id,
@@ -1229,16 +1286,40 @@ class GraphContentService:
                 raise GraphContentNotFoundError(
                     f"Edge '{clean_edge_id}' was not found."
                 )
+            type_ = (
+                self._validate_edge_type(type) if type is not None else existing.type
+            )
+            source_id_ = (
+                self._validate_related_node_id(source_id, field_name="Source")
+                if source_id is not None
+                else existing.source_id
+            )
+            target_id_ = (
+                self._validate_related_node_id(target_id, field_name="Target")
+                if target_id is not None
+                else existing.target_id
+            )
+            schema_name_ = (
+                self._normalize_optional_text(schema_name)
+                if schema_name is not None
+                else existing.schema_name
+            )
+            data_ = data if data is not None else existing.data
+            tags_ = (
+                self._normalize_tag_list(tags)
+                if tags is not None
+                else (existing.tags or [])
+            )
             try:
                 edge = await db.set_edge(
                     EdgeUpsert(
                         id=clean_edge_id,
-                        type=clean_type,
-                        source_id=clean_source_id,
-                        target_id=clean_target_id,
-                        schema_name=clean_schema_name,
-                        data=data,
-                        tags=normalized_tags,
+                        type=type_,
+                        source_id=source_id_,
+                        target_id=target_id_,
+                        schema_name=schema_name_,
+                        data=data_,
+                        tags=tags_,
                     )
                 )
             except IntegrityError as exc:
@@ -1394,15 +1475,21 @@ class GraphContentService:
         self,
         *,
         graph_id: str,
-        display_name: str,
+        display_name: str | None = None,
         current_user: AdminUser | None,
         allow_local_system: bool = False,
     ) -> GraphDetail:
-        """Update one managed graph's display name."""
+        """Update one managed graph's display name. Omitted fields are left unchanged."""
         admin_store = self._require_admin_store()
+        existing = await admin_store.get_graph_by_id(graph_id)
+        if existing is None:
+            raise GraphContentNotFoundError(f"Graph '{graph_id}' was not found.")
+        display_name_ = (
+            display_name if display_name is not None else existing.display_name
+        )
         graph = await admin_store.update_graph(
             graph_id=graph_id,
-            display_name=display_name,
+            display_name=display_name_,
         )
         if graph is None:
             raise GraphContentNotFoundError(f"Graph '{graph_id}' was not found.")
@@ -1473,9 +1560,9 @@ class GraphContentService:
         self,
         *,
         instance_id: str,
-        display_name: str,
-        description: str,
-        is_active: bool,
+        display_name: str | None = None,
+        description: str | None = None,
+        is_active: bool | None = None,
         host: str | None = None,
         port: int | None = None,
         database: str | None = None,
@@ -1484,7 +1571,7 @@ class GraphContentService:
         current_user: AdminUser | None,
         allow_local_system: bool = False,
     ) -> InstanceDetail:
-        """Update one managed instance's metadata and connection fields."""
+        """Update one managed instance's metadata and connection fields. Omitted fields are left unchanged."""
         admin_store = self._require_admin_store()
         instance = await admin_store.update_instance(
             instance_id=instance_id,

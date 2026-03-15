@@ -5,7 +5,6 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
-from mcp.server.auth.middleware.auth_context import auth_context_var
 
 from gpdb import GPGraph, NodeUpsert
 from gpdb.admin import entry
@@ -77,8 +76,12 @@ def test_graph_schema_registry_across_surfaces(admin_test_env):
 
     response = client.post(
         "/api/graph_schema_create",
-        params={"graph_id": graph_id, "name": "rest_schema"},
-        json=_schema_definition("rest schema"),
+        json={
+            "graph_id": graph_id,
+            "name": "rest_schema",
+            "json_schema": _schema_definition("rest schema"),
+            "kind": "node",
+        },
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -92,10 +95,11 @@ def test_graph_schema_registry_across_surfaces(admin_test_env):
             "graph_id": graph_id,
             "name": "mcp_schema",
             "json_schema": _schema_definition("mcp schema"),
+            "kind": "node",
         },
     )
-    assert mcp_created["schema"]["name"] == "mcp_schema"
-    assert mcp_created["schema"]["version"] == "1.0.0"
+    assert mcp_created.schema.name == "mcp_schema"
+    assert mcp_created.schema.version == "1.0.0"
 
     _login(client)
 
@@ -114,9 +118,9 @@ def test_graph_schema_registry_across_surfaces(admin_test_env):
     assert "0 edges reference this schema." in response.text
     assert "Sample node IDs:" in response.text
 
-    response = client.get(
+    response = client.post(
         "/api/graph_schema_list",
-        params={"graph_id": graph_id},
+        json={"graph_id": graph_id},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -127,9 +131,9 @@ def test_graph_schema_registry_across_surfaces(admin_test_env):
         "web_schema",
     }
 
-    response = client.get(
+    response = client.post(
         "/api/graph_schema_get",
-        params={"graph_id": graph_id, "name": "web_schema"},
+        json={"graph_id": graph_id, "name": "web_schema"},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -147,7 +151,7 @@ def test_graph_schema_registry_across_surfaces(admin_test_env):
         "graph_schema_list",
         {"graph_id": graph_id},
     )
-    assert mcp_list["total"] == 3
+    assert mcp_list.total == 3
 
     mcp_get = _call_persisted_authenticated_mcp_tool(
         manager,
@@ -155,8 +159,8 @@ def test_graph_schema_registry_across_surfaces(admin_test_env):
         "graph_schema_get",
         {"graph_id": graph_id, "name": "web_schema"},
     )
-    assert mcp_get["schema"]["usage"]["node_count"] == 1
-    assert mcp_get["schema"]["usage"]["edge_count"] == 0
+    assert mcp_get.schema.usage.node_count == 1
+    assert mcp_get.schema.usage.edge_count == 0
 
 
 def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
@@ -229,8 +233,12 @@ def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
 
     response = client.post(
         "/api/graph_schema_create",
-        params={"graph_id": graph_id, "name": "rest_schema"},
-        json=_schema_definition("rest schema"),
+        json={
+            "graph_id": graph_id,
+            "name": "rest_schema",
+            "json_schema": _schema_definition("rest schema"),
+            "kind": "node",
+        },
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -243,9 +251,10 @@ def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
             "graph_id": graph_id,
             "name": "mcp_schema",
             "json_schema": _schema_definition("mcp schema"),
+            "kind": "node",
         },
     )
-    assert mcp_created["schema"]["name"] == "mcp_schema"
+    assert mcp_created.schema.name == "mcp_schema"
 
     _login(client)
 
@@ -329,11 +338,15 @@ def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
 
     response = client.post(
         "/api/graph_schema_update",
-        params={"graph_id": graph_id, "name": "rest_schema"},
-        json=_schema_definition(
-            "rest schema updated",
-            include_optional_status=True,
-        ),
+        json={
+            "graph_id": graph_id,
+            "name": "rest_schema",
+            "json_schema": _schema_definition(
+                "rest schema updated",
+                include_optional_status=True,
+            ),
+            "kind": "node",
+        },
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -345,7 +358,7 @@ def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
 
     response = client.post(
         "/api/graph_schema_delete",
-        params={"graph_id": graph_id, "name": "rest_schema"},
+        json={"graph_id": graph_id, "name": "rest_schema"},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -364,7 +377,7 @@ def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
             ),
         },
     )
-    assert mcp_updated["schema"]["version"] == "1.1.0"
+    assert mcp_updated.schema.version == "1.1.0"
 
     mcp_deleted = _call_persisted_authenticated_mcp_tool(
         manager,
@@ -372,7 +385,7 @@ def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
         "graph_schema_delete",
         {"graph_id": graph_id, "name": "mcp_schema"},
     )
-    assert mcp_deleted["schema"]["name"] == "mcp_schema"
+    assert mcp_deleted.schema.name == "mcp_schema"
 
     _login(client)
     response = client.get(f"/graphs/{graph_id}/schemas")
@@ -382,6 +395,77 @@ def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
     assert "rest_schema" not in response.text
     assert "cli_schema" not in response.text
     assert "mcp_schema" not in response.text
+
+
+def test_schema_partial_update_preserves_omitted_fields(admin_test_env):
+    """Partial schema update with only json_schema preserves kind."""
+    manager = admin_test_env.manager
+    client = admin_test_env.client
+
+    _bootstrap_owner(client)
+    _login(client)
+
+    response = client.get("/graphs/new")
+    assert response.status_code == 200
+    default_instance_id = _extract_instance_option_value(
+        response.text, "Default instance"
+    )
+    response = client.post(
+        "/graphs",
+        data={
+            "instance_id": default_instance_id,
+            "table_prefix": "partial_schema",
+            "display_name": "Partial Schema",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    graph = _read_graph_by_prefix(manager, table_prefix="partial_schema")
+    assert graph is not None
+    graph_id = graph.id
+
+    response = client.post(
+        "/apikeys",
+        data={"label": "Partial schema key"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    response = client.get(response.headers["location"])
+    assert response.status_code == 200
+    api_key_value = _extract_revealed_api_key(response.text)
+
+    response = client.post(
+        "/api/graph_schema_create",
+        json={
+            "graph_id": graph_id,
+            "name": "partial_kind_schema",
+            "json_schema": _schema_definition("original"),
+            "kind": "node",
+        },
+        headers={"Authorization": f"Bearer {api_key_value}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["schema"]["kind"] == "node"
+
+    # Update only json_schema; omit kind so it is preserved
+    response = client.post(
+        "/api/graph_schema_update",
+        json={
+            "graph_id": graph_id,
+            "name": "partial_kind_schema",
+            "json_schema": _schema_definition(
+                "updated description",
+                include_optional_status=True,
+            ),
+        },
+        headers={"Authorization": f"Bearer {api_key_value}"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["schema"]["kind"] == "node"
+    assert data["schema"]["json_schema"]["description"] == "updated description"
+    assert "status" in data["schema"]["json_schema"]["properties"]
 
 
 def _bootstrap_owner(client: TestClient) -> None:
@@ -454,7 +538,7 @@ def _call_persisted_authenticated_mcp_tool(
                 manager,
                 verified_token,
                 tool_name,
-                arguments,
+                {"params": arguments},
             )
 
     return asyncio.run(_call())
@@ -466,13 +550,60 @@ async def _call_authenticated_mcp_tool_in_loop(
     tool_name: str,
     arguments: dict[str, object],
 ):
-    token = auth_context_var.set(SimpleNamespace(access_token=verified_token))
-    try:
-        result = await manager.mcp_servers["gpdb"].call_tool(tool_name, arguments)
-    finally:
-        auth_context_var.reset(token)
-    assert result.content
-    return json.loads(result.content[0].text)
+    from toolaccess import InvocationContext, Principal, get_public_signature
+    from gpdb.admin.servers import _invoke_tool_raw
+
+    runtime = manager.app.state.admin_runtime
+    # Find the tool in the appropriate service
+    tool = None
+    for service in [
+        runtime.admin_service,
+        runtime.graph_service,
+        runtime.mcp_api_key_service,
+    ]:
+        for tool_def in service.tools:
+            if tool_def.name == tool_name:
+                tool = tool_def
+                break
+        if tool is not None:
+            break
+
+    if tool is None:
+        raise ValueError(f"Tool {tool_name} not found")
+
+    # Get the user from the verified token
+    services = manager.app.state.services
+    user_id = verified_token.claims.get("user_id")
+    user = await services.admin_store.get_user_by_id(user_id)
+
+    ctx = InvocationContext(
+        surface="mcp",
+        principal=Principal(
+            kind="api_key",
+            id=verified_token.client_id,
+            name=verified_token.claims.get("username"),
+            claims=verified_token.claims,
+            is_authenticated=True,
+            is_trusted_local=False,
+        ),
+    )
+
+    # Set the current_user in the context state
+    ctx.state["current_user"] = user
+    ctx.state["access_token"] = verified_token
+
+    # Get the context parameter name
+    _, _, context_param_name = get_public_signature(tool.func)
+
+    # Use _invoke_tool_raw to run principal resolver and set current_user
+    result = await _invoke_tool_raw(
+        tool,
+        arguments,
+        ctx,
+        context_param_name=context_param_name,
+        surface_resolver=None,  # Skip principal resolver since we already set the user
+    )
+    return result
 
 
 def _read_graph_by_prefix(manager, *, table_prefix: str):

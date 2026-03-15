@@ -88,74 +88,42 @@ class OpenAPIServer(ToolaccessOpenAPIServer):
             default=inspect.Parameter.empty,
             annotation=Request,
         )
+
+        # All tools receive params in the request body only (no query params).
         route_sig = public_sig.replace(
             parameters=[*public_sig.parameters.values(), request_param]
         )
         annotations["request"] = Request
 
-        if inspect.iscoroutinefunction(tool.func):
-
-            @wraps(tool.func)
-            async def route_handler(*args, request: Request, **kwargs):
-                ctx = InvocationContext(
-                    surface="rest",
-                    principal=None,
-                    raw_request=request,
+        @wraps(tool.func)
+        async def route_handler(*args, request: Request, **kwargs):
+            ctx = InvocationContext(
+                surface="rest",
+                principal=None,
+                raw_request=request,
+            )
+            raw_args = kwargs
+            try:
+                return await invoke_tool(
+                    tool=tool,
+                    raw_args=raw_args,
+                    ctx=ctx,
+                    context_param_name=context_param,
+                    surface_resolver=self.principal_resolver,
                 )
-                try:
-                    return await invoke_tool(
-                        tool=tool,
-                        raw_args=kwargs,
-                        ctx=ctx,
-                        context_param_name=context_param,
-                        surface_resolver=self.principal_resolver,
-                    )
-                except GraphContentNotFoundError as exc:
-                    raise HTTPException(status_code=404, detail=str(exc)) from exc
-                except GraphContentConflictError as exc:
-                    raise HTTPException(status_code=400, detail=str(exc)) from exc
-                except GraphContentNotReadyError as exc:
-                    raise HTTPException(status_code=503, detail=str(exc)) from exc
-                except PermissionError as exc:
-                    raise HTTPException(status_code=403, detail=str(exc)) from exc
-                except (ValueError, KeyError, TypeError) as exc:
-                    raise HTTPException(status_code=400, detail=str(exc)) from exc
-                except Exception as exc:
-                    logger.exception("Unexpected REST tool error for %s", tool.name)
-                    raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-        else:
-
-            @wraps(tool.func)
-            def route_handler(*args, request: Request, **kwargs):
-                ctx = InvocationContext(
-                    surface="rest",
-                    principal=None,
-                    raw_request=request,
-                )
-                try:
-                    return asyncio.run(
-                        invoke_tool(
-                            tool=tool,
-                            raw_args=kwargs,
-                            ctx=ctx,
-                            context_param_name=context_param,
-                            surface_resolver=self.principal_resolver,
-                        )
-                    )
-                except GraphContentNotFoundError as exc:
-                    raise HTTPException(status_code=404, detail=str(exc)) from exc
-                except GraphContentConflictError as exc:
-                    raise HTTPException(status_code=400, detail=str(exc)) from exc
-                except GraphContentNotReadyError as exc:
-                    raise HTTPException(status_code=503, detail=str(exc)) from exc
-                except PermissionError as exc:
-                    raise HTTPException(status_code=403, detail=str(exc)) from exc
-                except (ValueError, KeyError, TypeError) as exc:
-                    raise HTTPException(status_code=400, detail=str(exc)) from exc
-                except Exception as exc:
-                    logger.exception("Unexpected REST tool error for %s", tool.name)
-                    raise HTTPException(status_code=500, detail=str(exc)) from exc
+            except GraphContentNotFoundError as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
+            except GraphContentConflictError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            except GraphContentNotReadyError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            except PermissionError as exc:
+                raise HTTPException(status_code=403, detail=str(exc)) from exc
+            except (ValueError, KeyError, TypeError) as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            except Exception as exc:
+                logger.exception("Unexpected REST tool error for %s", tool.name)
+                raise HTTPException(status_code=500, detail=str(exc)) from exc
 
         route_handler.__signature__ = route_sig
         route_handler.__annotations__ = annotations

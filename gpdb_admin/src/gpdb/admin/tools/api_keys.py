@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import TYPE_CHECKING
 
+from pydantic import BaseModel, Field
 from toolaccess import (
     InvocationContext,
     ToolDefinition,
@@ -17,36 +18,97 @@ if TYPE_CHECKING:
     from gpdb.admin.runtime import AdminServices
 
 
+class UsernameParams(BaseModel):
+    """Base parameters for operations that require a username."""
+
+    username: str = Field(..., description="Username of the admin user.")
+
+
+class ApiKeyIdentifierParams(BaseModel):
+    """Base parameters for operations that require a username and API key ID."""
+
+    username: str = Field(..., description="Username of the admin user.")
+    key_id: str = Field(..., description="API key ID.")
+
+
+class ApiKeyListParams(UsernameParams):
+    """Parameters for listing API keys for a user."""
+
+
+class ApiKeyCreateParams(UsernameParams):
+    """Parameters for creating an API key for a user."""
+
+    label: str = Field(..., description="Label for the API key.")
+
+
+class ApiKeyRevealParams(ApiKeyIdentifierParams):
+    """Parameters for revealing an API key."""
+
+
+class ApiKeyRevokeParams(ApiKeyIdentifierParams):
+    """Parameters for revoking an API key."""
+
+
+class KeyIdParams(BaseModel):
+    """Base parameters for operations that require an API key ID."""
+
+    key_id: str = Field(..., description="API key ID.")
+
+
+class ApiKeyListMeParams(BaseModel):
+    """Parameters for listing API keys for the authenticated user."""
+
+
+class ApiKeyCreateMeParams(BaseModel):
+    """Parameters for creating an API key for the authenticated user."""
+
+    label: str = Field(..., description="Label for the API key.")
+
+
+class ApiKeyRevealMeParams(KeyIdParams):
+    """Parameters for revealing an API key for the authenticated user."""
+
+
+class ApiKeyRevokeMeParams(KeyIdParams):
+    """Parameters for revoking an API key for the authenticated user."""
+
+
 def _build_cli_api_key_tools(services: AdminServices) -> list[ToolDefinition]:
     """Build trusted local CLI commands for API key management."""
 
-    async def api_key_list(username: str) -> list[dict[str, object]]:
+    async def api_key_list(params: ApiKeyListParams) -> list[dict[str, object]]:
         """List API keys for one local admin user."""
-        user = await _require_user_by_username(services, username)
+        user = await _require_user_by_username(services, params.username)
         return [
             _serialize_api_key(item)
             for item in await services.admin_store.list_api_keys_for_user(user.id)
         ]
 
-    async def api_key_create(username: str, label: str) -> dict[str, object]:
+    async def api_key_create(params: ApiKeyCreateParams) -> dict[str, object]:
         """Create an API key for one local admin user."""
-        user = await _require_user_by_username(services, username)
-        return await _create_api_key_for_user(services, user_id=user.id, label=label)
+        user = await _require_user_by_username(services, params.username)
+        return await _create_api_key_for_user(
+            services, user_id=user.id, label=params.label
+        )
 
-    async def api_key_reveal(username: str, key_id: str) -> dict[str, object]:
+    async def api_key_reveal(params: ApiKeyRevealParams) -> dict[str, object]:
         """Reveal one API key owned by the named local user."""
-        user = await _require_user_by_username(services, username)
-        return await _reveal_api_key_for_user(services, user_id=user.id, key_id=key_id)
+        user = await _require_user_by_username(services, params.username)
+        return await _reveal_api_key_for_user(
+            services, user_id=user.id, key_id=params.key_id
+        )
 
-    async def api_key_revoke(username: str, key_id: str) -> dict[str, object]:
+    async def api_key_revoke(params: ApiKeyRevokeParams) -> dict[str, object]:
         """Revoke one API key owned by the named local user."""
-        user = await _require_user_by_username(services, username)
-        return await _revoke_api_key_for_user(services, user_id=user.id, key_id=key_id)
+        user = await _require_user_by_username(services, params.username)
+        return await _revoke_api_key_for_user(
+            services, user_id=user.id, key_id=params.key_id
+        )
 
     return [
         ToolDefinition(api_key_list, "api_key_list"),
         ToolDefinition(api_key_create, "api_key_create"),
-        ToolDefinition(api_key_reveal, "api_key_revoke"),
+        ToolDefinition(api_key_reveal, "api_key_reveal"),
         ToolDefinition(api_key_revoke, "api_key_revoke"),
     ]
 
@@ -55,6 +117,7 @@ def _build_mcp_api_key_tools(services: AdminServices) -> list[ToolDefinition]:
     """Build authenticated MCP tools for current-user API key management."""
 
     async def api_key_list_me(
+        params: ApiKeyListMeParams,
         ctx: InvocationContext = inject_context(),
     ) -> list[dict[str, object]]:
         """List API keys for the authenticated MCP user."""
@@ -65,28 +128,34 @@ def _build_mcp_api_key_tools(services: AdminServices) -> list[ToolDefinition]:
         ]
 
     async def api_key_create_me(
-        label: str,
+        params: ApiKeyCreateMeParams,
         ctx: InvocationContext = inject_context(),
     ) -> dict[str, object]:
         """Create an API key for the authenticated MCP user."""
         user = _require_context_user(ctx)
-        return await _create_api_key_for_user(services, user_id=user.id, label=label)
+        return await _create_api_key_for_user(
+            services, user_id=user.id, label=params.label
+        )
 
     async def api_key_reveal_me(
-        key_id: str,
+        params: ApiKeyRevealMeParams,
         ctx: InvocationContext = inject_context(),
     ) -> dict[str, object]:
         """Reveal one API key owned by the authenticated MCP user."""
         user = _require_context_user(ctx)
-        return await _reveal_api_key_for_user(services, user_id=user.id, key_id=key_id)
+        return await _reveal_api_key_for_user(
+            services, user_id=user.id, key_id=params.key_id
+        )
 
     async def api_key_revoke_me(
-        key_id: str,
+        params: ApiKeyRevokeMeParams,
         ctx: InvocationContext = inject_context(),
     ) -> dict[str, object]:
         """Revoke one API key owned by the authenticated MCP user."""
         user = _require_context_user(ctx)
-        return await _revoke_api_key_for_user(services, user_id=user.id, key_id=key_id)
+        return await _revoke_api_key_for_user(
+            services, user_id=user.id, key_id=params.key_id
+        )
 
     return [
         ToolDefinition(api_key_list_me, "api_key_list"),

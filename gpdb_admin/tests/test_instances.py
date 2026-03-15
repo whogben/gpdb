@@ -36,8 +36,9 @@ def test_instance_list_api(admin_test_env):
     assert api_key_value.startswith("gpdb_")
 
     # Test the instance_list endpoint with API key authentication
-    response = client.get(
+    response = client.post(
         "/api/instance_list",
+        json={},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -84,8 +85,9 @@ def test_graph_list_api(admin_test_env):
     assert api_key_value.startswith("gpdb_")
 
     # Test the graph_list endpoint with API key authentication
-    response = client.get(
+    response = client.post(
         "/api/graph_list",
+        json={},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -114,8 +116,9 @@ def test_graph_list_api(admin_test_env):
 
     # Test filtering by instance_id
     # First get an instance_id from the instance list
-    response = client.get(
+    response = client.post(
         "/api/instance_list",
+        json={},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -124,8 +127,9 @@ def test_graph_list_api(admin_test_env):
     instance_id = instance_list_data["items"][0]["id"]
 
     # Test graph_list with instance_id parameter
-    response = client.get(
-        f"/api/graph_list?instance_id={instance_id}",
+    response = client.post(
+        "/api/graph_list",
+        json={"instance_id": instance_id},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -165,8 +169,9 @@ def test_graph_get_api(admin_test_env):
     assert api_key_value.startswith("gpdb_")
 
     # Get the list of graphs to find a valid graph_id
-    response = client.get(
+    response = client.post(
         "/api/graph_list",
+        json={},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -175,8 +180,9 @@ def test_graph_get_api(admin_test_env):
     graph_id = list_data["items"][0]["id"]
 
     # Test the graph_get endpoint with a valid graph_id
-    response = client.get(
-        f"/api/graph_get?graph_id={graph_id}",
+    response = client.post(
+        "/api/graph_get",
+        json={"graph_id": graph_id},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -197,8 +203,9 @@ def test_graph_get_api(admin_test_env):
     assert graph["id"] == graph_id
 
     # Test the graph_get endpoint with a non-existent graph_id
-    response = client.get(
-        "/api/graph_get?graph_id=nonexistent-id",
+    response = client.post(
+        "/api/graph_get",
+        json={"graph_id": "nonexistent-id"},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 404
@@ -227,8 +234,9 @@ def test_graph_create_api(admin_test_env):
     assert api_key_value.startswith("gpdb_")
 
     # Get the list of instances to find a valid instance_id
-    response = client.get(
+    response = client.post(
         "/api/instance_list",
+        json={},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -239,7 +247,7 @@ def test_graph_create_api(admin_test_env):
     # Test creating a valid graph
     response = client.post(
         "/api/graph_create",
-        params={
+        json={
             "instance_id": instance_id,
             "table_prefix": "test_graph",
             "display_name": "Test Graph",
@@ -270,7 +278,7 @@ def test_graph_create_api(admin_test_env):
     # Test creating a graph with a duplicate table_prefix returns 400
     response = client.post(
         "/api/graph_create",
-        params={
+        json={
             "instance_id": instance_id,
             "table_prefix": "test_graph",
             "display_name": "Another Test Graph",
@@ -303,8 +311,9 @@ def test_graph_update_api(admin_test_env):
     assert api_key_value.startswith("gpdb_")
 
     # Get the list of instances to find a valid instance_id
-    response = client.get(
+    response = client.post(
         "/api/instance_list",
+        json={},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -315,7 +324,7 @@ def test_graph_update_api(admin_test_env):
     # Create a graph to update
     response = client.post(
         "/api/graph_create",
-        params={
+        json={
             "instance_id": instance_id,
             "table_prefix": "test_update_graph",
             "display_name": "Test Update Graph",
@@ -327,9 +336,9 @@ def test_graph_update_api(admin_test_env):
     graph_id = create_data["graph"]["id"]
 
     # Test updating the graph with a new display_name
-    response = client.put(
+    response = client.post(
         "/api/graph_update",
-        params={
+        json={
             "graph_id": graph_id,
             "display_name": "Updated Display Name",
         },
@@ -346,15 +355,63 @@ def test_graph_update_api(admin_test_env):
     assert graph["display_name"] == "Updated Display Name"
 
     # Test updating a non-existent graph returns 404
-    response = client.put(
+    response = client.post(
         "/api/graph_update",
-        params={
+        json={
             "graph_id": "nonexistent-id",
             "display_name": "Test",
         },
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 404
+
+
+def test_graph_partial_update_preserves_omitted_fields(admin_test_env):
+    """Graph update with only graph_id (omit display_name) preserves display_name."""
+    manager = admin_test_env.manager
+    client = admin_test_env.client
+
+    _bootstrap_owner(client)
+    _login(client)
+
+    response = client.post(
+        "/apikeys",
+        data={"label": "Graph partial key"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    response = client.get(response.headers["location"])
+    assert response.status_code == 200
+    api_key_value = _extract_revealed_api_key(response.text)
+
+    response = client.post(
+        "/api/instance_list",
+        json={},
+        headers={"Authorization": f"Bearer {api_key_value}"},
+    )
+    assert response.status_code == 200
+    instance_id = response.json()["items"][0]["id"]
+
+    response = client.post(
+        "/api/graph_create",
+        json={
+            "instance_id": instance_id,
+            "table_prefix": "partial_graph",
+            "display_name": "Original Graph Name",
+        },
+        headers={"Authorization": f"Bearer {api_key_value}"},
+    )
+    assert response.status_code == 200
+    graph_id = response.json()["graph"]["id"]
+
+    # Call graph_update with only graph_id (no display_name) – display_name preserved
+    response = client.post(
+        "/api/graph_update",
+        json={"graph_id": graph_id},
+        headers={"Authorization": f"Bearer {api_key_value}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["graph"]["display_name"] == "Original Graph Name"
 
 
 def test_graph_delete_api(admin_test_env):
@@ -380,8 +437,9 @@ def test_graph_delete_api(admin_test_env):
     assert api_key_value.startswith("gpdb_")
 
     # Get the list of instances to find a valid instance_id
-    response = client.get(
+    response = client.post(
         "/api/instance_list",
+        json={},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -392,7 +450,7 @@ def test_graph_delete_api(admin_test_env):
     # Create a graph to delete
     response = client.post(
         "/api/graph_create",
-        params={
+        json={
             "instance_id": instance_id,
             "table_prefix": "test_delete_graph",
             "display_name": "Test Delete Graph",
@@ -404,9 +462,9 @@ def test_graph_delete_api(admin_test_env):
     graph_id = create_data["graph"]["id"]
 
     # Test deleting the graph
-    response = client.delete(
+    response = client.post(
         "/api/graph_delete",
-        params={"graph_id": graph_id},
+        json={"graph_id": graph_id},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     if response.status_code != 200:
@@ -414,25 +472,26 @@ def test_graph_delete_api(admin_test_env):
     assert response.status_code == 200
 
     # Verify the graph is deleted by trying to get it
-    response = client.get(
+    response = client.post(
         "/api/graph_get",
-        params={"graph_id": graph_id},
+        json={"graph_id": graph_id},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 404
 
     # Test deleting a non-existent graph returns 404
-    response = client.delete(
+    response = client.post(
         "/api/graph_delete",
-        params={"graph_id": "nonexistent-id"},
+        json={"graph_id": "nonexistent-id"},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 404
 
     # Test deleting the default graph (table_prefix="") returns 400
     # First, get the default graph
-    response = client.get(
+    response = client.post(
         "/api/graph_list",
+        json={},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -442,9 +501,9 @@ def test_graph_delete_api(admin_test_env):
         None,
     )
     if default_graph is not None:
-        response = client.delete(
+        response = client.post(
             "/api/graph_delete",
-            params={"graph_id": default_graph["id"]},
+            json={"graph_id": default_graph["id"]},
             headers={"Authorization": f"Bearer {api_key_value}"},
         )
         assert response.status_code == 400
@@ -473,8 +532,9 @@ def test_instance_get_api(admin_test_env):
     assert api_key_value.startswith("gpdb_")
 
     # Get the list of instances to find a valid instance_id
-    response = client.get(
+    response = client.post(
         "/api/instance_list",
+        json={},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -483,8 +543,9 @@ def test_instance_get_api(admin_test_env):
     instance_id = list_data["items"][0]["id"]
 
     # Test the instance_get endpoint with a valid instance_id
-    response = client.get(
-        f"/api/instance_get?instance_id={instance_id}",
+    response = client.post(
+        "/api/instance_get",
+        json={"instance_id": instance_id},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -505,8 +566,9 @@ def test_instance_get_api(admin_test_env):
     assert instance["id"] == instance_id
 
     # Test the instance_get endpoint with a non-existent instance_id
-    response = client.get(
-        "/api/instance_get?instance_id=nonexistent-id",
+    response = client.post(
+        "/api/instance_get",
+        json={"instance_id": "nonexistent-id"},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 404
@@ -548,7 +610,7 @@ def test_instance_create_api(admin_test_env):
 
     response = client.post(
         "/api/instance_create",
-        params=api_params,
+        json=api_params,
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     if response.status_code != 200:
@@ -576,7 +638,7 @@ def test_instance_create_api(admin_test_env):
     # Test creating an instance with a duplicate slug returns 400
     response = client.post(
         "/api/instance_create",
-        params=api_params,
+        json=api_params,
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 400
@@ -617,7 +679,7 @@ def test_instance_update_api(admin_test_env):
 
     response = client.post(
         "/api/instance_create",
-        params=api_params,
+        json=api_params,
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -636,9 +698,9 @@ def test_instance_update_api(admin_test_env):
         "username": "updated_user",
     }
 
-    response = client.put(
+    response = client.post(
         "/api/instance_update",
-        params=update_params,
+        json=update_params,
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     if response.status_code != 200:
@@ -658,9 +720,9 @@ def test_instance_update_api(admin_test_env):
     assert instance["username"] == "updated_user"
 
     # Test updating a non-existent instance returns 404
-    response = client.put(
+    response = client.post(
         "/api/instance_update",
-        params={
+        json={
             "instance_id": "nonexistent-id",
             "display_name": "Test",
             "description": "Test",
@@ -669,6 +731,58 @@ def test_instance_update_api(admin_test_env):
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 404
+
+
+def test_instance_partial_update_preserves_omitted_fields(admin_test_env):
+    """Partial instance update with only display_name preserves description and is_active."""
+    manager = admin_test_env.manager
+    client = admin_test_env.client
+
+    _bootstrap_owner(client)
+    _login(client)
+
+    response = client.post(
+        "/apikeys",
+        data={"label": "Partial instance key"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    response = client.get(response.headers["location"])
+    assert response.status_code == 200
+    api_key_value = _extract_revealed_api_key(response.text)
+
+    instance_data = _captive_instance_form(
+        manager,
+        slug="partial-instance",
+        display_name="Original Name",
+        description="Original description",
+    )
+    api_params = instance_data.copy()
+    if api_params.get("port") == "":
+        api_params["port"] = 5432
+
+    response = client.post(
+        "/api/instance_create",
+        json=api_params,
+        headers={"Authorization": f"Bearer {api_key_value}"},
+    )
+    assert response.status_code == 200
+    instance_id = response.json()["instance"]["id"]
+
+    # Update only display_name; omit description and is_active
+    response = client.post(
+        "/api/instance_update",
+        json={
+            "instance_id": instance_id,
+            "display_name": "Only Name Updated",
+        },
+        headers={"Authorization": f"Bearer {api_key_value}"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["instance"]["display_name"] == "Only Name Updated"
+    assert data["instance"]["description"] == "Original description"
+    assert data["instance"]["is_active"] is True
 
 
 def test_instance_delete_api(admin_test_env):
@@ -706,7 +820,7 @@ def test_instance_delete_api(admin_test_env):
 
     response = client.post(
         "/api/instance_create",
-        params=api_params,
+        json=api_params,
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -714,9 +828,9 @@ def test_instance_delete_api(admin_test_env):
     instance_id = create_data["instance"]["id"]
 
     # Test deleting the instance
-    response = client.delete(
+    response = client.post(
         "/api/instance_delete",
-        params={"instance_id": instance_id},
+        json={"instance_id": instance_id},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     if response.status_code != 200:
@@ -724,23 +838,25 @@ def test_instance_delete_api(admin_test_env):
     assert response.status_code == 200
 
     # Verify the instance is deleted by trying to get it
-    response = client.get(
-        f"/api/instance_get?instance_id={instance_id}",
+    response = client.post(
+        "/api/instance_get",
+        json={"instance_id": instance_id},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 404
 
     # Test deleting a non-existent instance returns 404
-    response = client.delete(
+    response = client.post(
         "/api/instance_delete",
-        params={"instance_id": "nonexistent-id"},
+        json={"instance_id": "nonexistent-id"},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 404
 
     # Test deleting the built-in instance returns 400
-    response = client.get(
+    response = client.post(
         "/api/instance_list",
+        json={},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -751,9 +867,9 @@ def test_instance_delete_api(admin_test_env):
     assert builtin_instance is not None
     builtin_instance_id = builtin_instance["id"]
 
-    response = client.delete(
+    response = client.post(
         "/api/instance_delete",
-        params={"instance_id": builtin_instance_id},
+        json={"instance_id": builtin_instance_id},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 400

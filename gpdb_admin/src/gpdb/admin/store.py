@@ -500,38 +500,46 @@ class AdminStore:
         self,
         *,
         instance_id: str,
-        display_name: str,
-        description: str,
-        is_active: bool,
+        display_name: str | None = None,
+        description: str | None = None,
+        is_active: bool | None = None,
         host: str | None = None,
         port: int | None = None,
         database: str | None = None,
         username: str | None = None,
         password: str | None = None,
     ) -> ManagedInstance | None:
-        """Update one managed instance's metadata and connection fields."""
+        """Update one managed instance's metadata and connection fields. Omitted fields are left unchanged."""
         node = await self.db.get_node(instance_id)
         if node is None or node.type != INSTANCE_NODE_TYPE:
             return None
 
         updated_data = dict(node.data)
-        updated_data["display_name"] = display_name
-        updated_data["description"] = description
-        updated_data["is_active"] = is_active
+        if display_name is not None:
+            updated_data["display_name"] = display_name
+        if description is not None:
+            updated_data["description"] = description
+        if is_active is not None:
+            updated_data["is_active"] = is_active
 
         if updated_data.get("mode") == "external":
-            updated_data["host"] = host or ""
-            updated_data["port"] = port
-            updated_data["database"] = database or ""
-            updated_data["username"] = username or ""
-            if password is None:
+            if host is not None:
+                updated_data["host"] = host
+            if port is not None:
+                updated_data["port"] = port
+            if database is not None:
+                updated_data["database"] = database
+            if username is not None:
+                updated_data["username"] = username
+            if password is not None:
+                updated_data["password"] = self._encrypt_instance_secret(password)
+            elif "password" in updated_data:
+                # Preserve existing encrypted password when not provided
                 updated_data["password"] = self._encrypt_instance_secret(
                     self._decrypt_instance_secret(
                         _optional_string(updated_data.get("password"))
                     )
                 )
-            else:
-                updated_data["password"] = self._encrypt_instance_secret(password)
 
         updated = await self.db.set_node(
             NodeUpsert(
@@ -661,9 +669,9 @@ class AdminStore:
         self,
         *,
         graph_id: str,
-        display_name: str,
+        display_name: str | None = None,
     ) -> ManagedGraph | None:
-        """Update one managed graph's display name."""
+        """Update one managed graph's display name. Omitted fields are left unchanged."""
         node = await self.db.get_node(graph_id)
         if node is None or node.type != GRAPH_NODE_TYPE or not node.parent_id:
             return None
@@ -672,7 +680,8 @@ class AdminStore:
             return None
 
         updated_data = dict(node.data)
-        updated_data["display_name"] = display_name
+        if display_name is not None:
+            updated_data["display_name"] = display_name
         updated = await self.db.set_node(
             NodeUpsert(
                 id=node.id,

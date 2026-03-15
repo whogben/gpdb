@@ -190,17 +190,17 @@ def test_graph_node_browse_and_create_across_surfaces(admin_test_env):
 
     response = client.post(
         "/api/graph_node_create",
-        params={
+        json={
             "graph_id": graph_id,
             "type": "task",
             "name": "rest-node",
             "schema_name": "task_schema",
-            "tags": "rest",
+            "tags": ["rest"],
             "payload_base64": base64.b64encode(b"rest payload").decode("ascii"),
             "payload_mime": "text/plain",
             "payload_filename": "rest.txt",
+            "data": {"name": "Rest node"},
         },
-        json={"name": "Rest node"},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -211,9 +211,9 @@ def test_graph_node_browse_and_create_across_surfaces(admin_test_env):
     assert rest_created["node"]["payload_size"] == 12
     assert rest_created["node"]["payload_filename"] == "rest.txt"
 
-    response = client.get(
+    response = client.post(
         "/api/graph_node_list",
-        params={"graph_id": graph_id, "type": "task", "limit": 10},
+        json={"graph_id": graph_id, "type": "task", "limit": 10},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -224,9 +224,9 @@ def test_graph_node_browse_and_create_across_surfaces(admin_test_env):
         "rest-node",
     }
 
-    response = client.get(
+    response = client.post(
         "/api/graph_node_get",
-        params={"graph_id": graph_id, "node_id": web_node_id},
+        json={"graph_id": graph_id, "node_id": web_node_id},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -242,17 +242,17 @@ def test_graph_node_browse_and_create_across_surfaces(admin_test_env):
             "type": "task",
             "name": "mcp-node",
             "schema_name": "task_schema",
-            "tags": "mcp, final",
+            "tags": ["mcp", "final"],
             "data": {"name": "MCP node"},
             "payload_base64": base64.b64encode(b"mcp payload").decode("ascii"),
             "payload_mime": "text/plain",
             "payload_filename": "mcp.txt",
         },
     )
-    assert mcp_created["node"]["name"] == "mcp-node"
-    assert mcp_created["node"]["tags"] == ["mcp", "final"]
-    assert mcp_created["node"]["payload_size"] == 11
-    assert mcp_created["node"]["payload_filename"] == "mcp.txt"
+    assert mcp_created.node.name == "mcp-node"
+    assert mcp_created.node.tags == ["mcp", "final"]
+    assert mcp_created.node.payload_size == 11
+    assert mcp_created.node.payload_filename == "mcp.txt"
 
     mcp_get = _call_persisted_authenticated_mcp_tool(
         manager,
@@ -260,10 +260,10 @@ def test_graph_node_browse_and_create_across_surfaces(admin_test_env):
         "graph_node_get",
         {
             "graph_id": graph_id,
-            "node_id": mcp_created["node"]["id"],
+            "node_id": mcp_created.node.id,
         },
     )
-    assert mcp_get["node"]["name"] == "mcp-node"
+    assert mcp_get.node.name == "mcp-node"
 
     mcp_list = _call_persisted_authenticated_mcp_tool(
         manager,
@@ -275,7 +275,7 @@ def test_graph_node_browse_and_create_across_surfaces(admin_test_env):
             "limit": 10,
         },
     )
-    assert mcp_list["total"] == 4
+    assert mcp_list.total == 4
 
     _login(client)
     response = client.get(f"/graphs/{graph_id}/nodes")
@@ -553,18 +553,18 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
 
     response = client.post(
         "/api/graph_node_update",
-        params={
+        json={
             "graph_id": graph_id,
             "node_id": rest_node_id,
             "type": "task",
             "name": "rest-edit-renamed",
             "schema_name": "task_schema",
-            "tags": "rest, updated",
+            "tags": ["rest", "updated"],
             "payload_base64": base64.b64encode(b"rest payload").decode("ascii"),
             "payload_mime": "text/plain",
             "payload_filename": "rest.txt",
+            "data": {"name": "Rest edit updated", "status": "active"},
         },
-        json={"name": "Rest edit updated", "status": "active"},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -574,9 +574,9 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
     assert response.json()["node"]["payload_size"] == 12
     assert response.json()["node"]["payload_filename"] == "rest.txt"
 
-    response = client.get(
+    response = client.post(
         "/api/graph_node_payload_get",
-        params={"graph_id": graph_id, "node_id": rest_node_id},
+        json={"graph_id": graph_id, "node_id": rest_node_id},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -589,16 +589,16 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
 
     response = client.post(
         "/api/graph_node_update",
-        params={
+        json={
             "graph_id": graph_id,
             "node_id": rest_node_id,
             "type": "task",
             "name": "rest-edit-renamed",
             "schema_name": "task_schema",
-            "tags": "rest, updated",
+            "tags": ["rest", "updated"],
             "clear_payload": True,
+            "data": {"name": "Rest edit updated", "status": "active"},
         },
-        json={"name": "Rest edit updated", "status": "active"},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -608,7 +608,7 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
 
     response = client.post(
         "/api/graph_node_delete",
-        params={"graph_id": graph_id, "node_id": rest_node_id},
+        json={"graph_id": graph_id, "node_id": rest_node_id},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -624,17 +624,17 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
             "type": "task",
             "name": "mcp-edit-renamed",
             "schema_name": "task_schema",
-            "tags": "mcp, updated",
+            "tags": ["mcp", "updated"],
             "data": {"name": "MCP edit updated", "status": "active"},
             "payload_base64": base64.b64encode(b"mcp payload").decode("ascii"),
             "payload_mime": "text/plain",
             "payload_filename": "mcp.txt",
         },
     )
-    assert mcp_updated["node"]["name"] == "mcp-edit-renamed"
-    assert mcp_updated["node"]["tags"] == ["mcp", "updated"]
-    assert mcp_updated["node"]["payload_size"] == 11
-    assert mcp_updated["node"]["payload_filename"] == "mcp.txt"
+    assert mcp_updated.node.name == "mcp-edit-renamed"
+    assert mcp_updated.node.tags == ["mcp", "updated"]
+    assert mcp_updated.node.payload_size == 11
+    assert mcp_updated.node.payload_filename == "mcp.txt"
 
     mcp_payload_get = _call_persisted_authenticated_mcp_tool(
         manager,
@@ -642,12 +642,12 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
         "graph_node_payload_get",
         {"graph_id": graph_id, "node_id": mcp_node_id},
     )
-    assert mcp_payload_get["payload_base64"] == base64.b64encode(b"mcp payload").decode(
+    assert mcp_payload_get.payload_base64 == base64.b64encode(b"mcp payload").decode(
         "ascii"
     )
-    assert mcp_payload_get["node"]["payload_mime"] == "text/plain"
-    assert mcp_payload_get["node"]["payload_filename"] == "mcp.txt"
-    assert mcp_payload_get["filename"] == "mcp.txt"
+    assert mcp_payload_get.node.payload_mime == "text/plain"
+    assert mcp_payload_get.node.payload_filename == "mcp.txt"
+    assert mcp_payload_get.filename == "mcp.txt"
 
     mcp_cleared = _call_persisted_authenticated_mcp_tool(
         manager,
@@ -659,14 +659,14 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
             "type": "task",
             "name": "mcp-edit-renamed",
             "schema_name": "task_schema",
-            "tags": "mcp, updated",
+            "tags": ["mcp", "updated"],
             "data": {"name": "MCP edit updated", "status": "active"},
             "clear_payload": True,
         },
     )
-    assert mcp_cleared["node"]["payload_size"] == 0
-    assert mcp_cleared["node"]["payload_filename"] is None
-    assert mcp_cleared["node"]["has_payload"] is False
+    assert mcp_cleared.node.payload_size == 0
+    assert mcp_cleared.node.payload_filename is None
+    assert mcp_cleared.node.has_payload is False
 
     mcp_deleted = _call_persisted_authenticated_mcp_tool(
         manager,
@@ -674,7 +674,7 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
         "graph_node_delete",
         {"graph_id": graph_id, "node_id": mcp_node_id},
     )
-    assert mcp_deleted["node"]["id"] == mcp_node_id
+    assert mcp_deleted.node.id == mcp_node_id
 
     _login(client)
     response = client.get(f"/graphs/{graph_id}/nodes")
@@ -684,6 +684,75 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
     assert "rest-edit-renamed" not in response.text
     assert "cli-edit-renamed" not in response.text
     assert "mcp-edit-renamed" not in response.text
+
+
+def test_node_partial_update_preserves_omitted_fields(admin_test_env):
+    """Partial node update with only name changes name but preserves tags and data."""
+    manager = admin_test_env.manager
+    client = admin_test_env.client
+
+    _bootstrap_owner(client)
+    _login(client)
+
+    response = client.get("/graphs/new")
+    assert response.status_code == 200
+    default_instance_id = _extract_instance_option_value(
+        response.text, "Default instance"
+    )
+    response = client.post(
+        "/graphs",
+        data={
+            "instance_id": default_instance_id,
+            "table_prefix": "partial_node",
+            "display_name": "Partial Node",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    graph = _read_graph_by_prefix(manager, table_prefix="partial_node")
+    assert graph is not None
+    graph_id = graph.id
+    _seed_graph_schema(
+        manager, table_prefix="partial_node", schema_name="task_schema"
+    )
+    node_id = _seed_node_record(
+        manager,
+        table_prefix="partial_node",
+        type="task",
+        name="partial-a",
+        schema_name="task_schema",
+        data={"name": "partial-a", "x": 1, "label": "original"},
+        tags=["keep", "me"],
+    )
+
+    response = client.post(
+        "/apikeys",
+        data={"label": "Partial update key"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    response = client.get(response.headers["location"])
+    assert response.status_code == 200
+    api_key_value = _extract_revealed_api_key(response.text)
+
+    # Update only name; omit type, data, tags so they are preserved
+    response = client.post(
+        "/api/graph_node_update",
+        json={
+            "graph_id": graph_id,
+            "node_id": node_id,
+            "name": "partial-b",
+        },
+        headers={"Authorization": f"Bearer {api_key_value}"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["node"]["name"] == "partial-b"
+    assert data["node"]["tags"] == ["keep", "me"]
+    assert data["node"]["data"] == {"name": "partial-a", "x": 1, "label": "original"}
+    assert data["node"]["type"] == "task"
+    assert data["node"]["schema_name"] == "task_schema"
 
 
 def _bootstrap_owner(client: TestClient) -> None:
@@ -890,7 +959,7 @@ def _call_persisted_authenticated_mcp_tool(
                 manager,
                 verified_token,
                 tool_name,
-                arguments,
+                {"params": arguments},
             )
 
     return asyncio.run(_call())
@@ -902,10 +971,57 @@ async def _call_authenticated_mcp_tool_in_loop(
     tool_name: str,
     arguments: dict[str, object],
 ):
-    token = auth_context_var.set(SimpleNamespace(access_token=verified_token))
-    try:
-        result = await manager.mcp_servers["gpdb"].call_tool(tool_name, arguments)
-    finally:
-        auth_context_var.reset(token)
-    assert result.content
-    return json.loads(result.content[0].text)
+    from toolaccess import InvocationContext, Principal, get_public_signature
+    from gpdb.admin.servers import _invoke_tool_raw
+
+    runtime = manager.app.state.admin_runtime
+    # Find the tool in the appropriate service
+    tool = None
+    for service in [
+        runtime.admin_service,
+        runtime.graph_service,
+        runtime.mcp_api_key_service,
+    ]:
+        for tool_def in service.tools:
+            if tool_def.name == tool_name:
+                tool = tool_def
+                break
+        if tool is not None:
+            break
+
+    if tool is None:
+        raise ValueError(f"Tool {tool_name} not found")
+
+    # Get the user from the verified token
+    services = manager.app.state.services
+    user_id = verified_token.claims.get("user_id")
+    user = await services.admin_store.get_user_by_id(user_id)
+
+    ctx = InvocationContext(
+        surface="mcp",
+        principal=Principal(
+            kind="api_key",
+            id=verified_token.client_id,
+            name=verified_token.claims.get("username"),
+            claims=verified_token.claims,
+            is_authenticated=True,
+            is_trusted_local=False,
+        ),
+    )
+
+    # Set the current_user in the context state
+    ctx.state["current_user"] = user
+    ctx.state["access_token"] = verified_token
+
+    # Get the context parameter name
+    _, _, context_param_name = get_public_signature(tool.func)
+
+    # Use _invoke_tool_raw to run principal resolver and set current_user
+    result = await _invoke_tool_raw(
+        tool,
+        arguments,
+        ctx,
+        context_param_name=context_param_name,
+        surface_resolver=None,  # Skip principal resolver since we already set the user
+    )
+    return result

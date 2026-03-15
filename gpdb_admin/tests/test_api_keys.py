@@ -133,7 +133,7 @@ def test_mcp_api_key_management_tools(tmp_path):
                 manager,
                 verified_token,
                 "api_key_list",
-                {},
+                {"params": {}},
             )
             assert any(item["key_id"] == bootstrap_key.key_id for item in listed)
 
@@ -141,7 +141,7 @@ def test_mcp_api_key_management_tools(tmp_path):
                 manager,
                 verified_token,
                 "api_key_create",
-                {"label": "MCP managed"},
+                {"params": {"label": "MCP managed"}},
             )
             assert created["label"] == "MCP managed"
             assert str(created["api_key"]).startswith("gpdb_")
@@ -151,7 +151,7 @@ def test_mcp_api_key_management_tools(tmp_path):
                 manager,
                 verified_token,
                 "api_key_reveal",
-                {"key_id": created_key_id},
+                {"params": {"key_id": created_key_id}},
             )
             assert revealed["api_key"] == created["api_key"]
 
@@ -159,7 +159,7 @@ def test_mcp_api_key_management_tools(tmp_path):
                 manager,
                 verified_token,
                 "api_key_revoke",
-                {"key_id": created_key_id},
+                {"params": {"key_id": created_key_id}},
             )
             assert revoked["is_active"] is False
 
@@ -279,10 +279,57 @@ async def _call_authenticated_mcp_tool_in_loop(
     tool_name: str,
     arguments: dict[str, object],
 ):
-    token = auth_context_var.set(SimpleNamespace(access_token=verified_token))
-    try:
-        result = await manager.mcp_servers["gpdb"].call_tool(tool_name, arguments)
-    finally:
-        auth_context_var.reset(token)
-    assert result.content
-    return json.loads(result.content[0].text)
+    from toolaccess import InvocationContext, Principal, get_public_signature
+    from gpdb.admin.servers import _invoke_tool_raw
+
+    runtime = manager.app.state.admin_runtime
+    # Find the tool in the appropriate service
+    tool = None
+    for service in [
+        runtime.admin_service,
+        runtime.graph_service,
+        runtime.mcp_api_key_service,
+    ]:
+        for tool_def in service.tools:
+            if tool_def.name == tool_name:
+                tool = tool_def
+                break
+        if tool is not None:
+            break
+
+    if tool is None:
+        raise ValueError(f"Tool {tool_name} not found")
+
+    # Get the user from the verified token
+    services = manager.app.state.services
+    user_id = verified_token.claims.get("user_id")
+    user = await services.admin_store.get_user_by_id(user_id)
+
+    ctx = InvocationContext(
+        surface="mcp",
+        principal=Principal(
+            kind="api_key",
+            id=verified_token.client_id,
+            name=verified_token.claims.get("username"),
+            claims=verified_token.claims,
+            is_authenticated=True,
+            is_trusted_local=False,
+        ),
+    )
+
+    # Set the current_user in the context state
+    ctx.state["current_user"] = user
+    ctx.state["access_token"] = verified_token
+
+    # Get the context parameter name
+    _, _, context_param_name = get_public_signature(tool.func)
+
+    # Use _invoke_tool_raw to run principal resolver and set current_user
+    result = await _invoke_tool_raw(
+        tool,
+        arguments,
+        ctx,
+        context_param_name=context_param_name,
+        surface_resolver=None,  # Skip principal resolver since we already set the user
+    )
+    return result

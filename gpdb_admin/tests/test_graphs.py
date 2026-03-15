@@ -70,9 +70,9 @@ def test_graph_overview_across_surfaces(admin_test_env):
     response = client.get(api_key_detail_path)
     api_key_value = _extract_revealed_api_key(response.text)
 
-    response = client.get(
+    response = client.post(
         "/api/graph_overview",
-        params={"graph_id": graph_id},
+        json={"graph_id": graph_id},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -88,7 +88,8 @@ def test_graph_overview_across_surfaces(admin_test_env):
         "graph_overview",
         {"graph_id": graph_id},
     )
-    assert mcp_result["summary"] == {
+    mcp_result_dict = mcp_result.model_dump()
+    assert mcp_result_dict["summary"] == {
         "schema_count": 1,
         "node_count": 2,
         "edge_count": 1,
@@ -296,7 +297,7 @@ def _call_persisted_authenticated_mcp_tool(
                 manager,
                 verified_token,
                 tool_name,
-                arguments,
+                {"params": arguments},
             )
 
     return asyncio.run(_call())
@@ -308,10 +309,57 @@ async def _call_authenticated_mcp_tool_in_loop(
     tool_name: str,
     arguments: dict[str, object],
 ):
-    token = auth_context_var.set(SimpleNamespace(access_token=verified_token))
-    try:
-        result = await manager.mcp_servers["gpdb"].call_tool(tool_name, arguments)
-    finally:
-        auth_context_var.reset(token)
-    assert result.content
-    return json.loads(result.content[0].text)
+    from toolaccess import InvocationContext, Principal, get_public_signature
+    from gpdb.admin.servers import _invoke_tool_raw
+
+    runtime = manager.app.state.admin_runtime
+    # Find the tool in the appropriate service
+    tool = None
+    for service in [
+        runtime.admin_service,
+        runtime.graph_service,
+        runtime.mcp_api_key_service,
+    ]:
+        for tool_def in service.tools:
+            if tool_def.name == tool_name:
+                tool = tool_def
+                break
+        if tool is not None:
+            break
+
+    if tool is None:
+        raise ValueError(f"Tool {tool_name} not found")
+
+    # Get the user from the verified token
+    services = manager.app.state.services
+    user_id = verified_token.claims.get("user_id")
+    user = await services.admin_store.get_user_by_id(user_id)
+
+    ctx = InvocationContext(
+        surface="mcp",
+        principal=Principal(
+            kind="api_key",
+            id=verified_token.client_id,
+            name=verified_token.claims.get("username"),
+            claims=verified_token.claims,
+            is_authenticated=True,
+            is_trusted_local=False,
+        ),
+    )
+
+    # Set current_user in the context state
+    ctx.state["current_user"] = user
+    ctx.state["access_token"] = verified_token
+
+    # Get the context parameter name
+    _, _, context_param_name = get_public_signature(tool.func)
+
+    # Use _invoke_tool_raw to run principal resolver and set current_user
+    result = await _invoke_tool_raw(
+        tool,
+        arguments,
+        ctx,
+        context_param_name=context_param_name,
+        surface_resolver=None,  # Skip principal resolver since we already set the user
+    )
+    return result
