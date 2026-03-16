@@ -1,32 +1,38 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="hero">
-  <div class="hero-copy">
-    <p class="eyebrow">Nodes</p>
-    <h1>{{ node_list.graph.display_name }}</h1>
-    <p class="hero-text">
-      Browse nodes in this graph, inspect stored metadata, and create new records with
-      schema-validated JSON data.
-    </p>
+<section class="dashboard-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Nodes</p>
+      <h2>{{ node_list.graph.display_name }}</h2>
+    </div>
     <div class="button-row">
-      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_overview_page', graph_id=node_list.graph.id) }}">Back to overview</a>
-      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_list_page', graph_id=node_list.graph.id) }}">Schemas</a>
+      <a class="button button-secondary"
+        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_overview_page', graph_id=node_list.graph.id) }}">Back to
+        overview</a>
+      <a class="button button-secondary"
+        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_list_page', graph_id=node_list.graph.id) }}">Schemas</a>
       {% if current_user.is_owner %}
-      <a class="button" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_create_page', graph_id=node_list.graph.id) }}">New node</a>
+      <a class="button"
+        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_create_page', graph_id=node_list.graph.id) }}">New
+        node</a>
       {% endif %}
     </div>
   </div>
 
-  <div class="hero-panel">
-    <h2>Browse summary</h2>
-    <ul class="feature-list">
-      <li>{{ node_list.total }} node{{ "" if node_list.total == 1 else "s" }} matched.</li>
-      <li>Instance: {{ node_list.instance.display_name }}.</li>
-      <li>Prefix: {{ node_list.graph.table_prefix_label }}.</li>
-      <li>Showing {{ node_list.offset + 1 if node_list.total else 0 }}-{{ [node_list.offset + node_list.limit, node_list.total] | min }}.</li>
-    </ul>
-  </div>
+  <p class="resource-note">
+    Browse nodes in this graph, inspect stored metadata, and create new records with
+    schema-validated JSON data.
+  </p>
+
+  <ul class="feature-list">
+    <li>{{ node_list.total }} node{{ "" if node_list.total == 1 else "s" }} matched.</li>
+    <li>Instance: {{ node_list.instance.display_name }}.</li>
+    <li>Prefix: {{ node_list.graph.table_prefix_label }}.</li>
+    <li>Showing {{ node_list.offset + 1 if node_list.total else 0 }}-{{ [node_list.offset + node_list.limit,
+      node_list.total] | min }}.</li>
+  </ul>
 </section>
 
 {% set form_action = web_app.url_path_for('graph_node_list_page', graph_id=node_list.graph.id) %}
@@ -40,7 +46,9 @@
       <h2>Node list</h2>
     </div>
     {% if current_user.is_owner %}
-    <a class="button" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_create_page', graph_id=node_list.graph.id) }}">New node</a>
+    <a class="button"
+      href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_create_page', graph_id=node_list.graph.id) }}">New
+      node</a>
     {% endif %}
   </div>
 
@@ -75,9 +83,11 @@
       <p class="resource-note">Tags: {{ node.tags | join(", ") }}</p>
       {% endif %}
       <div class="button-row">
-        <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_detail_page', graph_id=node_list.graph.id, node_id=node.id) }}">Open</a>
+        <a class="button button-secondary"
+          href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_detail_page', graph_id=node_list.graph.id, node_id=node.id) }}">Open</a>
         {% if current_user.is_owner %}
-        <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_edit_page', graph_id=node_list.graph.id, node_id=node.id) }}">Edit</a>
+        <a class="button button-secondary"
+          href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_edit_page', graph_id=node_list.graph.id, node_id=node.id) }}">Edit</a>
         {% endif %}
       </div>
     </article>
@@ -106,4 +116,15 @@
 
 {% block scripts %}
 {% include 'partials/filters_toggle_script.html' %}
+<script>
+  // Show info strap on page load if error/success query params exist
+  const urlParams = new URLSearchParams(window.location.search);
+  const error = urlParams.get('error');
+  const success = urlParams.get('success');
+  if (error) {
+    showInfoStrap(error, 'error');
+  } else if (success) {
+    showInfoStrap(success, 'success');
+  }
+</script>
 {% endblock %}

@@ -1,29 +1,37 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="hero">
-  <div class="hero-copy">
-    <p class="eyebrow">Credentials</p>
-    <h1>Manage API keys.</h1>
-    <p class="hero-text">
-      API keys authenticate as <strong>{{ current_user.display_name }}</strong> for REST
-      and MCP access. Keys can be revealed again from this page and revoked
-      individually at any time.
-    </p>
+<section class="dashboard-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Credentials</p>
+      <h1>Manage API keys</h1>
+    </div>
   </div>
 
-  <div class="hero-panel">
-    <h2>Create key</h2>
-    <form class="auth-form" action="{{ mount_prefix }}{{ web_app.url_path_for('api_key_create') }}" method="post">
-      <label class="field">
-        <span>Label</span>
-        <input name="label" placeholder="Laptop, CI smoke tests, local script" required>
-      </label>
-      <div class="button-row">
-        <button class="button" type="submit">Create API key</button>
-        <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('home') }}">Back home</a>
+  <div class="card-grid">
+    <article class="resource-card">
+      <div class="resource-header">
+        <div>
+          <h3>Create key</h3>
+          <p class="resource-subtitle">API keys authenticate as <strong>{{ current_user.display_name }}</strong> for
+            REST and MCP access</p>
+        </div>
       </div>
-    </form>
+      <p class="resource-note">
+        Keys can be revealed again from this page and revoked individually at any time.
+      </p>
+      <form class="auth-form" action="{{ mount_prefix }}{{ web_app.url_path_for('api_key_create') }}" method="post">
+        <label class="field">
+          <span>Label</span>
+          <input name="label" placeholder="Laptop, CI smoke tests, local script" required>
+        </label>
+        <div class="button-row">
+          <button class="button" type="submit">Create API key</button>
+          <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('home') }}">Back home</a>
+        </div>
+      </form>
+    </article>
   </div>
 </section>
 
@@ -94,7 +102,8 @@
         <a class="button button-secondary"
           href="{{ mount_prefix }}{{ web_app.url_path_for('api_key_detail_page', api_key_id=api_key.id) }}">Reveal</a>
         {% if api_key.is_active %}
-        <form action="{{ mount_prefix }}{{ web_app.url_path_for('api_key_revoke', api_key_id=api_key.id) }}" method="post">
+        <form action="{{ mount_prefix }}{{ web_app.url_path_for('api_key_revoke', api_key_id=api_key.id) }}"
+          method="post">
           <button class="button button-danger" type="submit">Revoke</button>
         </form>
         {% endif %}
@@ -133,6 +142,11 @@
     } catch (e) {
       // If copying fails, leave the button text unchanged.
     }
+  });
+
+  document.addEventListener('DOMContentLoaded', function () {
+    {% if error_message %} window.showInfoStrap && showInfoStrap('{{ error_message }}', 'error'); {% endif %}
+    {% if success_message %} window.showInfoStrap && showInfoStrap('{{ success_message }}', 'success'); {% endif %}
   });
 </script>
 {% endblock %}

@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 
+{% block titlebar_left %}{% endblock %}
+{% block titlebar_right %}{% endblock %}
+
 {% block content %}
 <section class="auth-layout">
   <div class="auth-copy">
@@ -34,4 +37,17 @@
     </form>
   </div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    {% if error_message %}
+    showInfoStrap('{{ error_message }}', 'error');
+    {% endif %}
+    {% if success_message %}
+    showInfoStrap('{{ success_message }}', 'success');
+    {% endif %}
+  });
+</script>
 {% endblock %}

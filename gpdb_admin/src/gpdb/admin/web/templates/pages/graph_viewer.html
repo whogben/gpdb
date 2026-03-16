@@ -1,13 +1,12 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="hero">
-  <div class="hero-copy">
-    <p class="eyebrow">Graph Viewer</p>
-    <h1>{{ overview.graph.display_name }}</h1>
-    <p class="hero-text">
-      Visualize nodes and edges. Use the filters below to narrow what is shown.
-    </p>
+<section class="dashboard-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Graph Viewer</p>
+      <h2>{{ overview.graph.display_name }}</h2>
+    </div>
     <div class="button-row">
       <a class="button button-secondary"
         href="{{ mount_prefix }}{{ web_app.url_path_for('graph_overview_page', graph_id=graph_id) }}">Back to
@@ -18,6 +17,10 @@
         href="{{ mount_prefix }}{{ web_app.url_path_for('graph_edge_list_page', graph_id=graph_id) }}">Edges</a>
     </div>
   </div>
+
+  <p class="resource-note">
+    Visualize nodes and edges. Use the filters below to narrow what is shown.
+  </p>
 </section>
 
 <section class="dashboard-section">
@@ -131,4 +134,15 @@
 <script data-viewer-base="{{ mount_prefix or '' }}"
   src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/graph-viewer.js') }}"></script>
 {% include 'partials/filters_toggle_script.html' %}
+<script>
+  // Show info strap on page load if error/success query params exist
+  const urlParams = new URLSearchParams(window.location.search);
+  const error = urlParams.get('error');
+  const success = urlParams.get('success');
+  if (error) {
+    showInfoStrap(error, 'error');
+  } else if (success) {
+    showInfoStrap(success, 'success');
+  }
+</script>
 {% endblock %}

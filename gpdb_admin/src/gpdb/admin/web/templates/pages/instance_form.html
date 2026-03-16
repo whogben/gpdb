@@ -61,21 +61,27 @@
 
       {% if mode == "edit" %}
       <label class="field field-checkbox">
-        <input
-          name="is_active"
-          type="checkbox"
-          value="true"
-          {% if (form_data or {}).get('is_active') %}checked{% endif %}
-        >
+        <input name="is_active" type="checkbox" value="true" {% if (form_data or {}).get('is_active') %}checked{% endif
+          %}>
         <span>Instance is active</span>
       </label>
       {% endif %}
 
       <div class="button-row">
-        <button class="button" type="submit">{% if mode == "create" %}Add instance{% else %}Save changes{% endif %}</button>
+        <button class="button" type="submit">{% if mode == "create" %}Add instance{% else %}Save changes{% endif
+          %}</button>
         <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('home') }}">Back</a>
       </div>
     </form>
   </div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    {% if error_message %} window.showInfoStrap && showInfoStrap('{{ error_message }}', 'error'); {% endif %}
+    {% if success_message %} window.showInfoStrap && showInfoStrap('{{ success_message }}', 'success'); {% endif %}
+  });
+</script>
 {% endblock %}

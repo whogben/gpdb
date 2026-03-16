@@ -243,7 +243,9 @@ async def api_keys_page(request: Request) -> HTMLResponse:
     )
 
 
-@router.get("/apikeys/{api_key_id}", response_class=HTMLResponse, name="api_key_detail_page")
+@router.get(
+    "/apikeys/{api_key_id}", response_class=HTMLResponse, name="api_key_detail_page"
+)
 async def api_key_detail_page(request: Request, api_key_id: str) -> HTMLResponse:
     """Render one API key detail view with the full revealable value."""
     admin_store = get_admin_store(request)
@@ -254,7 +256,9 @@ async def api_key_detail_page(request: Request, api_key_id: str) -> HTMLResponse
 
     api_key = await admin_store.get_api_key_by_id(api_key_id)
     if api_key is None or api_key.user_id != current_user.id:
-        return redirect_with_message(request, "api_keys_page", error="API key not found.")
+        return redirect_with_message(
+            request, "api_keys_page", error="API key not found."
+        )
 
     return render(
         request,
@@ -323,7 +327,9 @@ async def api_key_revoke(request: Request, api_key_id: str) -> RedirectResponse:
 
     api_key = await admin_store.get_api_key_by_id(api_key_id)
     if api_key is None or api_key.user_id != current_user.id:
-        return redirect_with_message(request, "api_keys_page", error="API key not found.")
+        return redirect_with_message(
+            request, "api_keys_page", error="API key not found."
+        )
     await admin_store.revoke_api_key(api_key_id)
     return redirect_with_message(request, "api_keys_page", success="API key revoked.")
 
@@ -343,6 +349,7 @@ async def instance_create_page(request: Request) -> HTMLResponse:
         mode="create",
         submit_url=request.app.url_path_for("instance_create"),
         instance=None,
+        graphs=await admin_store.list_graphs(),
         form_data={"port": "5432"},
     )
 
@@ -435,7 +442,11 @@ async def instance_create(
     )
 
 
-@router.get("/instances/{instance_id}/edit", response_class=HTMLResponse, name="instance_edit_page")
+@router.get(
+    "/instances/{instance_id}/edit",
+    response_class=HTMLResponse,
+    name="instance_edit_page",
+)
 async def instance_edit_page(request: Request, instance_id: str) -> HTMLResponse:
     """Render the edit-instance form."""
     admin_store = get_admin_store(request)
@@ -456,6 +467,7 @@ async def instance_edit_page(request: Request, instance_id: str) -> HTMLResponse
         mode="edit",
         submit_url=request.app.url_path_for("instance_edit", instance_id=instance.id),
         instance=instance,
+        graphs=await admin_store.list_graphs(),
         form_data={
             "display_name": instance.display_name,
             "description": instance.description,
@@ -517,7 +529,9 @@ async def instance_edit(
             page_title="Edit Instance",
             current_user=current_user,
             mode="edit",
-            submit_url=request.app.url_path_for("instance_edit", instance_id=instance.id),
+            submit_url=request.app.url_path_for(
+                "instance_edit", instance_id=instance.id
+            ),
             instance=instance,
             form_data=form_data,
             error_message=error_message,
@@ -580,6 +594,7 @@ async def graph_create_page(request: Request) -> HTMLResponse:
         submit_url=request.app.url_path_for("graph_create"),
         graph=None,
         instances=instances,
+        graphs=await admin_store.list_graphs(),
         form_data={},
     )
 
@@ -643,7 +658,9 @@ async def graph_create(
     return redirect_with_message(request, "home", success="Graph created.")
 
 
-@router.get("/graphs/{graph_id}/edit", response_class=HTMLResponse, name="graph_edit_page")
+@router.get(
+    "/graphs/{graph_id}/edit", response_class=HTMLResponse, name="graph_edit_page"
+)
 async def graph_edit_page(request: Request, graph_id: str) -> HTMLResponse:
     """Render the edit-graph form."""
     admin_store = get_admin_store(request)
@@ -665,6 +682,7 @@ async def graph_edit_page(request: Request, graph_id: str) -> HTMLResponse:
         submit_url=request.app.url_path_for("graph_edit", graph_id=graph.id),
         graph=graph,
         instances=await admin_store.list_instances(),
+        graphs=await admin_store.list_graphs(),
         form_data={
             "display_name": graph.display_name,
         },
@@ -752,5 +770,7 @@ def _validate_graph_form(
     if not form_data["table_prefix"]:
         return "Table prefix is required."
     if not TABLE_PREFIX_PATTERN.match(form_data["table_prefix"]):
-        return "Table prefix must contain only letters, numbers, underscores, or hyphens."
+        return (
+            "Table prefix must contain only letters, numbers, underscores, or hyphens."
+        )
     return None

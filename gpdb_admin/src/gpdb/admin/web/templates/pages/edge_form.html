@@ -92,4 +92,10 @@
 {% block scripts %}
 <script src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/jedison.umd.js') }}"></script>
 <script src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/jedison-form.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  {% if error_message %}window.showInfoStrap && showInfoStrap('{{ error_message }}', 'error');{% endif %}
+  {% if success_message %}window.showInfoStrap && showInfoStrap('{{ success_message }}', 'success');{% endif %}
+});
+</script>
 {% endblock %}

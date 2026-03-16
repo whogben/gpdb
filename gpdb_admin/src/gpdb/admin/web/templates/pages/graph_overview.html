@@ -1,47 +1,55 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="hero">
-  <div class="hero-copy">
-    <p class="eyebrow">Graph Overview</p>
-    <h1>{{ overview.graph.display_name }}</h1>
-    <p class="hero-text">
-      Managed on <strong>{{ overview.instance.display_name }}</strong> with table prefix
-      <strong>{{ overview.graph.table_prefix_label }}</strong>.
-    </p>
+<section class="dashboard-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Graph Overview</p>
+      <h2>{{ overview.graph.display_name }}</h2>
+    </div>
     <div class="button-row">
-      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('home') }}">Back to dashboard</a>
-      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_list_page', graph_id=overview.graph.id) }}">Schemas</a>
-      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_list_page', graph_id=overview.graph.id) }}">Nodes</a>
-      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_edge_list_page', graph_id=overview.graph.id) }}">Edges</a>
-      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_viewer_page', graph_id=overview.graph.id) }}">Viewer</a>
+      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('home') }}">Back to
+        dashboard</a>
+      <a class="button button-secondary"
+        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_list_page', graph_id=overview.graph.id) }}">Schemas</a>
+      <a class="button button-secondary"
+        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_list_page', graph_id=overview.graph.id) }}">Nodes</a>
+      <a class="button button-secondary"
+        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_edge_list_page', graph_id=overview.graph.id) }}">Edges</a>
+      <a class="button button-secondary"
+        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_viewer_page', graph_id=overview.graph.id) }}">Viewer</a>
       {% if current_user.is_owner %}
-      <a class="button" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_edit_page', graph_id=overview.graph.id) }}">Edit graph</a>
+      <a class="button"
+        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_edit_page', graph_id=overview.graph.id) }}">Edit
+        graph</a>
       {% endif %}
     </div>
   </div>
 
-  <div class="hero-panel">
-    <h2>Summary</h2>
-    <ul class="feature-list">
-      {% if overview.summary.schema_count is not none %}
-      <li>{{ overview.summary.schema_count }} registered schema{{ "" if overview.summary.schema_count == 1 else "s" }}.</li>
-      {% else %}
-      <li>Registered schema count unavailable.</li>
-      {% endif %}
-      {% if overview.summary.node_count is not none %}
-      <li>{{ overview.summary.node_count }} node{{ "" if overview.summary.node_count == 1 else "s" }}.</li>
-      {% else %}
-      <li>Node count unavailable.</li>
-      {% endif %}
-      {% if overview.summary.edge_count is not none %}
-      <li>{{ overview.summary.edge_count }} edge{{ "" if overview.summary.edge_count == 1 else "s" }}.</li>
-      {% else %}
-      <li>Edge count unavailable.</li>
-      {% endif %}
-      <li>Graph status: {{ overview.graph.status }}.</li>
-    </ul>
-  </div>
+  <p class="resource-note">
+    Managed on <strong>{{ overview.instance.display_name }}</strong> with table prefix
+    <strong>{{ overview.graph.table_prefix_label }}</strong>.
+  </p>
+
+  <ul class="feature-list">
+    {% if overview.summary.schema_count is not none %}
+    <li>{{ overview.summary.schema_count }} registered schema{{ "" if overview.summary.schema_count == 1 else "s" }}.
+    </li>
+    {% else %}
+    <li>Registered schema count unavailable.</li>
+    {% endif %}
+    {% if overview.summary.node_count is not none %}
+    <li>{{ overview.summary.node_count }} node{{ "" if overview.summary.node_count == 1 else "s" }}.</li>
+    {% else %}
+    <li>Node count unavailable.</li>
+    {% endif %}
+    {% if overview.summary.edge_count is not none %}
+    <li>{{ overview.summary.edge_count }} edge{{ "" if overview.summary.edge_count == 1 else "s" }}.</li>
+    {% else %}
+    <li>Edge count unavailable.</li>
+    {% endif %}
+    <li>Graph status: {{ overview.graph.status }}.</li>
+  </ul>
 </section>
 
 {% if overview.content_error %}
@@ -123,4 +131,18 @@
     </article>
   </div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Show info strap on page load if error/success query params exist
+  const urlParams = new URLSearchParams(window.location.search);
+  const error = urlParams.get('error');
+  const success = urlParams.get('success');
+  if (error) {
+    showInfoStrap(error, 'error');
+  } else if (success) {
+    showInfoStrap(success, 'success');
+  }
+</script>
 {% endblock %}

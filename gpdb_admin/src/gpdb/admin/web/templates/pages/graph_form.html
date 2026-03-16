@@ -20,10 +20,8 @@
         <select name="instance_id" required>
           <option value="">Choose an instance</option>
           {% for instance in instances %}
-          <option
-            value="{{ instance.id }}"
-            {% if (form_data or {}).get('instance_id') == instance.id %}selected{% endif %}
-          >
+          <option value="{{ instance.id }}" {% if (form_data or {}).get('instance_id')==instance.id %}selected{% endif
+            %}>
             {{ instance.display_name }} ({{ instance.slug }})
           </option>
           {% endfor %}
@@ -50,10 +48,20 @@
       </label>
 
       <div class="button-row">
-        <button class="button" type="submit">{% if mode == "create" %}Create graph{% else %}Save changes{% endif %}</button>
+        <button class="button" type="submit">{% if mode == "create" %}Create graph{% else %}Save changes{% endif
+          %}</button>
         <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('home') }}">Back</a>
       </div>
     </form>
   </div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    {% if error_message %} window.showInfoStrap && showInfoStrap('{{ error_message }}', 'error'); {% endif %}
+    {% if success_message %} window.showInfoStrap && showInfoStrap('{{ success_message }}', 'success'); {% endif %}
+  });
+</script>
 {% endblock %}

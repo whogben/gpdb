@@ -1,0 +1,16 @@
+<div class="profile-menu-content" data-profile-menu-content>
+    <div class="profile-header" data-profile-header>
+        <span class="profile-icon">👤</span>
+        <span class="profile-username">{{ current_user.username if current_user else 'Guest' }}</span>
+    </div>
+    <nav class="profile-nav" data-profile-nav>
+        <a class="profile-link" href="{{ mount_prefix }}{{ web_app.url_path_for('api_keys_page') }}"
+            data-profile-link="api-keys">
+            🔑 API Keys
+        </a>
+        <a class="profile-link profile-link--danger" href="{{ mount_prefix }}{{ web_app.url_path_for('logout') }}"
+            data-profile-link="logout">
+            🚪 Sign Out
+        </a>
+    </nav>
+</div>

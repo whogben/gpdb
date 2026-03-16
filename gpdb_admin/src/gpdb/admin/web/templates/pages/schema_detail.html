@@ -1,20 +1,19 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="hero">
-  <div class="hero-copy">
-    <p class="eyebrow">Schema Detail</p>
-    <h1>{{ schema_detail.schema.name }}</h1>
-    <p class="hero-text">
-      {{ schema_detail.schema.kind | capitalize }} schema version {{ schema_detail.schema.version }}
-      on <strong>{{ schema_detail.graph.display_name }}</strong>. Usage counts below show
-      where this schema is currently attached in graph content.
-    </p>
+<section class="dashboard-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Schema Detail</p>
+      <h1>{{ schema_detail.schema.name }}</h1>
+    </div>
     <div class="button-row">
       <a class="button button-secondary"
-        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_list_page', graph_id=schema_detail.graph.id) }}">Back to schemas</a>
+        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_list_page', graph_id=schema_detail.graph.id) }}">Back
+        to schemas</a>
       <a class="button button-secondary"
-        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_overview_page', graph_id=schema_detail.graph.id) }}">Graph overview</a>
+        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_overview_page', graph_id=schema_detail.graph.id) }}">Graph
+        overview</a>
       {% if current_user.is_owner %}
       <a class="button"
         href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_edit_page', graph_id=schema_detail.graph.id, schema_name=schema_detail.schema.name) }}">Edit
@@ -23,17 +22,40 @@
     </div>
   </div>
 
-  <div class="hero-panel">
-    <h2>Usage</h2>
-    <ul class="feature-list">
-      <li>Kind: {{ schema_detail.schema.kind }}.</li>
-      <li>{{ schema_detail.schema.usage.node_count }} node{{ "" if schema_detail.schema.usage.node_count == 1 else "s"
-        }} reference this schema.</li>
-      <li>{{ schema_detail.schema.usage.edge_count }} edge{{ "" if schema_detail.schema.usage.edge_count == 1 else "s"
-        }} reference this schema.</li>
-      <li>Instance: {{ schema_detail.instance.display_name }}.</li>
-      <li>Prefix: {{ schema_detail.graph.table_prefix_label }}.</li>
-    </ul>
+  <div class="card-grid">
+    <article class="resource-card">
+      <div class="resource-header">
+        <div>
+          <h3>Usage</h3>
+          <p class="resource-subtitle">{{ schema_detail.schema.kind | capitalize }} schema version {{
+            schema_detail.schema.version }} on <strong>{{ schema_detail.graph.display_name }}</strong></p>
+        </div>
+      </div>
+      <dl class="resource-meta">
+        <div>
+          <dt>Kind</dt>
+          <dd>{{ schema_detail.schema.kind }}</dd>
+        </div>
+        <div>
+          <dt>Nodes</dt>
+          <dd>{{ schema_detail.schema.usage.node_count }} node{{ "" if schema_detail.schema.usage.node_count == 1 else
+            "s" }}</dd>
+        </div>
+        <div>
+          <dt>Edges</dt>
+          <dd>{{ schema_detail.schema.usage.edge_count }} edge{{ "" if schema_detail.schema.usage.edge_count == 1 else
+            "s" }}</dd>
+        </div>
+        <div>
+          <dt>Instance</dt>
+          <dd>{{ schema_detail.instance.display_name }}</dd>
+        </div>
+        <div>
+          <dt>Prefix</dt>
+          <dd>{{ schema_detail.graph.table_prefix_label }}</dd>
+        </div>
+      </dl>
+    </article>
   </div>
 </section>
 
@@ -114,6 +136,12 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    {% if error_message %} window.showInfoStrap && showInfoStrap('{{ error_message }}', 'error'); {% endif %}
+    {% if success_message %} window.showInfoStrap && showInfoStrap('{{ success_message }}', 'success'); {% endif %}
+  });
+</script>
 {% if schema_json %}
 <script src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/jsonjoy-builder.bundle.js') }}"></script>
 <script src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/jsonjoy-wrapper.js') }}"></script>
@@ -122,7 +150,8 @@
     const VIEWER_ID = 'jsonjoy-viewer-mount';
 
     // Schema is passed via template variable
-    const schema = {{ schema_json | safe }};
+    const schema = {{ schema_json | safe
+  }};
 
   // Mount read-only viewer
   window.JsonJoyEditor.mount(VIEWER_ID, schema, {
@@ -133,7 +162,7 @@
   window.addEventListener('beforeunload', function () {
     window.JsonJoyEditor.destroy(VIEWER_ID);
   });
-}) ();
+  }) ();
 </script>
 {% endif %}
 {% endblock %}

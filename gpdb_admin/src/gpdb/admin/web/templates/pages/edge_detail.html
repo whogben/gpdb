@@ -1,14 +1,12 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="hero">
-  <div class="hero-copy">
-    <p class="eyebrow">Edge Detail</p>
-    <h1>{{ edge_detail.edge.type }}</h1>
-    <p class="hero-text">
-      Relationship <strong>{{ edge_detail.edge.id }}</strong> on
-      <strong>{{ edge_detail.graph.display_name }}</strong>.
-    </p>
+<section class="dashboard-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Edge Detail</p>
+      <h2>{{ edge_detail.edge.type }}</h2>
+    </div>
     <div class="button-row">
       <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_edge_list_page', graph_id=edge_detail.graph.id) }}">Back to edges</a>
       <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_overview_page', graph_id=edge_detail.graph.id) }}">Graph overview</a>
@@ -16,25 +14,6 @@
       <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_edge_edit_page', graph_id=edge_detail.graph.id, edge_id=edge_detail.edge.id) }}">Edit edge</a>
       <a class="button" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_edge_create_page', graph_id=edge_detail.graph.id) }}">Create edge</a>
       {% endif %}
-    </div>
-  </div>
-
-  <div class="hero-panel">
-    <h2>Summary</h2>
-    <ul class="feature-list">
-      <li>Schema: {{ edge_detail.edge.schema_name or "none" }}.</li>
-      <li>Source: {{ edge_detail.edge.source_id }}.</li>
-      <li>Target: {{ edge_detail.edge.target_id }}.</li>
-      <li>Tags: {{ edge_detail.edge.tags | length }}.</li>
-    </ul>
-  </div>
-</section>
-
-<section class="dashboard-section">
-  <div class="section-heading">
-    <div>
-      <p class="eyebrow">Record</p>
-      <h2>Metadata</h2>
     </div>
   </div>
 
@@ -152,5 +131,9 @@
     }
   });
 })();
+document.addEventListener('DOMContentLoaded', function() {
+  {% if error_message %}window.showInfoStrap && showInfoStrap('{{ error_message }}', 'error');{% endif %}
+  {% if success_message %}window.showInfoStrap && showInfoStrap('{{ success_message }}', 'success');{% endif %}
+});
 </script>
 {% endblock %}

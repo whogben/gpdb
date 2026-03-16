@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from gpdb.admin.graph_content import GraphContentError
 from gpdb.admin.web.routes.common import (
+    get_admin_store,
     redirect_with_message,
     render,
     require_authenticated_user,
@@ -17,7 +18,9 @@ from gpdb.admin.web.routes.common import (
 router = APIRouter()
 
 
-@router.get("/graphs/{graph_id}", response_class=HTMLResponse, name="graph_overview_page")
+@router.get(
+    "/graphs/{graph_id}", response_class=HTMLResponse, name="graph_overview_page"
+)
 async def graph_overview_page(request: Request, graph_id: str) -> HTMLResponse:
     """Render the first graph-content overview page for one managed graph."""
     current_user = await require_authenticated_user(request)
@@ -43,4 +46,6 @@ async def graph_overview_page(request: Request, graph_id: str) -> HTMLResponse:
         page_title=payload["graph"]["display_name"],
         current_user=current_user,
         overview=payload,
+        current_graph=payload["graph"],
+        graphs=await get_admin_store(request).list_graphs(),
     )

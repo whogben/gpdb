@@ -78,6 +78,12 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    {% if error_message %} window.showInfoStrap && showInfoStrap('{{ error_message }}', 'error'); {% endif %}
+    {% if success_message %} window.showInfoStrap && showInfoStrap('{{ success_message }}', 'success'); {% endif %}
+  });
+</script>
 <script src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/jsonjoy-builder.bundle.js') }}"></script>
 <script src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/jsonjoy-wrapper.js') }}"></script>
 <script>

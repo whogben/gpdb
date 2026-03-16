@@ -1,40 +1,10 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="hero">
-  <div class="hero-copy">
-    <p class="eyebrow">Graphs</p>
-    <h1>All graphs across all managed instances.</h1>
-    <p class="hero-text">
-      Signed in as <strong>{{ current_user.display_name }}</strong>.
-    </p>
-  </div>
-
-  <div class="hero-panel">
-    <h2>Quick actions</h2>
-    <div class="button-row">
-      {% if current_user.is_owner %}
-      <a class="button" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_create_page') }}">Add graph</a>
-      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('instance_create_page') }}">Add instance</a>
-      {% endif %}
-      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('api_keys_page') }}">Manage API keys</a>
-      <a class="button button-secondary" href="{{ api_docs_url }}">API docs</a>
-      <form action="{{ mount_prefix }}{{ web_app.url_path_for('logout') }}" method="post">
-        <button class="button button-secondary" type="submit">Sign out</button>
-      </form>
-    </div>
-    <ul class="feature-list">
-      <li>{{ graphs|length }} graph{{ "" if graphs|length == 1 else "s" }} visible.</li>
-      <li>{{ instances|length }} managed instance{{ "" if instances|length == 1 else "s" }} registered.</li>
-      <li>{{ api_keys|length }} API key{{ "" if api_keys|length == 1 else "s" }} for your account.</li>
-    </ul>
-  </div>
-</section>
-
 <section class="dashboard-section">
   <div class="section-heading">
     <div>
-      <p class="eyebrow">Unified View</p>
+      <p class="eyebrow">Dashboard</p>
       <h2>Graphs</h2>
     </div>
     {% if current_user.is_owner %}
@@ -149,7 +119,8 @@
         <a class="button button-secondary"
           href="{{ mount_prefix }}{{ web_app.url_path_for('instance_edit_page', instance_id=instance.id) }}">Edit</a>
         {% if not instance.is_builtin %}
-        <form action="{{ mount_prefix }}{{ web_app.url_path_for('instance_delete', instance_id=instance.id) }}" method="post">
+        <form action="{{ mount_prefix }}{{ web_app.url_path_for('instance_delete', instance_id=instance.id) }}"
+          method="post">
           <button class="button button-danger" type="submit">Delete</button>
         </form>
         {% endif %}
@@ -159,4 +130,18 @@
     {% endfor %}
   </div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Show info strap on page load if error/success query params exist
+  const urlParams = new URLSearchParams(window.location.search);
+  const error = urlParams.get('error');
+  const success = urlParams.get('success');
+  if (error) {
+    showInfoStrap(error, 'error');
+  } else if (success) {
+    showInfoStrap(success, 'success');
+  }
+</script>
 {% endblock %}

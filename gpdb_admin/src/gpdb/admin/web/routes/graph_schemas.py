@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from gpdb.admin.graph_content import GraphContentError
 from gpdb.admin.web.routes.common import (
+    get_admin_store,
     redirect_with_message,
     render,
     require_authenticated_user,
@@ -31,7 +32,11 @@ DEFAULT_SCHEMA_JSON = json.dumps(
 )
 
 
-@router.get("/graphs/{graph_id}/schemas", response_class=HTMLResponse, name="graph_schema_list_page")
+@router.get(
+    "/graphs/{graph_id}/schemas",
+    response_class=HTMLResponse,
+    name="graph_schema_list_page",
+)
 async def graph_schema_list_page(request: Request, graph_id: str) -> HTMLResponse:
     """Render the schema registry page for one managed graph."""
     current_user = await require_authenticated_user(request)
@@ -52,6 +57,8 @@ async def graph_schema_list_page(request: Request, graph_id: str) -> HTMLRespons
         page_title=f"{schema_list.graph['display_name']} Schemas",
         current_user=current_user,
         schema_list=schema_list.model_dump(mode="json"),
+        current_graph=schema_list.graph,
+        graphs=await get_admin_store(request).list_graphs(),
         error_message=request.query_params.get("error"),
         success_message=request.query_params.get("success"),
     )
@@ -271,7 +278,11 @@ async def graph_schema_detail_page(
         page_title=f"{payload['schema']['name']} Schema",
         current_user=current_user,
         schema_detail=payload,
-        schema_json=json.dumps(payload["schema"]["json_schema"], indent=2, sort_keys=True),
+        current_graph=payload["graph"],
+        schema_json=json.dumps(
+            payload["schema"]["json_schema"], indent=2, sort_keys=True
+        ),
+        graphs=await get_admin_store(request).list_graphs(),
         error_message=request.query_params.get("error"),
         success_message=request.query_params.get("success"),
     )
@@ -353,6 +364,7 @@ async def _render_graph_schema_form(
         page_title="Edit Schema" if is_edit else "Create Schema",
         current_user=current_user,
         overview=overview_payload,
+        current_graph=overview_payload["graph"],
         schema_detail=schema_detail,
         form_data=form_data,
         is_edit=is_edit,
@@ -365,6 +377,7 @@ async def _render_graph_schema_form(
             if is_edit
             else request.app.url_path_for("graph_schema_create", graph_id=graph_id)
         ),
+        graphs=await get_admin_store(request).list_graphs(),
         error_message=error_message,
     )
 

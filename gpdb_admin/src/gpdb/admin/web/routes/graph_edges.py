@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from gpdb.admin.graph_content import GraphContentError
 from gpdb.admin.web.routes.common import (
+    get_admin_store,
     redirect_with_message,
     render,
     require_authenticated_user,
@@ -34,7 +35,9 @@ EDGE_SORT_OPTIONS = (
 )
 
 
-@router.get("/graphs/{graph_id}/edges", response_class=HTMLResponse, name="graph_edge_list_page")
+@router.get(
+    "/graphs/{graph_id}/edges", response_class=HTMLResponse, name="graph_edge_list_page"
+)
 async def graph_edge_list_page(request: Request, graph_id: str) -> HTMLResponse:
     """Render the edge list page for one managed graph."""
     current_user = await require_authenticated_user(request)
@@ -99,11 +102,15 @@ async def graph_edge_list_page(request: Request, graph_id: str) -> HTMLResponse:
         page_title=f"{payload['graph']['display_name']} Edges",
         current_user=current_user,
         edge_list=payload,
+        current_graph=payload["graph"],
         filter_form=filter_form,
         sort_options=EDGE_SORT_OPTIONS,
         previous_url=previous_url,
         next_url=next_url,
-        clear_filters_url=request.app.url_path_for("graph_edge_list_page", graph_id=graph_id),
+        clear_filters_url=request.app.url_path_for(
+            "graph_edge_list_page", graph_id=graph_id
+        ),
+        graphs=await get_admin_store(request).list_graphs(),
         error_message=request.query_params.get("error"),
         success_message=request.query_params.get("success"),
     )
@@ -359,8 +366,10 @@ async def graph_edge_detail_page(
         page_title=f"{payload['edge']['type']} Edge",
         current_user=current_user,
         edge_detail=payload,
+        current_graph=payload["graph"],
         schema_json=schema_json,
         edge_json=json.dumps(payload["edge"]["data"], indent=2, sort_keys=True),
+        graphs=await get_admin_store(request).list_graphs(),
         error_message=request.query_params.get("error"),
         success_message=request.query_params.get("success"),
     )
@@ -446,6 +455,7 @@ async def _render_graph_edge_form(
         page_title="Edit Edge" if is_edit else "Create Edge",
         current_user=current_user,
         overview=overview_payload,
+        current_graph=overview_payload["graph"],
         edge_detail=edge_detail,
         form_data=form_data,
         schema_names=[item.name for item in schema_list.items],
@@ -464,6 +474,7 @@ async def _render_graph_edge_form(
             if is_edit
             else request.app.url_path_for("graph_edge_create", graph_id=graph_id)
         ),
+        graphs=await get_admin_store(request).list_graphs(),
         error_message=error_message,
     )
 
@@ -483,5 +494,3 @@ def _parse_edge_data_text(json_text: str) -> dict[str, object]:
 
 def _parse_tags_text(tags_text: str) -> list[str]:
     return [item.strip() for item in tags_text.split(",") if item.strip()]
-
-

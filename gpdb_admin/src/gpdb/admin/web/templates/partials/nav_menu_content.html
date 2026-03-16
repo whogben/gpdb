@@ -1,0 +1,42 @@
+<div class="nav-menu-content" data-nav-menu-content>
+    {% include 'partials/graph_selector.html' %}
+
+    {# Determine an active graph for navigation links. #}
+    {% if graphs is defined and graphs and graphs|length > 0 %}
+    {% set active_graph = (
+        current_graph
+        if current_graph is defined and current_graph
+        else graphs[0]
+    ) %}
+
+    <div class="nav-section" data-nav-section="graph-navigation">
+        <label class="nav-label">Navigation</label>
+        <a class="nav-link"
+            href="{{ mount_prefix }}{{ web_app.url_path_for('graph_viewer_page', graph_id=active_graph.id) }}"
+            data-nav-link="viewer">
+            📊 Viewer
+        </a>
+        <a class="nav-link"
+            href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_list_page', graph_id=active_graph.id) }}"
+            data-nav-link="nodes">
+            🔵 Nodes
+        </a>
+        <a class="nav-link"
+            href="{{ mount_prefix }}{{ web_app.url_path_for('graph_edge_list_page', graph_id=active_graph.id) }}"
+            data-nav-link="edges">
+            ➡️ Edges
+        </a>
+        <a class="nav-link"
+            href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_list_page', graph_id=active_graph.id) }}"
+            data-nav-link="schemas">
+            📋 Schemas
+        </a>
+    </div>
+    {% endif %}
+    <div class="nav-section" data-nav-section="system">
+        <label class="nav-label">System</label>
+        <a class="nav-link" href="{{ mount_prefix }}{{ web_app.url_path_for('home') }}" data-nav-link="dashboard">
+            🏠 Dashboard
+        </a>
+    </div>
+</div>

@@ -1,14 +1,12 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="hero">
-  <div class="hero-copy">
-    <p class="eyebrow">Node Detail</p>
-    <h1>{{ node_detail.node.name or node_detail.node.id }}</h1>
-    <p class="hero-text">
-      Type <strong>{{ node_detail.node.type }}</strong> on
-      <strong>{{ node_detail.graph.display_name }}</strong>.
-    </p>
+<section class="dashboard-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Node Detail</p>
+      <h1>{{ node_detail.node.name or node_detail.node.id }}</h1>
+    </div>
     <div class="button-row">
       <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_list_page', graph_id=node_detail.graph.id) }}">Back to nodes</a>
       <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_overview_page', graph_id=node_detail.graph.id) }}">Graph overview</a>
@@ -19,14 +17,33 @@
     </div>
   </div>
 
-  <div class="hero-panel">
-    <h2>Summary</h2>
-    <ul class="feature-list">
-      <li>Schema: {{ node_detail.node.schema_name or "none" }}.</li>
-      <li>Parent: {{ node_detail.node.parent_id or "none" }}.</li>
-      <li>Payload size: {{ node_detail.node.payload_size }} bytes.</li>
-      <li>Tags: {{ node_detail.node.tags | length }}.</li>
-    </ul>
+  <div class="card-grid">
+    <article class="resource-card">
+      <div class="resource-header">
+        <div>
+          <h3>Summary</h3>
+          <p class="resource-subtitle">Type <strong>{{ node_detail.node.type }}</strong> on <strong>{{ node_detail.graph.display_name }}</strong></p>
+        </div>
+      </div>
+      <dl class="resource-meta">
+        <div>
+          <dt>Schema</dt>
+          <dd>{{ node_detail.node.schema_name or "none" }}</dd>
+        </div>
+        <div>
+          <dt>Parent</dt>
+          <dd>{{ node_detail.node.parent_id or "none" }}</dd>
+        </div>
+        <div>
+          <dt>Payload size</dt>
+          <dd>{{ node_detail.node.payload_size }} bytes</dd>
+        </div>
+        <div>
+          <dt>Tags</dt>
+          <dd>{{ node_detail.node.tags | length }}</dd>
+        </div>
+      </dl>
+    </article>
   </div>
 </section>
 
@@ -205,6 +222,12 @@
 <script src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/jedison.umd.js') }}"></script>
 <script src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/jedison-form.js') }}"></script>
 {% endif %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  {% if error_message %}window.showInfoStrap && showInfoStrap('{{ error_message }}', 'error');{% endif %}
+  {% if success_message %}window.showInfoStrap && showInfoStrap('{{ success_message }}', 'success');{% endif %}
+});
+</script>
 <script>
 (function () {
   var toggle = document.getElementById("node-data-view-toggle");

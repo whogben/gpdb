@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from gpdb.admin.graph_content import GraphContentError
 from gpdb.admin.web.routes.common import (
+    get_admin_store,
     redirect_with_message,
     render,
     require_authenticated_user,
@@ -104,9 +105,11 @@ async def graph_viewer_page(request: Request, graph_id: str) -> HTMLResponse:
         page_title=f"{overview_payload['graph']['display_name']} Viewer",
         current_user=current_user,
         overview=overview_payload,
+        current_graph=overview_payload["graph"],
         graph_id=graph_id,
         filter_params=filter_params,
         filter_summary=filter_summary,
+        graphs=await get_admin_store(request).list_graphs(),
         error_message=request.query_params.get("error"),
         success_message=request.query_params.get("success"),
     )

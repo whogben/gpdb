@@ -33,6 +33,47 @@ Admin Web App:
 - Put server-rendered page routes in `web/routes`, shared templates in `web/templates`, and static assets in `web/static`.
 - Keep `toolaccess` tool endpoints under `/api` and use the mounted web app for browser pages at `/`.
 
+Admin Web UI System & Principles:
+- Browser support & responsiveness:
+  - All UI must remain usable on current Chrome, Safari, and Firefox on both desktop and mobile.
+  - Pages must be fully usable in a vertical, portrait mobile browser; never rely on hover-only affordances.
+- Visual style:
+  - Favor a clean, minimal aesthetic with only as much visual complexity as needed to convey hierarchy and affordances.
+  - Icons can stand alone where clear; avoid redundant button labels.
+  - If explanatory text is longer than a short sentence, hide it behind an info affordance (e.g. “i” button → modal/popover) instead of inlining paragraphs in the layout.
+- Space efficiency:
+  - Default layouts should maximize space for core content and data, keeping shared chrome (titlebar, nav, profile, filters) as compact as possible.
+  - Prefer collapsible panels, drawers, or modals for filters and optional controls so they are not always occupying vertical space.
+  - Use borders and padding sparingly; prioritize information density over “breathing room” when the two conflict.
+- Reusable component system:
+  - Implement common UI patterns as shared templates/partials and CSS/JS components (not one-off copies per page).
+  - Changes to global elements (titlebar, navigation menu, profile menu, information strap, etc.) should be done in a single place and reused across pages.
+- Common shell elements:
+  - Titlebar:
+    - Minimal bar at the top of the screen with a left nav toggle, a center title (default “gpdb”), and a right profile toggle.
+    - Keep height small; it should feel like an app chrome band, not a “hero” header.
+  - Navigation menu:
+    - Left-side sliding menu providing global navigation: graph selector plus graph-scoped pages (viewer, nodes, edges, schemas) and instances.
+    - The selected graph should persist across page reloads; graph selection is treated as navigation.
+    - On wide viewports, the nav can remain open as a persistent sidebar; on narrow/mobile it behaves like an overlay drawer that covers content and dismisses when navigating or tapping outside.
+  - Profile menu:
+    - Right-side sliding menu with user-specific actions: username display, API keys, sign out, and any other account-level items.
+    - Same overlay/dismiss behaviors as the nav menu (tap background or navigate to close).
+  - Information strap:
+    - A narrow notification “strap” appears just under the titlebar for ephemeral success/error feedback and brief status messages.
+    - Success and error states use distinct color treatments (e.g. green vs. red) and can be dismissed via an explicit close control or by navigating away.
+    - The strap pushes page content downward when shown rather than overlaying it; multiple messages may stack with newest last.
+- Behaviors & motion:
+  - Modals, nav, and profile drawers:
+    - Content area is opaque; the scrim/overlay uses a translucent background to maintain context of what’s underneath.
+    - Tapping/clicking the scrim dismisses the element unless the specific flow must be modal-only.
+  - Animation:
+    - Use short, subtle animations only when they help users understand spatial relationships (e.g. nav sliding in from the left, straps sliding down from under the titlebar, modals fading in/out).
+    - Avoid decorative or slow animations that distract from primary workflows.
+- Theming:
+  - Maintain first-class light and dark theme support; respect the user’s OS/device theme preference by default.
+  - Any new components should inherit from the shared CSS variables and theme tokens used by the existing shell.
+
 Admin Config:
 - Keep file-backed admin config in `gpdb_admin/src/gpdb/admin/config.py`; resolve data dir from CLI `--data-dir`/`-d`, then `GPDB_DATA_DIR`, then the default user data dir. Config file is always `{data_dir}/admin.toml`.
 - Use `ResolvedConfig` for runtime values and `ConfigStore` for file reads/writes; only persist file-backed values, not env or CLI overrides.

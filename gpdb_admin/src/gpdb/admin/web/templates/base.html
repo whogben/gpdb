@@ -12,16 +12,46 @@
     href="{{ mount_prefix }}{{ web_app.url_path_for('static', path='css/jsonjoy-theme-fix.css') }}">
   {% block head_extra %}{% endblock %}
   <script src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/theme.js') }}"></script>
+  <script src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/ui.js') }}"></script>
 </head>
 
 <body>
-  <div class="site-shell">
-    <header class="site-header">
-      <a class="site-brand" href="{{ mount_prefix }}{{ web_app.url_path_for('home') }}">GPDB Admin</a>
-      <p class="site-tagline">Generic admin shell for future graphs, tools, and workflows.</p>
+  <div class="app-shell">
+    <!-- Titlebar -->
+    <header class="titlebar" data-titlebar>
+      {% block titlebar_left %}
+      <button class="titlebar-btn titlebar-btn--left" data-nav-toggle aria-label="Toggle navigation">
+        ☰
+      </button>
+      {% endblock %}
+      <h1 class="titlebar-title">gpdb</h1>
+      {% block titlebar_right %}
+      <button class="titlebar-btn titlebar-btn--right" data-profile-toggle aria-label="Toggle profile menu">
+        👤
+      </button>
+      {% endblock %}
     </header>
 
-    <main class="site-main">
+    <!-- Navigation Menu -->
+    <nav class="nav-menu" data-nav-menu>
+      {% include 'partials/nav_menu_content.html' %}
+    </nav>
+    <button class="nav-overlay" data-nav-overlay aria-label="Close navigation"></button>
+
+    <!-- Profile Menu -->
+    <aside class="profile-menu" data-profile-menu>
+      {% include 'partials/profile_menu_content.html' %}
+    </aside>
+    <button class="profile-overlay" data-profile-overlay aria-label="Close profile menu"></button>
+
+    <!-- Information Strap -->
+    <div class="info-strap" data-info-strap hidden>
+      <div class="info-strap-content" data-info-strap-content></div>
+      <button class="info-strap-close" data-info-strap-close aria-label="Close notification">✕</button>
+    </div>
+
+    <!-- Main Content -->
+    <main class="main-content">
       {% block page_messages %}
       {% if error_message %}<p class="form-error">{{ error_message }}</p>{% endif %}
       {% if success_message %}<p class="form-success">{{ success_message }}</p>{% endif %}

@@ -1,0 +1,29 @@
+{% if graphs is defined %}
+<div class="nav-section" data-graph-selector-section>
+    <label class="nav-label">Graph</label>
+    {% set selected_graph_id = (
+        current_graph.id
+        if current_graph is defined and current_graph
+        else (graphs[0].id if graphs and graphs|length > 0 else None)
+    ) %}
+    <div class="nav-graph-row">
+        <select class="nav-graph-select" data-graph-select>
+            {% if graphs %}
+            {% for graph in graphs %}
+            <option value="{{ graph.id }}" {% if selected_graph_id and selected_graph_id==graph.id %}selected{% endif %}>
+                {{ graph.display_name or graph.table_prefix }}
+            </option>
+            {% endfor %}
+            {% endif %}
+        </select>
+        {% if graphs and graphs|length > 0 and selected_graph_id %}
+        <a class="nav-link nav-link--settings"
+            href="{{ mount_prefix }}{{ web_app.url_path_for('graph_overview_page', graph_id=selected_graph_id) }}"
+            data-graph-settings-link
+            aria-label="Open graph settings">
+            ⚙️
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}

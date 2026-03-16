@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from gpdb.admin.graph_content import GraphContentError
 from gpdb.admin.web.routes.common import (
+    get_admin_store,
     redirect_with_message,
     render,
     require_authenticated_user,
@@ -35,7 +36,9 @@ NODE_SORT_OPTIONS = (
 )
 
 
-@router.get("/graphs/{graph_id}/nodes", response_class=HTMLResponse, name="graph_node_list_page")
+@router.get(
+    "/graphs/{graph_id}/nodes", response_class=HTMLResponse, name="graph_node_list_page"
+)
 async def graph_node_list_page(request: Request, graph_id: str) -> HTMLResponse:
     """Render the node list page for one managed graph."""
     current_user = await require_authenticated_user(request)
@@ -97,11 +100,15 @@ async def graph_node_list_page(request: Request, graph_id: str) -> HTMLResponse:
         page_title=f"{payload['graph']['display_name']} Nodes",
         current_user=current_user,
         node_list=payload,
+        current_graph=payload["graph"],
         filter_form=filter_form,
         sort_options=NODE_SORT_OPTIONS,
         previous_url=previous_url,
         next_url=next_url,
-        clear_filters_url=request.app.url_path_for("graph_node_list_page", graph_id=graph_id),
+        clear_filters_url=request.app.url_path_for(
+            "graph_node_list_page", graph_id=graph_id
+        ),
+        graphs=await get_admin_store(request).list_graphs(),
         error_message=request.query_params.get("error"),
         success_message=request.query_params.get("success"),
     )
@@ -396,8 +403,10 @@ async def graph_node_detail_page(
         page_title=f"{payload['node']['name'] or payload['node']['id']} Node",
         current_user=current_user,
         node_detail=payload,
+        current_graph=payload["graph"],
         schema_json=schema_json,
         node_json=json.dumps(payload["node"]["data"], indent=2, sort_keys=True),
+        graphs=await get_admin_store(request).list_graphs(),
         error_message=request.query_params.get("error"),
         success_message=request.query_params.get("success"),
     )
@@ -437,7 +446,9 @@ async def graph_node_delete(
     )
 
 
-@router.post("/graphs/{graph_id}/nodes/{node_id}/payload", name="graph_node_payload_upload")
+@router.post(
+    "/graphs/{graph_id}/nodes/{node_id}/payload", name="graph_node_payload_upload"
+)
 async def graph_node_payload_upload(
     request: Request,
     graph_id: str,
@@ -483,9 +494,7 @@ async def graph_node_payload_upload(
         "graph_node_detail_page",
         graph_id=graph_id,
         node_id=node_id,
-        success=(
-            f"Payload updated for node '{updated.node.name or updated.node.id}'."
-        ),
+        success=(f"Payload updated for node '{updated.node.name or updated.node.id}'."),
     )
 
 
@@ -573,6 +582,7 @@ async def _render_graph_node_form(
         page_title="Edit Node" if is_edit else "Create Node",
         current_user=current_user,
         overview=overview_payload,
+        current_graph=overview_payload["graph"],
         node_detail=node_detail,
         form_data=form_data,
         schema_names=[item.name for item in schema_list.items],
@@ -591,6 +601,7 @@ async def _render_graph_node_form(
             if is_edit
             else request.app.url_path_for("graph_node_create", graph_id=graph_id)
         ),
+        graphs=await get_admin_store(request).list_graphs(),
         error_message=error_message,
     )
 
@@ -622,5 +633,3 @@ async def _read_optional_payload_upload(
     if payload_filename is None and payload_bytes == b"":
         return None, None
     return payload_bytes, payload_filename
-
-
