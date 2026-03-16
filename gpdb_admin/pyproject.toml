@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gpdb-admin"
-version = "0.2.1"
+version = "0.3.0"
 description = "GPDB admin CLI, REST API, and MCP server (optional add-on to gpdb)"
 readme = "README.md"
 license = {text = "MIT"}
@@ -16,7 +16,7 @@ dependencies = [
     "cryptography",
     "fastmcp",
     "fastapi",
-    "gpdb==0.2.0",
+    "gpdb==0.3.0",
     "jinja2",
     "platformdirs",
     "pixeltable-pgserver>=0.1.0",

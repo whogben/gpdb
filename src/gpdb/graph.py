@@ -14,8 +14,8 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from datetime import datetime
 from enum import Enum
+import secrets
 from typing import Any, Dict, Generic, List, Literal, Optional, TypeVar, Union, cast
-from uuid import uuid4
 
 import jsonschema
 import jsonschema.exceptions
@@ -459,9 +459,59 @@ class EdgeModel(BaseModel):
 # -----------------------------------------------------------------------------
 
 
+_ID_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789"
+_ID_MAX_COLLISION_ATTEMPTS = 10
+
+
+# PostgreSQL SQLSTATE for unique_violation (covers primary key and unique constraints).
+_PG_UNIQUE_VIOLATION = "23505"
+
+
+def _is_primary_key_violation(exc: BaseException) -> bool:
+    """Return True if the exception is a primary key (id) duplicate.
+
+    Only treats PK duplicates as retryable; other unique constraint
+    violations (e.g. parent_id+name) are not. Uses pgcode/sqlstate 23505
+    plus message containing "pkey" or "primary key".
+    """
+    msg = str(getattr(exc, "orig", exc)).lower()
+    if "pkey" not in msg and "primary key" not in msg:
+        return False
+    code = getattr(exc, "pgcode", None) or getattr(exc, "sqlstate", None)
+    if code == _PG_UNIQUE_VIOLATION:
+        return True
+    orig = getattr(exc, "orig", None)
+    if orig is not None:
+        code = getattr(orig, "pgcode", None) or getattr(orig, "sqlstate", None)
+        if code == _PG_UNIQUE_VIOLATION:
+            return True
+    return False
+
+
+def _default_generate_id() -> str:
+    """
+    Default ID generator.
+
+    Generates a short, human-friendly ID in SSN-like form: 3-2-4 lowercase
+    alphanumeric segments (e.g. abc-de-fghi) for readability.
+    """
+    part1 = "".join(secrets.choice(_ID_ALPHABET) for _ in range(3))
+    part2 = "".join(secrets.choice(_ID_ALPHABET) for _ in range(2))
+    part3 = "".join(secrets.choice(_ID_ALPHABET) for _ in range(4))
+    return f"{part1}-{part2}-{part3}"
+
+
+ID_GENERATOR = _default_generate_id
+
+
 def generate_id() -> str:
-    """Default ID generator (UUID4 string)."""
-    return str(uuid4())
+    """
+    Public ID generator hook.
+
+    Downstream projects can override `ID_GENERATOR` to customize how IDs
+    are generated without changing call sites or ORM defaults.
+    """
+    return ID_GENERATOR()
 
 
 class _Base(DeclarativeBase):
@@ -1440,18 +1490,15 @@ class GPGraph:
         For updating only payload, use set_node_payload().
         """
         async with self._get_session() as session:
-            # Check if node exists (for update)
             existing = None
             if node.id:
                 existing = await session.get(self._Node, node.id)
 
-            # Preserve existing schema_name if updating and not provided
             schema_to_validate = node.schema_name
             if existing and node.schema_name is None and existing.schema_name:
                 schema_to_validate = existing.schema_name
                 node.schema_name = schema_to_validate
 
-            # Validate data against schema if schema_name is provided
             if schema_to_validate:
                 await self._validate_data(
                     schema_to_validate,
@@ -1459,16 +1506,31 @@ class GPGraph:
                     expected_kind="node",
                 )
 
-            # Convert DTO to ORM
             orm = _node_upsert_to_orm(node, existing, self._Node)
 
-            # Add or update
-            if existing is None:
-                session.add(orm)
+            if existing is not None:
+                await session.flush()
+                await session.refresh(orm)
+                return _node_orm_to_read(orm)
 
-            await session.flush()
-            await session.refresh(orm)
-            return _node_orm_to_read(orm)
+        # Create path: retry with fresh session on ID collision
+        for _ in range(_ID_MAX_COLLISION_ATTEMPTS):
+            try:
+                async with self._get_session() as session:
+                    orm = _node_upsert_to_orm(node, None, self._Node)
+                    if not orm.id:
+                        orm.id = generate_id()
+                    session.add(orm)
+                    await session.flush()
+                    await session.refresh(orm)
+                    return _node_orm_to_read(orm)
+            except Exception as e:
+                if not _is_primary_key_violation(e):
+                    raise
+        raise RuntimeError(
+            "Failed to generate unique node ID after "
+            f"{_ID_MAX_COLLISION_ATTEMPTS} attempts."
+        )
 
     async def get_node(self, id: str) -> NodeRead | None:
         """
@@ -1622,19 +1684,35 @@ class GPGraph:
             )
 
         async with self._get_session() as session:
-            # Check if edge exists (for update)
             existing = None
             if edge.id:
                 existing = await session.get(self._Edge, edge.id)
 
-            # Convert DTO to ORM
             orm = _edge_upsert_to_orm(edge, existing, self._Edge)
 
-            # Merge and flush
-            merged = await session.merge(orm)
-            await session.flush()
-            await session.refresh(merged)
-            return _edge_orm_to_read(merged)
+            if existing is not None:
+                await session.flush()
+                await session.refresh(orm)
+                return _edge_orm_to_read(orm)
+
+        # Create path: retry with fresh session on ID collision
+        for _ in range(_ID_MAX_COLLISION_ATTEMPTS):
+            try:
+                async with self._get_session() as session:
+                    orm = _edge_upsert_to_orm(edge, None, self._Edge)
+                    if not orm.id:
+                        orm.id = generate_id()
+                    session.add(orm)
+                    await session.flush()
+                    await session.refresh(orm)
+                    return _edge_orm_to_read(orm)
+            except Exception as e:
+                if not _is_primary_key_violation(e):
+                    raise
+        raise RuntimeError(
+            "Failed to generate unique edge ID after "
+            f"{_ID_MAX_COLLISION_ATTEMPTS} attempts."
+        )
 
     async def get_edge(self, id: str) -> EdgeRead | None:
         """

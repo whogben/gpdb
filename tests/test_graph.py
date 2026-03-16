@@ -1,14 +1,17 @@
 import pytest
 import pytest_asyncio
+from unittest.mock import patch
+
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.exc import StaleDataError
+
 from gpdb import (
     GPGraph,
-    NodeUpsert,
+    EdgeRead,
+    EdgeUpsert,
     NodeRead,
     NodeReadWithPayload,
-    EdgeUpsert,
-    EdgeRead,
+    NodeUpsert,
     SearchQuery,
 )
 
@@ -380,3 +383,31 @@ async def test_drop_tables_for_prefix(pg_server):
     await view_db2.drop_tables()
     await view_db2.sqla_engine.dispose()
     await view_db.sqla_engine.dispose()
+
+
+# --- ID collision retry (integration: real DB, patched ID to force collision) ---
+
+
+@pytest.mark.asyncio
+async def test_node_id_collision_retry_succeeds(db: GPGraph):
+    """When generate_id returns an existing id, set_node retries with a new id and succeeds."""
+    collide_id = "col-xx-xxxx"
+    unique_id = "uni-yy-yyyy"
+    with patch("gpdb.graph.generate_id", side_effect=[collide_id, unique_id]):
+        await db.set_node(NodeUpsert(id=collide_id, type="test", data={}))
+        created = await db.set_node(NodeUpsert(type="test", data={"x": 1}))
+    assert created.id == unique_id
+    assert (await db.get_node(unique_id)).data == {"x": 1}
+
+
+@pytest.mark.asyncio
+async def test_node_id_collision_retry_exhausted(db: GPGraph):
+    """When generate_id always returns the same existing id, set_node raises after max attempts."""
+    same_id = "same-id-always"
+    with patch("gpdb.graph.generate_id", return_value=same_id):
+        await db.set_node(NodeUpsert(id=same_id, type="test", data={}))
+        with pytest.raises(
+            RuntimeError,
+            match="Failed to generate unique node ID after 10 attempts",
+        ):
+            await db.set_node(NodeUpsert(type="test", data={"y": 1}))

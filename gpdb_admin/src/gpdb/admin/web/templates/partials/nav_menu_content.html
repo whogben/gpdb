@@ -39,4 +39,11 @@
             🏠 Dashboard
         </a>
     </div>
+
+    {% if admin_version %}
+    <div class="nav-footer">
+        <span class="nav-footer-label">gpdb-admin</span>
+        <span class="nav-footer-version">v{{ admin_version }}</span>
+    </div>
+    {% endif %}
 </div>

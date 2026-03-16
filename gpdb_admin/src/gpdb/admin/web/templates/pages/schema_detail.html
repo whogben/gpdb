@@ -27,8 +27,8 @@
       <div class="resource-header">
         <div>
           <h3>Usage</h3>
-          <p class="resource-subtitle">{{ schema_detail.schema.kind | capitalize }} schema version {{
-            schema_detail.schema.version }} on <strong>{{ schema_detail.graph.display_name }}</strong></p>
+          <p class="resource-subtitle">Kind: {{ schema_detail.schema.kind }}. Version {{ schema_detail.schema.version }} on
+            <strong>{{ schema_detail.graph.display_name }}</strong></p>
         </div>
       </div>
       <dl class="resource-meta">
@@ -55,6 +55,12 @@
           <dd>{{ schema_detail.graph.table_prefix_label }}</dd>
         </div>
       </dl>
+      {% if schema_detail.schema.usage.node_count is not none %}
+      <p class="resource-note">{{ schema_detail.schema.usage.node_count }} node{{ "" if schema_detail.schema.usage.node_count == 1 else "s" }} reference this schema.</p>
+      {% endif %}
+      {% if schema_detail.schema.usage.edge_count is not none %}
+      <p class="resource-note">{{ schema_detail.schema.usage.edge_count }} edge{{ "" if schema_detail.schema.usage.edge_count == 1 else "s" }} reference this schema.</p>
+      {% endif %}
     </article>
   </div>
 </section>

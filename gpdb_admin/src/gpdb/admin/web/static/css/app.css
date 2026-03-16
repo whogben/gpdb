@@ -99,6 +99,8 @@ a {
 
 .nav-menu-content {
   height: 100%;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
   padding: 1rem;
   border-right: 1px solid var(--border-color);
@@ -129,6 +131,24 @@ a {
 
 .nav-section:last-child {
   margin-bottom: 0;
+}
+
+.nav-footer {
+  margin-top: auto;
+  padding-top: 1rem;
+  font-size: 0.75rem;
+  color: var(--muted-text);
+  opacity: 0.6;
+}
+
+.nav-footer-label {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-right: 0.35rem;
+}
+
+.nav-footer-version {
+  font-variant-numeric: tabular-nums;
 }
 
 .nav-label {

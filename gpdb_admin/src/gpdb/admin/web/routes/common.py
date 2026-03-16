@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError, version as pkg_version
 from urllib.parse import urlencode
 
 from fastapi import HTTPException, Request, status
@@ -11,6 +12,12 @@ from gpdb.admin.auth import SESSION_COOKIE_NAME, SessionSigner
 from gpdb.admin.graph_content import GraphContentNotReadyError
 from gpdb.admin.instances import ManagedInstanceMonitor
 from gpdb.admin.store import AdminStore
+
+
+try:
+    ADMIN_VERSION = pkg_version("gpdb-admin")
+except PackageNotFoundError:
+    ADMIN_VERSION = ""
 
 
 def get_public_url(request: Request) -> str | None:
@@ -77,6 +84,8 @@ def _prefixed_url(request: Request, route_name: str, **route_params) -> str:
 
 def render(request: Request, template_name: str, **context) -> HTMLResponse:
     """Render a template with the shared template environment."""
+    if "admin_version" not in context:
+        context["admin_version"] = ADMIN_VERSION
     return request.app.state.templates.TemplateResponse(
         request=request,
         name=template_name,

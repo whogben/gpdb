@@ -6,6 +6,10 @@
     <div>
       <p class="eyebrow">Dashboard</p>
       <h2>Graphs</h2>
+      <p class="section-tagline">All graphs across all managed instances.</p>
+      {% if current_user %}
+      <p class="section-tagline">Signed in as {{ current_user.display_name }}.</p>
+      {% endif %}
     </div>
     {% if current_user.is_owner %}
     <a class="button" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_create_page') }}">Add graph</a>
