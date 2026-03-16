@@ -7,16 +7,6 @@
       <p class="eyebrow">Schemas</p>
       <h2>{{ schema_list.graph.display_name }}</h2>
     </div>
-    <div class="button-row">
-      <a class="button button-secondary"
-        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_overview_page', graph_id=schema_list.graph.id) }}">Back
-        to overview</a>
-      {% if current_user.is_owner %}
-      <a class="button"
-        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_create_page', graph_id=schema_list.graph.id) }}">New
-        schema</a>
-      {% endif %}
-    </div>
   </div>
 
   <p class="resource-note">
@@ -26,8 +16,6 @@
 
   <ul class="feature-list">
     <li>{{ schema_list.total }} registered schema{{ "" if schema_list.total == 1 else "s" }}.</li>
-    <li>Instance: {{ schema_list.instance.display_name }}.</li>
-    <li>Prefix: {{ schema_list.graph.table_prefix_label }}.</li>
     <li>Each schema is scoped to either nodes or edges.</li>
   </ul>
 </section>

@@ -11,7 +11,7 @@
     </button>
   </div>
 
-  <article class="resource-card" data-filters-panel>
+  <article class="resource-card" data-filters-panel hidden>
     <form class="auth-form" action="{{ form_action }}" method="get">
       {% if filter_kind == 'node' %}
       {% include 'partials/list_filter_fields_node.html' %}

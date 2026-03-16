@@ -7,18 +7,6 @@
       <p class="eyebrow">Edges</p>
       <h2>{{ edge_list.graph.display_name }}</h2>
     </div>
-    <div class="button-row">
-      <a class="button button-secondary"
-        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_overview_page', graph_id=edge_list.graph.id) }}">Back to
-        overview</a>
-      <a class="button button-secondary"
-        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_list_page', graph_id=edge_list.graph.id) }}">Nodes</a>
-      {% if current_user.is_owner %}
-      <a class="button"
-        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_edge_create_page', graph_id=edge_list.graph.id) }}">New
-        edge</a>
-      {% endif %}
-    </div>
   </div>
 
   <p class="resource-note">
@@ -28,8 +16,6 @@
 
   <ul class="feature-list">
     <li>{{ edge_list.total }} edge{{ "" if edge_list.total == 1 else "s" }} matched.</li>
-    <li>Instance: {{ edge_list.instance.display_name }}.</li>
-    <li>Prefix: {{ edge_list.graph.table_prefix_label }}.</li>
     <li>Showing {{ edge_list.offset + 1 if edge_list.total else 0 }}-{{ [edge_list.offset + edge_list.limit,
       edge_list.total] | min }}.</li>
   </ul>

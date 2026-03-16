@@ -7,15 +7,6 @@
       <p class="eyebrow">Graph Viewer</p>
       <h2>{{ overview.graph.display_name }}</h2>
     </div>
-    <div class="button-row">
-      <a class="button button-secondary"
-        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_overview_page', graph_id=graph_id) }}">Back to
-        overview</a>
-      <a class="button button-secondary"
-        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_list_page', graph_id=graph_id) }}">Nodes</a>
-      <a class="button button-secondary"
-        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_edge_list_page', graph_id=graph_id) }}">Edges</a>
-    </div>
   </div>
 
   <p class="resource-note">

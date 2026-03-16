@@ -8,16 +8,6 @@
       <h2>{{ node_list.graph.display_name }}</h2>
     </div>
     <div class="button-row">
-      <a class="button button-secondary"
-        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_overview_page', graph_id=node_list.graph.id) }}">Back to
-        overview</a>
-      <a class="button button-secondary"
-        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_list_page', graph_id=node_list.graph.id) }}">Schemas</a>
-      {% if current_user.is_owner %}
-      <a class="button"
-        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_create_page', graph_id=node_list.graph.id) }}">New
-        node</a>
-      {% endif %}
     </div>
   </div>
 
@@ -28,8 +18,6 @@
 
   <ul class="feature-list">
     <li>{{ node_list.total }} node{{ "" if node_list.total == 1 else "s" }} matched.</li>
-    <li>Instance: {{ node_list.instance.display_name }}.</li>
-    <li>Prefix: {{ node_list.graph.table_prefix_label }}.</li>
     <li>Showing {{ node_list.offset + 1 if node_list.total else 0 }}-{{ [node_list.offset + node_list.limit,
       node_list.total] | min }}.</li>
   </ul>
@@ -37,7 +25,28 @@
 
 {% set form_action = web_app.url_path_for('graph_node_list_page', graph_id=node_list.graph.id) %}
 {% set filter_kind = 'node' %}
-{% include 'partials/list_filter_panel.html' %}
+<section class="dashboard-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Browse</p>
+      <h2>Filters</h2>
+    </div>
+    <button class="button button-secondary" type="button" data-filters-toggle>
+      Show filters
+    </button>
+  </div>
+
+  <article class="resource-card" data-filters-panel hidden>
+    <form class="auth-form" action="{{ form_action }}" method="get">
+      {% include 'partials/list_filter_fields_node.html' %}
+      <input type="hidden" name="offset" value="0">
+      <div class="button-row">
+        <button class="button" type="submit">Apply filters</button>
+        <a class="button button-secondary" href="{{ clear_filters_url }}">Clear</a>
+      </div>
+    </form>
+  </article>
+</section>
 
 <section class="dashboard-section">
   <div class="section-heading">

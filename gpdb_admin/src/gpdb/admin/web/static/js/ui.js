@@ -54,7 +54,7 @@
     }
 
     function showInfoStrap(message, type) {
-        infoStrapContent.textContent = message;
+        infoStrapContent.textContent = decodeHtmlEntities(message);
         infoStrap.className = "info-strap";
         if (type) {
             infoStrap.classList.add("info-strap--" + type);
@@ -204,6 +204,15 @@
                 closeAllMenus();
             }
         });
+    }
+
+    function decodeHtmlEntities(value) {
+        if (value == null || value === "") {
+            return "";
+        }
+        var div = document.createElement("div");
+        div.innerHTML = value;
+        return div.textContent || div.innerText || "";
     }
 
     function init() {
