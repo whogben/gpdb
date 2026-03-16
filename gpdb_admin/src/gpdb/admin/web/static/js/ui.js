@@ -93,6 +93,18 @@
         graphSettingsLink.setAttribute("href", href);
     }
 
+    function updateNavLinks(graphId) {
+        if (!graphId) return;
+        var navLinks = document.querySelectorAll('[data-nav-link]');
+        navLinks.forEach(function (link) {
+            var href = link.getAttribute("href") || "";
+            if (href.indexOf("/graphs/") !== -1) {
+                href = href.replace(/\/graphs\/[^\/]+/, "/graphs/" + graphId);
+                link.setAttribute("href", href);
+            }
+        });
+    }
+
     function initGraphSelector() {
         if (!graphSelect) return;
 
@@ -121,6 +133,7 @@
         if (effectiveGraphId) {
             saveSelectedGraph(effectiveGraphId);
             updateGraphSettingsLink(effectiveGraphId);
+            updateNavLinks(effectiveGraphId);
         }
 
         graphSelect.addEventListener("change", function () {
@@ -130,6 +143,7 @@
             }
             saveSelectedGraph(graphId);
             updateGraphSettingsLink(graphId);
+            updateNavLinks(graphId);
 
             if (graphId) {
                 var currentPath = window.location.pathname;
