@@ -137,6 +137,33 @@ class AdminStore:
         )
         return bool(page.items)
 
+    async def get_active_owner_user(self) -> AdminUser | None:
+        """Return the single active owner user, or None if uninitialized.
+
+        Owner resolution is intended for trusted local tooling (e.g. CLI) where
+        the instance is assumed to be controlled by the owner/admin process.
+        """
+        page = await self.db.search_nodes(
+            SearchQuery(
+                filter=FilterGroup(
+                    logic=Logic.AND,
+                    filters=[
+                        Filter(field="type", value="user"),
+                        Filter(field="data.is_owner", value=True),
+                        Filter(field="data.is_active", value=True),
+                    ],
+                ),
+                limit=2,
+            )
+        )
+        if not page.items:
+            return None
+        # If multiple owners are present, treat it as a data integrity issue
+        # and fail loudly for safety (best-effort owner selection would hide it).
+        if len(page.items) > 1:
+            raise RuntimeError("Multiple active owner users exist.")
+        return _admin_user_from_node(page.items[0])
+
     async def get_user_by_username(self, username: str) -> AdminUser | None:
         """Return a user by username if present."""
         page = await self.db.search_nodes(

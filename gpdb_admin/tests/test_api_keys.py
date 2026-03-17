@@ -331,3 +331,40 @@ async def _call_authenticated_mcp_tool_in_loop(
         surface_resolver=None,  # Skip principal resolver since we already set the user
     )
     return result
+
+
+def test_cli_api_key_tools_fallback_to_owner_user(tmp_path):
+    """CLI API-key tools should resolve the active owner when username is omitted."""
+
+    from toolaccess import InvocationContext
+    from gpdb.admin.tools.api_keys import _require_target_user_for_api_key_operation
+
+    async def _run_with_owner(services):
+        admin_lifespan = entry.create_admin_lifespan(services)
+        async with admin_lifespan(manager.app):
+            owner = await services.admin_store.create_initial_owner(
+                username="owner",
+                password_hash=hash_password("secret-pass"),
+                display_name="Primary Owner",
+            )
+            ctx = InvocationContext(surface="cli", principal=None)
+            user = await _require_target_user_for_api_key_operation(
+                services, ctx, username=None
+            )
+            assert user.id == owner.id
+            assert user.username == "owner"
+
+    async def _run_without_owner(services):
+        admin_lifespan = entry.create_admin_lifespan(services)
+        async with admin_lifespan(manager_no_owner.app):
+            ctx = InvocationContext(surface="cli", principal=None)
+            with pytest.raises(RuntimeError, match=r"Owner user required"):
+                await _require_target_user_for_api_key_operation(
+                    services, ctx, username=None
+                )
+
+    manager = _create_test_manager(tmp_path / "with-owner")
+    manager_no_owner = _create_test_manager(tmp_path / "no-owner")
+
+    asyncio.run(_run_with_owner(manager.app.state.services))
+    asyncio.run(_run_without_owner(manager_no_owner.app.state.services))

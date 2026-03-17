@@ -71,10 +71,9 @@ def _build_api_key_service(services: AdminServices) -> ToolService:
         ctx: InvocationContext = inject_context(),
     ) -> list[dict[str, object]]:
         """List API keys for a user."""
-        if params.username:
-            user = await _require_user_by_username(services, params.username)
-        else:
-            user = _require_context_user(ctx)
+        user = await _require_target_user_for_api_key_operation(
+            services, ctx, username=params.username
+        )
         return [
             _serialize_api_key(item)
             for item in await services.admin_store.list_api_keys_for_user(user.id)
@@ -90,10 +89,9 @@ def _build_api_key_service(services: AdminServices) -> ToolService:
         ctx: InvocationContext = inject_context(),
     ) -> dict[str, object]:
         """Create an API key for a user."""
-        if params.username:
-            user = await _require_user_by_username(services, params.username)
-        else:
-            user = _require_context_user(ctx)
+        user = await _require_target_user_for_api_key_operation(
+            services, ctx, username=params.username
+        )
         return await _create_api_key_for_user(
             services, user_id=user.id, label=params.label
         )
@@ -108,10 +106,9 @@ def _build_api_key_service(services: AdminServices) -> ToolService:
         ctx: InvocationContext = inject_context(),
     ) -> dict[str, object]:
         """Reveal an API key for a user."""
-        if params.username:
-            user = await _require_user_by_username(services, params.username)
-        else:
-            user = _require_context_user(ctx)
+        user = await _require_target_user_for_api_key_operation(
+            services, ctx, username=params.username
+        )
         return await _reveal_api_key_for_user(
             services, user_id=user.id, key_id=params.key_id
         )
@@ -126,10 +123,9 @@ def _build_api_key_service(services: AdminServices) -> ToolService:
         ctx: InvocationContext = inject_context(),
     ) -> dict[str, object]:
         """Revoke an API key for a user."""
-        if params.username:
-            user = await _require_user_by_username(services, params.username)
-        else:
-            user = _require_context_user(ctx)
+        user = await _require_target_user_for_api_key_operation(
+            services, ctx, username=params.username
+        )
         return await _revoke_api_key_for_user(
             services, user_id=user.id, key_id=params.key_id
         )
@@ -146,6 +142,34 @@ async def _require_user_by_username(services: AdminServices, username: str):
     if user is None or not user.is_active:
         raise ValueError(f"User '{username}' was not found.")
     return user
+
+
+async def _require_target_user_for_api_key_operation(
+    services: "AdminServices",
+    ctx: InvocationContext,
+    *,
+    username: str | None,
+):
+    """Resolve the target admin user for API key operations.
+
+    - REST/MCP: when `username` is omitted, use the authenticated user from ctx.state.
+    - CLI: when `username` is omitted, use the active owner user (trusted local tooling).
+    """
+    if username:
+        return await _require_user_by_username(services, username)
+
+    if getattr(ctx, "surface", None) == "cli":
+        admin_store = services.admin_store
+        if admin_store is None:
+            raise RuntimeError("Admin store is not ready yet.")
+        owner = await admin_store.get_active_owner_user()
+        if owner is None:
+            raise RuntimeError(
+                "Owner user required. Run setup first, or pass --username."
+            )
+        return owner
+
+    return _require_context_user(ctx)
 
 
 async def _create_api_key_for_user(
