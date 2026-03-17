@@ -51,8 +51,7 @@ def test_create_admin_runtime_returns_runtime(tmp_path):
     assert runtime.cli_server is not None
     assert runtime.admin_service is not None
     assert runtime.graph_service is not None
-    assert runtime.cli_api_key_service is not None
-    assert runtime.mcp_api_key_service is not None
+    assert runtime.api_key_service is not None
 
     # Verify services are properly configured
     assert runtime.services.resolved_config is resolved_config
@@ -143,14 +142,12 @@ def test_admin_runtime_exposes_services(tmp_path):
     # Verify all ToolServices are accessible
     assert runtime.admin_service is not None
     assert runtime.graph_service is not None
-    assert runtime.cli_api_key_service is not None
-    assert runtime.mcp_api_key_service is not None
+    assert runtime.api_key_service is not None
 
     # Verify services have the expected names
     assert runtime.admin_service.name == "admin"
     assert runtime.graph_service.name == "admin-graph"
-    assert runtime.cli_api_key_service.name == "admin-cli"
-    assert runtime.mcp_api_key_service.name == "admin-mcp"
+    assert runtime.api_key_service.name == "admin-apikeys"
 
 
 def test_create_manager_still_works(tmp_path):

@@ -4,6 +4,7 @@ References:
 Working on the Project:
 - Read the README.md so you have project context.
 - Study the project's existing code to understand and maintain the established patterns.
+- Never use Python or terminal scripts for file editing unless its the only option - ALWAYS prefer the built in tools for working with files provided by your IDE and agent harness. (This is because the built in tools can be automatically executed, but if you use a custom python command in the terminal, it stops the entire process until the user can approve it. So NEVER use custom terminal commands just for file reading/editing unless you need to perform some task not available via the MCP tools. Search is the only exception, you can grep.)
 
 `gpdb_admin/src/gpdb/admin/entry.py`:
 - When adding new admin graph tools, follow the existing pattern:

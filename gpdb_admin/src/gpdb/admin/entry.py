@@ -45,9 +45,8 @@ from gpdb.admin.servers import (
     _invoke_tool_raw,
 )
 from gpdb.admin.tools import (
-    _build_cli_api_key_tools,
+    _build_api_key_service,
     _build_graph_content_service,
-    _build_mcp_api_key_tools,
 )
 from gpdb.admin.web import create_web_app
 from toolaccess import (
@@ -83,8 +82,7 @@ class AdminRuntime:
     cli_server: CLIServer | None
     admin_service: ToolService
     graph_service: ToolService
-    cli_api_key_service: ToolService
-    mcp_api_key_service: ToolService
+    api_key_service: ToolService
 
 
 def create_admin_runtime(
@@ -119,8 +117,7 @@ def create_admin_runtime(
 
     admin_service = ToolService("admin", [status])
     graph_service = _build_graph_content_service(services)
-    cli_api_key_service = ToolService("admin-cli", _build_cli_api_key_tools(services))
-    mcp_api_key_service = ToolService("admin-mcp", _build_mcp_api_key_tools(services))
+    api_key_service = _build_api_key_service(services)
 
     fastapi_app = create_web_app(
         resolved_config=resolved_config,
@@ -138,6 +135,7 @@ def create_admin_runtime(
     )
     rest_api.mount(admin_service)
     rest_api.mount(graph_service)
+    rest_api.mount(api_key_service)
     _install_api_key_auth(rest_api, services)
 
     mcp_server = AuthMCPServer(
@@ -147,14 +145,14 @@ def create_admin_runtime(
     )
     mcp_server.mount(admin_service)
     mcp_server.mount(graph_service)
-    mcp_server.mount(mcp_api_key_service)
+    mcp_server.mount(api_key_service)
 
     cli_server = None
     if cli_root_name is not None:
         cli_server = CLIServer(cli_root_name)
         cli_server.mount(admin_service)
         cli_server.mount(graph_service)
-        cli_server.mount(cli_api_key_service)
+        cli_server.mount(api_key_service)
 
     return AdminRuntime(
         services=services,
@@ -167,8 +165,7 @@ def create_admin_runtime(
         cli_server=cli_server,
         admin_service=admin_service,
         graph_service=graph_service,
-        cli_api_key_service=cli_api_key_service,
-        mcp_api_key_service=mcp_api_key_service,
+        api_key_service=api_key_service,
     )
 
 

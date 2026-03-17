@@ -559,7 +559,7 @@ async def _call_authenticated_mcp_tool_in_loop(
     for service in [
         runtime.admin_service,
         runtime.graph_service,
-        runtime.mcp_api_key_service,
+        runtime.api_key_service,
     ]:
         for tool_def in service.tools:
             if tool_def.name == tool_name:

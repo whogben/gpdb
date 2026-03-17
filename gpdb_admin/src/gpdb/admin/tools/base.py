@@ -18,6 +18,11 @@ GRAPH_TOOL_ACCESS = AccessPolicy(
     allow_anonymous=False,
 )
 
+API_KEY_TOOL_ACCESS = AccessPolicy(
+    require_authenticated=True,
+    allow_anonymous=False,
+)
+
 CLI_JSON_RENDERER = PydanticJsonRenderer(indent=2, sort_keys=True)
 CLI_ALIAS_JSON_RENDERER = PydanticJsonRenderer(
     by_alias=True,
@@ -64,6 +69,19 @@ def _graph_surface_specs(
     cli_renderer=CLI_JSON_RENDERER,
 ) -> dict[str, SurfaceSpec]:
     """Return the standard REST/MCP/CLI surface configuration for graph tools."""
+    return {
+        "rest": SurfaceSpec(http_method=http_method),
+        "mcp": SurfaceSpec(),
+        "cli": SurfaceSpec(renderer=cli_renderer),
+    }
+
+
+def _api_key_surface_specs(
+    *,
+    http_method: str = "POST",
+    cli_renderer=CLI_JSON_RENDERER,
+) -> dict[str, SurfaceSpec]:
+    """Return the standard REST/MCP/CLI surface configuration for API key tools."""
     return {
         "rest": SurfaceSpec(http_method=http_method),
         "mcp": SurfaceSpec(),
