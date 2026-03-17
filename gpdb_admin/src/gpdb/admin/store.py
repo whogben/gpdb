@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
+UTC = timezone.utc
 
 from gpdb import Filter, FilterGroup, GPGraph, Logic, NodeRead, NodeUpsert, SearchQuery
 from gpdb.admin.auth import parse_api_key
