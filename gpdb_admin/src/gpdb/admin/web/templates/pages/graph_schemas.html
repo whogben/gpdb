@@ -5,7 +5,7 @@
   <div class="section-heading">
     <div>
       <p class="eyebrow">Schemas</p>
-      <h2>{{ schema_list.graph.display_name }}</h2>
+      <h2>{{ current_graph.display_name }}</h2>
     </div>
   </div>
 
@@ -28,7 +28,7 @@
     </div>
     {% if current_user.is_owner %}
     <a class="button"
-      href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_create_page', graph_id=schema_list.graph.id) }}">New
+      href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_create_page', graph_id=current_graph.id) }}">New
       schema</a>
     {% endif %}
   </div>
@@ -54,7 +54,7 @@
       </dl>
       <div class="button-row">
         <a class="button button-secondary"
-          href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_detail_page', graph_id=schema_list.graph.id, schema_name=schema.name) }}">Open</a>
+          href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_detail_page', graph_id=current_graph.id, schema_name=schema.name) }}">Open</a>
       </div>
     </article>
     {% else %}

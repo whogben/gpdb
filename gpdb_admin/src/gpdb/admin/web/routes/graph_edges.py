@@ -51,7 +51,8 @@ async def graph_edge_list_page(request: Request, graph_id: str) -> HTMLResponse:
     )
 
     try:
-        edge_list = await require_graph_content_service(request).list_graph_edges(
+        graph_content = require_graph_content_service(request)
+        edge_list = await graph_content.list_graph_edges(
             graph_id=graph_id,
             current_user=current_user,
             type=filter_form["type"],
@@ -63,10 +64,15 @@ async def graph_edge_list_page(request: Request, graph_id: str) -> HTMLResponse:
             offset=filter_form["offset"],
             sort=filter_form["sort"],
         )
+        overview = await graph_content.get_graph_overview(
+            graph_id=graph_id,
+            current_user=current_user,
+        )
     except GraphContentError as exc:
         return redirect_with_message(request, "home", error=str(exc))
 
     payload = edge_list.model_dump(mode="json")
+    overview_payload = overview.model_dump(mode="json")
     previous_url = None
     if payload["offset"] > 0:
         previous_url = build_edge_list_url(
@@ -99,10 +105,10 @@ async def graph_edge_list_page(request: Request, graph_id: str) -> HTMLResponse:
     return render(
         request,
         "pages/graph_edges.html",
-        page_title=f"{payload['graph']['display_name']} Edges",
+        page_title=f"{overview_payload['graph']['display_name']} Edges",
         current_user=current_user,
         edge_list=payload,
-        current_graph=payload["graph"],
+        current_graph=overview_payload["graph"],
         filter_form=filter_form,
         sort_options=EDGE_SORT_OPTIONS,
         previous_url=previous_url,
@@ -343,6 +349,10 @@ async def graph_edge_detail_page(
             edge_id=edge_id,
             current_user=current_user,
         )
+        overview = await graph_content.get_graph_overview(
+            graph_id=graph_id,
+            current_user=current_user,
+        )
         schema_json = None
         if detail.edge.schema_name:
             schema_detail = await graph_content.get_graph_schema(
@@ -360,13 +370,14 @@ async def graph_edge_detail_page(
         )
 
     payload = detail.model_dump(mode="json", by_alias=True)
+    overview_payload = overview.model_dump(mode="json")
     return render(
         request,
         "pages/edge_detail.html",
         page_title=f"{payload['edge']['type']} Edge",
         current_user=current_user,
         edge_detail=payload,
-        current_graph=payload["graph"],
+        current_graph=overview_payload["graph"],
         schema_json=schema_json,
         edge_json=json.dumps(payload["edge"]["data"], indent=2, sort_keys=True),
         graphs=await get_admin_store(request).list_graphs(),
@@ -422,22 +433,17 @@ async def _render_graph_edge_form(
     """Render the create or edit edge form with live graph context."""
     try:
         graph_content = require_graph_content_service(request)
-        if edge_id is None:
-            overview = await graph_content.get_graph_overview(
-                graph_id=graph_id,
-                current_user=current_user,
-            )
-            overview_payload = overview.model_dump(mode="json")
-        else:
+        overview = await graph_content.get_graph_overview(
+            graph_id=graph_id,
+            current_user=current_user,
+        )
+        overview_payload = overview.model_dump(mode="json")
+        if edge_id is not None:
             detail = await graph_content.get_graph_edge(
                 graph_id=graph_id,
                 edge_id=edge_id,
                 current_user=current_user,
             )
-            overview_payload = {
-                "graph": detail.graph,
-                "instance": detail.instance,
-            }
             edge_detail = detail.model_dump(mode="json", by_alias=True)
         schema_list = await graph_content.list_graph_schemas(
             graph_id=graph_id,

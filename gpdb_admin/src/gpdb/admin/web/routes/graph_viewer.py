@@ -127,7 +127,8 @@ async def graph_viewer_data(request: Request, graph_id: str) -> JSONResponse:
 
     params = _viewer_filter_params_from_request(request)
     try:
-        data = await require_graph_content_service(request).get_graph_viewer_data(
+        graph_content = require_graph_content_service(request)
+        data = await graph_content.get_graph_viewer_data(
             graph_id=graph_id,
             current_user=current_user,
             node_type=params["node_type"] or None,
@@ -142,6 +143,10 @@ async def graph_viewer_data(request: Request, graph_id: str) -> JSONResponse:
             edge_filter_dsl=params["edge_filter"] or None,
             edge_limit=params["edge_limit"],
         )
+        overview = await graph_content.get_graph_overview(
+            graph_id=graph_id,
+            current_user=current_user,
+        )
     except GraphContentError as exc:
         return JSONResponse(
             status_code=400,
@@ -154,6 +159,7 @@ async def graph_viewer_data(request: Request, graph_id: str) -> JSONResponse:
         )
 
     payload = data.model_dump(mode="json")
+    payload["graph"] = overview.model_dump(mode="json")["graph"]
     if data.error:
         return JSONResponse(status_code=400, content=payload)
     return JSONResponse(content=payload)

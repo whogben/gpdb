@@ -99,8 +99,6 @@ class GraphSchemaRecord(BaseModel):
 class GraphSchemaList(BaseModel):
     """List response for graph schemas."""
 
-    graph: dict[str, object]
-    instance: dict[str, object]
     items: list[GraphSchemaRecord] = Field(default_factory=list)
     total: int = 0
 
@@ -108,8 +106,6 @@ class GraphSchemaList(BaseModel):
 class GraphSchemaDetail(BaseModel):
     """Detail response for one graph schema."""
 
-    graph: dict[str, object]
-    instance: dict[str, object]
     schema_record: GraphSchemaRecord = Field(serialization_alias="schema")
 
     @property
@@ -152,8 +148,6 @@ class GraphNodeRecord(BaseModel):
 class GraphNodeList(BaseModel):
     """List response for graph nodes."""
 
-    graph: dict[str, object]
-    instance: dict[str, object]
     items: list[GraphNodeRecord] = Field(default_factory=list)
     total: int = 0
     limit: int = 50
@@ -164,8 +158,6 @@ class GraphNodeList(BaseModel):
 class GraphNodeDetail(BaseModel):
     """Detail response for one graph node."""
 
-    graph: dict[str, object]
-    instance: dict[str, object]
     node_record: GraphNodeRecord = Field(serialization_alias="node")
     delete_blockers: "GraphNodeDeleteBlockers" = Field(
         default_factory=lambda: GraphNodeDeleteBlockers()
@@ -190,8 +182,6 @@ class GraphNodeDeleteBlockers(BaseModel):
 class GraphNodePayload(BaseModel):
     """Stable payload response for one graph node."""
 
-    graph: dict[str, object]
-    instance: dict[str, object]
     node_record: GraphNodeRecord = Field(serialization_alias="node")
     payload_base64: str
     encoding: str = "base64"
@@ -232,8 +222,6 @@ class GraphEdgeRecord(BaseModel):
 class GraphEdgeList(BaseModel):
     """List response for graph edges."""
 
-    graph: dict[str, object]
-    instance: dict[str, object]
     items: list[GraphEdgeRecord] = Field(default_factory=list)
     total: int = 0
     limit: int = 50
@@ -244,8 +232,6 @@ class GraphEdgeList(BaseModel):
 class GraphEdgeDetail(BaseModel):
     """Detail response for one graph edge."""
 
-    graph: dict[str, object]
-    instance: dict[str, object]
     edge_record: GraphEdgeRecord = Field(serialization_alias="edge")
 
     @property
@@ -321,8 +307,6 @@ class GraphDetail(BaseModel):
 class GraphViewerData(BaseModel):
     """Combined nodes and edges for the graph viewer (Cytoscape-oriented)."""
 
-    graph: dict[str, object]
-    instance: dict[str, object]
     elements: list[dict[str, object]] = Field(default_factory=list)
     node_count: int = 0
     edge_count: int = 0
@@ -413,8 +397,6 @@ class GraphContentService:
                     )
                 )
             return GraphSchemaList(
-                graph=self.serialize_graph(graph),
-                instance=self.serialize_instance(instance),
                 items=items,
                 total=len(items),
             )
@@ -445,8 +427,6 @@ class GraphContentService:
             if schema is None:
                 raise GraphContentNotFoundError(f"Schema '{clean_name}' was not found.")
             return GraphSchemaDetail(
-                graph=self.serialize_graph(graph),
-                instance=self.serialize_instance(instance),
                 schema_record=self._serialize_schema_record(
                     schema,
                     include_json_schema=True,
@@ -491,8 +471,6 @@ class GraphContentService:
             except (SchemaBreakingChangeError, ValueError) as exc:
                 raise GraphContentValidationError(str(exc)) from exc
             return GraphSchemaDetail(
-                graph=self.serialize_graph(graph),
-                instance=self.serialize_instance(instance),
                 schema_record=self._serialize_schema_record(
                     schema,
                     include_json_schema=True,
@@ -549,8 +527,6 @@ class GraphContentService:
             except ValueError as exc:
                 raise GraphContentValidationError(str(exc)) from exc
             return GraphSchemaDetail(
-                graph=self.serialize_graph(graph),
-                instance=self.serialize_instance(instance),
                 schema_record=self._serialize_schema_record(
                     schema,
                     include_json_schema=True,
@@ -583,8 +559,6 @@ class GraphContentService:
                 raise GraphContentNotFoundError(f"Schema '{clean_name}' was not found.")
             usage = await self._inspect_schema_usage(db, clean_name)
             deleted = GraphSchemaDetail(
-                graph=self.serialize_graph(graph),
-                instance=self.serialize_instance(instance),
                 schema_record=self._serialize_schema_record(
                     schema,
                     include_json_schema=True,
@@ -646,8 +620,6 @@ class GraphContentService:
             )
             page = await db.search_nodes(query)
             return GraphNodeList(
-                graph=self.serialize_graph(graph),
-                instance=self.serialize_instance(instance),
                 items=[self._serialize_node_record(item) for item in page.items],
                 total=page.total,
                 limit=page.limit,
@@ -686,8 +658,6 @@ class GraphContentService:
                     f"Node '{clean_node_id}' was not found."
                 )
             return GraphNodeDetail(
-                graph=self.serialize_graph(graph),
-                instance=self.serialize_instance(instance),
                 node_record=self._serialize_node_record(node),
                 delete_blockers=await self._inspect_node_delete_blockers(
                     db, clean_node_id
@@ -754,8 +724,6 @@ class GraphContentService:
             except (SchemaNotFoundError, SchemaValidationError, ValueError) as exc:
                 raise GraphContentValidationError(str(exc)) from exc
             return GraphNodeDetail(
-                graph=self.serialize_graph(graph),
-                instance=self.serialize_instance(instance),
                 node_record=self._serialize_node_record(node),
                 delete_blockers=GraphNodeDeleteBlockers(),
             )
@@ -829,7 +797,9 @@ class GraphContentService:
             )
             data_ = data if data is not None else existing.data
             tags_ = (
-                self._normalize_tag_list(tags) if tags is not None else (existing.tags or [])
+                self._normalize_tag_list(tags)
+                if tags is not None
+                else (existing.tags or [])
             )
             if payload is not None:
                 payload_ = payload
@@ -878,8 +848,6 @@ class GraphContentService:
             except (SchemaNotFoundError, SchemaValidationError, ValueError) as exc:
                 raise GraphContentValidationError(str(exc)) from exc
             return GraphNodeDetail(
-                graph=self.serialize_graph(graph),
-                instance=self.serialize_instance(instance),
                 node_record=self._serialize_node_record(node),
                 delete_blockers=await self._inspect_node_delete_blockers(
                     db, clean_node_id
@@ -912,8 +880,6 @@ class GraphContentService:
                 )
             blockers = await self._inspect_node_delete_blockers(db, clean_node_id)
             deleted = GraphNodeDetail(
-                graph=self.serialize_graph(graph),
-                instance=self.serialize_instance(instance),
                 node_record=self._serialize_node_record(node),
                 delete_blockers=blockers,
             )
@@ -963,8 +929,6 @@ class GraphContentService:
                     f"Node '{clean_node_id}' was not found."
                 ) from exc
             return GraphNodeDetail(
-                graph=self.serialize_graph(graph),
-                instance=self.serialize_instance(instance),
                 node_record=self._serialize_node_record(node),
                 delete_blockers=await self._inspect_node_delete_blockers(
                     db, clean_node_id
@@ -1001,8 +965,6 @@ class GraphContentService:
                 )
             node_record = self._serialize_node_record(node)
             return GraphNodePayload(
-                graph=self.serialize_graph(graph),
-                instance=self.serialize_instance(instance),
                 node_record=node_record,
                 payload_base64=base64.b64encode(node.payload).decode("ascii"),
                 filename=self._build_node_payload_filename(node_record),
@@ -1057,8 +1019,6 @@ class GraphContentService:
             )
             page = await db.search_edges(query)
             return GraphEdgeList(
-                graph=self.serialize_graph(graph),
-                instance=self.serialize_instance(instance),
                 items=[self._serialize_edge_record(item) for item in page.items],
                 total=page.total,
                 limit=page.limit,
@@ -1122,16 +1082,12 @@ class GraphContentService:
             )
         except GraphContentValidationError as exc:
             return GraphViewerData(
-                graph={},
-                instance={},
                 elements=[],
                 node_count=0,
                 edge_count=0,
                 error=str(exc),
             )
 
-        graph = node_list.graph
-        instance = node_list.instance
         elements: list[dict[str, object]] = []
 
         for node in node_list.items:
@@ -1159,8 +1115,6 @@ class GraphContentService:
             )
 
         return GraphViewerData(
-            graph=graph,
-            instance=instance,
             elements=elements,
             node_count=len(node_list.items),
             edge_count=len(edge_list.items),
@@ -1189,8 +1143,6 @@ class GraphContentService:
                     f"Edge '{clean_edge_id}' was not found."
                 )
             return GraphEdgeDetail(
-                graph=self.serialize_graph(graph),
-                instance=self.serialize_instance(instance),
                 edge_record=self._serialize_edge_record(edge),
             )
         finally:
@@ -1242,8 +1194,6 @@ class GraphContentService:
             except (SchemaNotFoundError, SchemaValidationError, ValueError) as exc:
                 raise GraphContentValidationError(str(exc)) from exc
             return GraphEdgeDetail(
-                graph=self.serialize_graph(graph),
-                instance=self.serialize_instance(instance),
                 edge_record=self._serialize_edge_record(edge),
             )
         finally:
@@ -1329,8 +1279,6 @@ class GraphContentService:
             except (SchemaNotFoundError, SchemaValidationError, ValueError) as exc:
                 raise GraphContentValidationError(str(exc)) from exc
             return GraphEdgeDetail(
-                graph=self.serialize_graph(graph),
-                instance=self.serialize_instance(instance),
                 edge_record=self._serialize_edge_record(edge),
             )
         finally:
@@ -1359,8 +1307,6 @@ class GraphContentService:
                     f"Edge '{clean_edge_id}' was not found."
                 )
             deleted = GraphEdgeDetail(
-                graph=self.serialize_graph(graph),
-                instance=self.serialize_instance(instance),
                 edge_record=self._serialize_edge_record(edge),
             )
             await db.delete_edge(clean_edge_id)

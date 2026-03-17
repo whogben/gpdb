@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gpdb-admin"
-version = "0.3.1"
+version = "0.4.0"
 description = "GPDB admin CLI, REST API, and MCP server (optional add-on to gpdb)"
 readme = "README.md"
 license = {text = "MIT"}

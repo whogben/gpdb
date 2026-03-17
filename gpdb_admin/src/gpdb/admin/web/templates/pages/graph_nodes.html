@@ -5,7 +5,7 @@
   <div class="section-heading">
     <div>
       <p class="eyebrow">Nodes</p>
-      <h2>{{ node_list.graph.display_name }}</h2>
+      <h2>{{ current_graph.display_name }}</h2>
     </div>
     <div class="button-row">
     </div>
@@ -23,7 +23,7 @@
   </ul>
 </section>
 
-{% set form_action = web_app.url_path_for('graph_node_list_page', graph_id=node_list.graph.id) %}
+{% set form_action = web_app.url_path_for('graph_node_list_page', graph_id=current_graph.id) %}
 {% set filter_kind = 'node' %}
 <section class="dashboard-section">
   <div class="section-heading">
@@ -56,7 +56,7 @@
     </div>
     {% if current_user.is_owner %}
     <a class="button"
-      href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_create_page', graph_id=node_list.graph.id) }}">New
+      href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_create_page', graph_id=current_graph.id) }}">New
       node</a>
     {% endif %}
   </div>
@@ -93,10 +93,10 @@
       {% endif %}
       <div class="button-row">
         <a class="button button-secondary"
-          href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_detail_page', graph_id=node_list.graph.id, node_id=node.id) }}">Open</a>
+          href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_detail_page', graph_id=current_graph.id, node_id=node.id) }}">Open</a>
         {% if current_user.is_owner %}
         <a class="button button-secondary"
-          href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_edit_page', graph_id=node_list.graph.id, node_id=node.id) }}">Edit</a>
+          href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_edit_page', graph_id=current_graph.id, node_id=node.id) }}">Edit</a>
         {% endif %}
       </div>
     </article>

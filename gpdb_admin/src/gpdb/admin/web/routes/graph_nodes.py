@@ -52,7 +52,8 @@ async def graph_node_list_page(request: Request, graph_id: str) -> HTMLResponse:
     )
 
     try:
-        node_list = await require_graph_content_service(request).list_graph_nodes(
+        graph_content = require_graph_content_service(request)
+        node_list = await graph_content.list_graph_nodes(
             graph_id=graph_id,
             current_user=current_user,
             type=filter_form["type"],
@@ -63,10 +64,15 @@ async def graph_node_list_page(request: Request, graph_id: str) -> HTMLResponse:
             offset=filter_form["offset"],
             sort=filter_form["sort"],
         )
+        overview = await graph_content.get_graph_overview(
+            graph_id=graph_id,
+            current_user=current_user,
+        )
     except GraphContentError as exc:
         return redirect_with_message(request, "home", error=str(exc))
 
     payload = node_list.model_dump(mode="json")
+    current_graph = overview.model_dump(mode="json")["graph"]
     previous_url = None
     if payload["offset"] > 0:
         previous_url = build_node_list_url(
@@ -97,10 +103,10 @@ async def graph_node_list_page(request: Request, graph_id: str) -> HTMLResponse:
     return render(
         request,
         "pages/graph_nodes.html",
-        page_title=f"{payload['graph']['display_name']} Nodes",
+        page_title=f"{current_graph['display_name']} Nodes",
         current_user=current_user,
         node_list=payload,
-        current_graph=payload["graph"],
+        current_graph=current_graph,
         filter_form=filter_form,
         sort_options=NODE_SORT_OPTIONS,
         previous_url=previous_url,
@@ -380,6 +386,10 @@ async def graph_node_detail_page(
             node_id=node_id,
             current_user=current_user,
         )
+        overview = await graph_content.get_graph_overview(
+            graph_id=graph_id,
+            current_user=current_user,
+        )
         schema_json = None
         if detail.node.schema_name:
             schema_detail = await graph_content.get_graph_schema(
@@ -397,13 +407,14 @@ async def graph_node_detail_page(
         )
 
     payload = detail.model_dump(mode="json", by_alias=True)
+    current_graph = overview.model_dump(mode="json")["graph"]
     return render(
         request,
         "pages/node_detail.html",
         page_title=f"{payload['node']['name'] or payload['node']['id']} Node",
         current_user=current_user,
         node_detail=payload,
-        current_graph=payload["graph"],
+        current_graph=current_graph,
         schema_json=schema_json,
         node_json=json.dumps(payload["node"]["data"], indent=2, sort_keys=True),
         graphs=await get_admin_store(request).list_graphs(),
@@ -549,22 +560,17 @@ async def _render_graph_node_form(
     """Render the create or edit node form with live graph context."""
     try:
         graph_content = require_graph_content_service(request)
-        if node_id is None:
-            overview = await graph_content.get_graph_overview(
-                graph_id=graph_id,
-                current_user=current_user,
-            )
-            overview_payload = overview.model_dump(mode="json")
-        else:
+        overview = await graph_content.get_graph_overview(
+            graph_id=graph_id,
+            current_user=current_user,
+        )
+        overview_payload = overview.model_dump(mode="json")
+        if node_id is not None:
             detail = await graph_content.get_graph_node(
                 graph_id=graph_id,
                 node_id=node_id,
                 current_user=current_user,
             )
-            overview_payload = {
-                "graph": detail.graph,
-                "instance": detail.instance,
-            }
             node_detail = detail.model_dump(mode="json", by_alias=True)
         schema_list = await graph_content.list_graph_schemas(
             graph_id=graph_id,

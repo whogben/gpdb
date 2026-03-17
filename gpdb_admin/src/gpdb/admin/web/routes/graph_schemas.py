@@ -44,6 +44,14 @@ async def graph_schema_list_page(request: Request, graph_id: str) -> HTMLRespons
         return current_user
 
     try:
+        overview = await require_graph_content_service(request).get_graph_overview(
+            graph_id=graph_id,
+            current_user=current_user,
+        )
+    except GraphContentError as exc:
+        return redirect_with_message(request, "home", error=str(exc))
+
+    try:
         schema_list = await require_graph_content_service(request).list_graph_schemas(
             graph_id=graph_id,
             current_user=current_user,
@@ -51,13 +59,14 @@ async def graph_schema_list_page(request: Request, graph_id: str) -> HTMLRespons
     except GraphContentError as exc:
         return redirect_with_message(request, "home", error=str(exc))
 
+    overview_payload = overview.model_dump(mode="json")
     return render(
         request,
         "pages/graph_schemas.html",
-        page_title=f"{schema_list.graph['display_name']} Schemas",
+        page_title=f"{overview_payload['graph']['display_name']} Schemas",
         current_user=current_user,
         schema_list=schema_list.model_dump(mode="json"),
-        current_graph=schema_list.graph,
+        current_graph=overview_payload["graph"],
         graphs=await get_admin_store(request).list_graphs(),
         error_message=request.query_params.get("error"),
         success_message=request.query_params.get("success"),
@@ -258,6 +267,19 @@ async def graph_schema_detail_page(
         return current_user
 
     try:
+        overview = await require_graph_content_service(request).get_graph_overview(
+            graph_id=graph_id,
+            current_user=current_user,
+        )
+    except GraphContentError as exc:
+        return redirect_with_message(
+            request,
+            "graph_schema_list_page",
+            graph_id=graph_id,
+            error=str(exc),
+        )
+
+    try:
         detail = await require_graph_content_service(request).get_graph_schema(
             graph_id=graph_id,
             name=schema_name,
@@ -271,6 +293,7 @@ async def graph_schema_detail_page(
             error=str(exc),
         )
 
+    overview_payload = overview.model_dump(mode="json")
     payload = detail.model_dump(mode="json", by_alias=True)
     return render(
         request,
@@ -278,7 +301,8 @@ async def graph_schema_detail_page(
         page_title=f"{payload['schema']['name']} Schema",
         current_user=current_user,
         schema_detail=payload,
-        current_graph=payload["graph"],
+        current_graph=overview_payload["graph"],
+        current_instance=overview_payload["instance"],
         schema_json=json.dumps(
             payload["schema"]["json_schema"], indent=2, sort_keys=True
         ),
@@ -337,25 +361,24 @@ async def _render_graph_schema_form(
 ) -> HTMLResponse | RedirectResponse:
     """Render the create or edit schema form with live graph context."""
     try:
-        if schema_name is None:
-            overview = await require_graph_content_service(request).get_graph_overview(
-                graph_id=graph_id,
-                current_user=current_user,
-            )
-            overview_payload = overview.model_dump(mode="json")
-        else:
+        overview = await require_graph_content_service(request).get_graph_overview(
+            graph_id=graph_id,
+            current_user=current_user,
+        )
+        overview_payload = overview.model_dump(mode="json")
+    except GraphContentError as exc:
+        return redirect_with_message(request, "home", error=str(exc))
+
+    if schema_name is not None:
+        try:
             detail = await require_graph_content_service(request).get_graph_schema(
                 graph_id=graph_id,
                 name=schema_name,
                 current_user=current_user,
             )
-            overview_payload = {
-                "graph": detail.graph,
-                "instance": detail.instance,
-            }
             schema_detail = detail.model_dump(mode="json", by_alias=True)
-    except GraphContentError as exc:
-        return redirect_with_message(request, "home", error=str(exc))
+        except GraphContentError as exc:
+            return redirect_with_message(request, "home", error=str(exc))
 
     is_edit = schema_name is not None
     return render(

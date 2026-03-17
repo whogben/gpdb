@@ -8,11 +8,11 @@
       <h1>{{ node_detail.node.name or node_detail.node.id }}</h1>
     </div>
     <div class="button-row">
-      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_list_page', graph_id=node_detail.graph.id) }}">Back to nodes</a>
-      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_overview_page', graph_id=node_detail.graph.id) }}">Graph overview</a>
+      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_list_page', graph_id=current_graph.id) }}">Back to nodes</a>
+      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_overview_page', graph_id=current_graph.id) }}">Graph overview</a>
       {% if current_user.is_owner %}
-      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_edit_page', graph_id=node_detail.graph.id, node_id=node_detail.node.id) }}">Edit node</a>
-      <a class="button" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_create_page', graph_id=node_detail.graph.id) }}">Create node</a>
+      <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_edit_page', graph_id=current_graph.id, node_id=node_detail.node.id) }}">Edit node</a>
+      <a class="button" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_create_page', graph_id=current_graph.id) }}">Create node</a>
       {% endif %}
     </div>
   </div>
@@ -22,7 +22,7 @@
       <div class="resource-header">
         <div>
           <h3>Summary</h3>
-          <p class="resource-subtitle">Type <strong>{{ node_detail.node.type }}</strong> on <strong>{{ node_detail.graph.display_name }}</strong></p>
+          <p class="resource-subtitle">Type <strong>{{ node_detail.node.type }}</strong> on <strong>{{ current_graph.display_name }}</strong></p>
         </div>
       </div>
       <dl class="resource-meta">
@@ -109,8 +109,8 @@
       {% endif %}
       {% if current_user.is_owner %}
       <div class="button-row">
-        <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_edit_page', graph_id=node_detail.graph.id, node_id=node_detail.node.id) }}">Edit node</a>
-        <form class="inline-form" action="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_delete', graph_id=node_detail.graph.id, node_id=node_detail.node.id) }}" method="post">
+        <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_edit_page', graph_id=current_graph.id, node_id=node_detail.node.id) }}">Edit node</a>
+        <form class="inline-form" action="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_delete', graph_id=current_graph.id, node_id=node_detail.node.id) }}" method="post">
           <button class="button button-danger" type="submit" {% if not node_detail.delete_blockers.can_delete %}disabled{% endif %}>Delete node</button>
         </form>
       </div>
@@ -206,9 +206,9 @@
         Use Edit node to upload, replace, or clear this payload together with the rest of the node changes.
       </p>
       <div class="button-row">
-        <a class="button" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_edit_page', graph_id=node_detail.graph.id, node_id=node_detail.node.id) }}">Edit node</a>
+        <a class="button" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_edit_page', graph_id=current_graph.id, node_id=node_detail.node.id) }}">Edit node</a>
         {% if node_detail.node.has_payload %}
-        <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_payload_download', graph_id=node_detail.graph.id, node_id=node_detail.node.id) }}">Download payload</a>
+        <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_payload_download', graph_id=current_graph.id, node_id=node_detail.node.id) }}">Download payload</a>
         {% endif %}
       </div>
       {% endif %}
