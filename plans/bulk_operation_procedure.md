@@ -118,7 +118,7 @@ After you update the GPDB implementation, find all places that were calling the 
 
 Locate the tool or tools that wrap the underlying GPDB method and make it available.
 
-For example, if we just updated gpdb's graph.py `upsert_schema(..)` method, turning it into `upsert_schemas(..)`, then we will need to update both `update_graph_schema` and `create_graph_schema` in graph_content.py service.
+For example, if we just updated gpdb's graph.py `set_schema(..)` method, turning it into `set_schemas(..)`, then we will need to update both `update_graph_schema` and `create_graph_schema` in graph_content.py service.
 
 
 ### If Needed, Extract Service Arguments into a Pydantic Model

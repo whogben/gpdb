@@ -11,7 +11,7 @@ from test_helpers import schema_with_kind
 @pytest.mark.asyncio
 async def test_basic_schema_registration(db: GPGraph):
     """
-    Test that GPGraph.upsert_schema() can register a JSON schema
+    Test that GPGraph.set_schema() can register a JSON schema
     and that it gets stored in the database with the correct columns.
     """
     # Define a simple JSON schema
@@ -25,7 +25,7 @@ async def test_basic_schema_registration(db: GPGraph):
     }
 
     # Register the schema
-    await db.upsert_schema(SchemaUpsert(name="person", json_schema=person_schema))
+    await db.set_schema(SchemaUpsert(name="person", json_schema=person_schema))
 
     # Verify schema was stored in database
     async with db.sqla_sessionmaker() as session:
@@ -80,7 +80,7 @@ async def test_retrieve_registered_schema(db: GPGraph):
         },
     }
 
-    await db.upsert_schema(SchemaUpsert(name="address", json_schema=address_schema))
+    await db.set_schema(SchemaUpsert(name="address", json_schema=address_schema))
 
     # Retrieve the schema
     retrieved = await db.get_schema("address")

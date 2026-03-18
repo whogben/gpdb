@@ -189,7 +189,7 @@ def _seed_graph_content(manager, *, table_prefix: str) -> None:
     async def _seed() -> None:
         db = GPGraph(services.captive_server.get_uri(), table_prefix=table_prefix)
         try:
-            await db.upsert_schema(
+            await db.set_schema(
                 SchemaUpsert(
                     name="task_schema",
                     json_schema={

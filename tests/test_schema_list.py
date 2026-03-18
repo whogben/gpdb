@@ -16,9 +16,9 @@ async def test_list_schemas(db: GPGraph):
     schema2 = {"type": "object", "properties": {"value": {"type": "integer"}}}
     schema3 = {"type": "object", "properties": {"flag": {"type": "boolean"}}}
 
-    await db.upsert_schema(SchemaUpsert(name="schema1", json_schema=schema1))
-    await db.upsert_schema(SchemaUpsert(name="schema2", json_schema=schema2))
-    await db.upsert_schema(SchemaUpsert(name="schema3", json_schema=schema3))
+    await db.set_schema(SchemaUpsert(name="schema1", json_schema=schema1))
+    await db.set_schema(SchemaUpsert(name="schema2", json_schema=schema2))
+    await db.set_schema(SchemaUpsert(name="schema3", json_schema=schema3))
 
     # List all schemas
     schemas = await db.list_schemas()
@@ -47,7 +47,7 @@ async def test_schema_version_tracking(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.upsert_schema(
+    await db.set_schema(
         SchemaUpsert(name="person_version", json_schema=person_schema_v1)
     )
 
@@ -64,7 +64,7 @@ async def test_schema_version_tracking(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.upsert_schema(
+    await db.set_schema(
         SchemaUpsert(name="person_version", json_schema=person_schema_v2)
     )
 
@@ -82,7 +82,7 @@ async def test_schema_version_tracking(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.upsert_schema(
+    await db.set_schema(
         SchemaUpsert(name="person_version", json_schema=person_schema_v3)
     )
 
@@ -109,7 +109,7 @@ async def test_edge_schema_validation_persistence(db: GPGraph):
         },
         "required": ["weight"],
     }
-    await db.upsert_schema(
+    await db.set_schema(
         SchemaUpsert(
             name="relationship_persist", json_schema=relationship_schema, kind="edge"
         )

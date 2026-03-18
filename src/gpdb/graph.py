@@ -1147,7 +1147,7 @@ class GPGraph:
         json_schema[_SCHEMA_KIND_FIELD] = resolved_kind
         return json_schema, resolved_kind
 
-    async def upsert_schema(self, schema_upsert: SchemaUpsert):
+    async def set_schema(self, schema_upsert: SchemaUpsert):
         """
         Register a JSON schema in the schema registry.
 

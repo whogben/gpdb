@@ -21,9 +21,7 @@ async def test_delete_schema_blocked_when_referenced(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.upsert_schema(
-        SchemaUpsert(name="person_delete", json_schema=person_schema)
-    )
+    await db.set_schema(SchemaUpsert(name="person_delete", json_schema=person_schema))
 
     # Create a node that references the schema
     node = NodeUpsert(
@@ -51,7 +49,7 @@ async def test_delete_schema_blocked_when_referenced_by_edge(db: GPGraph):
         },
         "required": ["weight"],
     }
-    await db.upsert_schema(
+    await db.set_schema(
         SchemaUpsert(
             name="relationship_delete", json_schema=relationship_schema, kind="edge"
         )
@@ -90,7 +88,7 @@ async def test_delete_schema_success_when_unused(db: GPGraph):
             "value": {"type": "string"},
         },
     }
-    await db.upsert_schema(SchemaUpsert(name="unused", json_schema=unused_schema))
+    await db.set_schema(SchemaUpsert(name="unused", json_schema=unused_schema))
 
     # Verify schema exists
     schema = await db.get_schema("unused")
@@ -122,9 +120,7 @@ async def test_update_node_preserves_schema(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.upsert_schema(
-        SchemaUpsert(name="person_preserve", json_schema=person_schema)
-    )
+    await db.set_schema(SchemaUpsert(name="person_preserve", json_schema=person_schema))
 
     # Create a node with schema_name
     node = NodeUpsert(
