@@ -1,7 +1,7 @@
 import pytest
 import pytest_asyncio
 from sqlalchemy import inspect, select, text
-from gpdb import GPGraph, NodeUpsert
+from gpdb import GPGraph, NodeUpsert, SchemaUpsert
 from test_helpers import schema_with_kind
 
 
@@ -25,7 +25,7 @@ async def test_basic_schema_registration(db: GPGraph):
     }
 
     # Register the schema
-    await db.register_schema(name="person", schema=person_schema)
+    await db.register_schema(SchemaUpsert(name="person", json_schema=person_schema))
 
     # Verify schema was stored in database
     async with db.sqla_sessionmaker() as session:
@@ -80,7 +80,7 @@ async def test_retrieve_registered_schema(db: GPGraph):
         },
     }
 
-    await db.register_schema(name="address", schema=address_schema)
+    await db.register_schema(SchemaUpsert(name="address", json_schema=address_schema))
 
     # Retrieve the schema
     retrieved = await db.get_schema("address")

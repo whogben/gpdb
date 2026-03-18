@@ -7,6 +7,10 @@ import logging
 from functools import wraps
 from typing import Any
 
+logger = logging.getLogger(__name__)
+
+logger = logging.getLogger(__name__)
+
 from fastapi import HTTPException, Request
 from fastmcp import FastMCP
 from fastmcp.server.auth import AccessToken, TokenVerifier

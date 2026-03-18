@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from sqlalchemy.engine import make_url
 
-from gpdb import EdgeUpsert, GPGraph, NodeUpsert
+from gpdb import EdgeUpsert, GPGraph, NodeUpsert, SchemaUpsert
 from gpdb.admin import entry
 from gpdb.admin.auth import generate_api_key, hash_api_key_secret, hash_password
 from gpdb.admin.config import ConfigStore
@@ -190,14 +190,16 @@ def _seed_graph_content(manager, *, table_prefix: str) -> None:
         db = GPGraph(services.captive_server.get_uri(), table_prefix=table_prefix)
         try:
             await db.register_schema(
-                "task_schema",
-                {
-                    "type": "object",
-                    "properties": {
-                        "label": {"type": "string"},
+                SchemaUpsert(
+                    name="task_schema",
+                    json_schema={
+                        "type": "object",
+                        "properties": {
+                            "label": {"type": "string"},
+                        },
+                        "required": ["label"],
                     },
-                    "required": ["label"],
-                },
+                )
             )
             source = await db.set_node(
                 NodeUpsert(

@@ -251,6 +251,7 @@ class NodeRead(BaseModel):
 class NodeReadWithPayload(NodeRead):
     """Output model for nodes with payload."""
 
+    id: str
     payload: Optional[bytes] = None
 
 
@@ -281,6 +282,16 @@ class EdgeRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     version: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SchemaUpsert(BaseModel):
+    """Input model for creating/updating schemas."""
+
+    name: str
+    json_schema: Union[Dict[str, Any], type[BaseModel]]
+    kind: str = "node"
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -779,7 +790,11 @@ def _node_orm_to_read(orm: Any) -> NodeRead:
 
 def _node_orm_to_read_with_payload(orm: Any) -> NodeReadWithPayload:
     """Convert ORM instance to NodeReadWithPayload DTO."""
-    return NodeReadWithPayload.model_validate(orm)
+    base = NodeRead.model_validate(orm)
+    return NodeReadWithPayload(
+        **base.model_dump(),
+        payload=getattr(orm, "payload", None),
+    )
 
 
 def _edge_upsert_to_orm(
@@ -1132,12 +1147,7 @@ class GPGraph:
         json_schema[_SCHEMA_KIND_FIELD] = resolved_kind
         return json_schema, resolved_kind
 
-    async def register_schema(
-        self,
-        name: str,
-        schema: Union[Dict[str, Any], type[BaseModel]],
-        kind: str = "node",
-    ):
+    async def register_schema(self, schema_upsert: SchemaUpsert):
         """
         Register a JSON schema in the schema registry.
 
@@ -1147,9 +1157,7 @@ class GPGraph:
         - Patch: Non-consequential changes (descriptions, titles, examples)
 
         Args:
-            name: Unique name for the schema
-            schema: JSON schema dictionary or Pydantic model class
-            kind: Schema compatibility target, either "node" or "edge"
+            schema_upsert: SchemaUpsert model containing name, json_schema, and kind
 
         Raises:
             SchemaBreakingChangeError: If breaking changes are detected
@@ -1159,17 +1167,17 @@ class GPGraph:
         """
         async with self._get_session() as session:
             # Check if schema already exists
-            existing = await session.get(self._Schema, name)
+            existing = await session.get(self._Schema, schema_upsert.name)
             json_schema, resolved_kind = self._prepare_schema_registration(
-                schema,
-                kind=kind,
+                schema_upsert.json_schema,
+                kind=schema_upsert.kind,
                 existing=existing,
             )
             if existing:
                 existing_kind = self._schema_kind_from_record(existing)
                 if resolved_kind != existing_kind:
                     raise SchemaBreakingChangeError(
-                        f"Schema '{name}' cannot change kind from "
+                        f"Schema '{schema_upsert.name}' cannot change kind from "
                         f"'{existing_kind}' to '{resolved_kind}'."
                     )
                 # Detect type of change
@@ -1180,7 +1188,7 @@ class GPGraph:
                 # Fail on breaking changes
                 if change_type == "major":
                     self._check_breaking_changes(
-                        existing.json_schema, json_schema, name
+                        existing.json_schema, json_schema, schema_upsert.name
                     )
 
                 # Bump version
@@ -1189,18 +1197,20 @@ class GPGraph:
                 # Update existing schema
                 existing.json_schema = json_schema
                 existing.version = new_version
-                self._validators.pop(name, None)  # invalidate cache for updated schema
-                self._schema_kinds.pop(name, None)
+                self._validators.pop(
+                    schema_upsert.name, None
+                )  # invalidate cache for updated schema
+                self._schema_kinds.pop(schema_upsert.name, None)
                 await session.flush()
                 await session.refresh(existing)
                 return existing
 
             # Create new schema with version 1.0.0
             new_schema = self._Schema(
-                name=name, json_schema=json_schema, version="1.0.0"
+                name=schema_upsert.name, json_schema=json_schema, version="1.0.0"
             )
             session.add(new_schema)
-            self._schema_kinds.pop(name, None)
+            self._schema_kinds.pop(schema_upsert.name, None)
             await session.flush()
             await session.refresh(new_schema)
             return new_schema
@@ -1345,9 +1355,15 @@ class GPGraph:
         async with self.sqla_sessionmaker() as session:
             async with session.begin():
                 existing = await session.get(self._Schema, name)
+                # Build SchemaUpsert for the new schema
+                schema_upsert = SchemaUpsert(
+                    name=name,
+                    json_schema=new_schema,
+                    kind=kind if kind is not None else "node",
+                )
                 json_schema, resolved_kind = self._prepare_schema_registration(
-                    new_schema,
-                    kind=kind,
+                    schema_upsert.json_schema,
+                    kind=schema_upsert.kind,
                     existing=existing,
                 )
                 if existing is not None:

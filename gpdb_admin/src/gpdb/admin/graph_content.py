@@ -20,6 +20,7 @@ from gpdb import (
     SchemaBreakingChangeError,
     SchemaInUseError,
     SchemaNotFoundError,
+    SchemaUpsert,
     SchemaValidationError,
     SearchQuery,
     Sort,
@@ -464,9 +465,11 @@ class GraphContentService:
                 )
             try:
                 schema = await db.register_schema(
-                    clean_name,
-                    json_schema,
-                    kind=clean_kind,
+                    SchemaUpsert(
+                        name=clean_name,
+                        json_schema=json_schema,
+                        kind=clean_kind,
+                    )
                 )
             except (SchemaBreakingChangeError, ValueError) as exc:
                 raise GraphContentValidationError(str(exc)) from exc
@@ -515,9 +518,11 @@ class GraphContentService:
             )
             try:
                 schema = await db.register_schema(
-                    clean_name,
-                    json_schema_,
-                    kind=kind_,
+                    SchemaUpsert(
+                        name=clean_name,
+                        json_schema=json_schema_,
+                        kind=kind_,
+                    )
                 )
             except SchemaBreakingChangeError as exc:
                 raise GraphContentValidationError(

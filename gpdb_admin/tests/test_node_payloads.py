@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from gpdb import GPGraph, NodeUpsert
+from gpdb import GPGraph, NodeUpsert, SchemaUpsert
 from gpdb.admin import entry
 from gpdb.admin.store import AdminStore
 
@@ -440,11 +440,7 @@ def _seed_graph_schema(
     async def _seed() -> None:
         db = GPGraph(services.captive_server.get_uri(), table_prefix=table_prefix)
         try:
-            await db.register_schema(
-                schema_name,
-                _schema_definition(f"{schema_name} schema"),
-                kind=kind,
-            )
+            await db.register_schema(SchemaUpsert(name=schema_name, json_schema=_schema_definition(f"{schema_name} schema"), kind=kind))
         finally:
             await db.sqla_engine.dispose()
 
