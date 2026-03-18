@@ -713,9 +713,7 @@ def test_node_partial_update_preserves_omitted_fields(admin_test_env):
     graph = _read_graph_by_prefix(manager, table_prefix="partial_node")
     assert graph is not None
     graph_id = graph.id
-    _seed_graph_schema(
-        manager, table_prefix="partial_node", schema_name="task_schema"
-    )
+    _seed_graph_schema(manager, table_prefix="partial_node", schema_name="task_schema")
     node_id = _seed_node_record(
         manager,
         table_prefix="partial_node",
@@ -839,7 +837,13 @@ def _seed_graph_schema(
     async def _seed() -> None:
         db = GPGraph(services.captive_server.get_uri(), table_prefix=table_prefix)
         try:
-            await db.register_schema(SchemaUpsert(name=schema_name, json_schema=_schema_definition(f"{schema_name} schema"), kind=kind))
+            await db.upsert_schema(
+                SchemaUpsert(
+                    name=schema_name,
+                    json_schema=_schema_definition(f"{schema_name} schema"),
+                    kind=kind,
+                )
+            )
         finally:
             await db.sqla_engine.dispose()
 

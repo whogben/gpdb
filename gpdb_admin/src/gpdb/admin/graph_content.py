@@ -464,7 +464,7 @@ class GraphContentService:
                     f"Schema '{clean_name}' already exists."
                 )
             try:
-                schema = await db.register_schema(
+                schema = await db.upsert_schema(
                     SchemaUpsert(
                         name=clean_name,
                         json_schema=json_schema,
@@ -517,7 +517,7 @@ class GraphContentService:
                 else self._schema_kind_from_record(existing)
             )
             try:
-                schema = await db.register_schema(
+                schema = await db.upsert_schema(
                     SchemaUpsert(
                         name=clean_name,
                         json_schema=json_schema_,

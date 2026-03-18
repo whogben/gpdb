@@ -22,7 +22,7 @@ async def test_migrate_schema_success(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.register_schema(SchemaUpsert(name="person", json_schema=person_schema_v1))
+    await db.upsert_schema(SchemaUpsert(name="person", json_schema=person_schema_v1))
 
     # Create nodes with v1 schema
     node1 = NodeUpsert(
@@ -99,7 +99,9 @@ async def test_migrate_schema_validates_data(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.register_schema(SchemaUpsert(name="person_validate", json_schema=person_schema_v1))
+    await db.upsert_schema(
+        SchemaUpsert(name="person_validate", json_schema=person_schema_v1)
+    )
 
     # Create a node with v1 schema
     node = NodeUpsert(
@@ -160,7 +162,9 @@ async def test_migrate_schema_transaction(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.register_schema(SchemaUpsert(name="person_transaction", json_schema=person_schema_v1))
+    await db.upsert_schema(
+        SchemaUpsert(name="person_transaction", json_schema=person_schema_v1)
+    )
 
     # Create nodes with v1 schema
     node1 = NodeUpsert(

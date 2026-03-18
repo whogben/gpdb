@@ -357,7 +357,7 @@ class UserData(BaseModel):
     role: str
     email: str | None = None
 
-await db.register_schema("user_data", UserData, kind="node")
+await db.upsert_schema("user_data", UserData, kind="node")
 
 # This node's data will be validated against the schema
 await db.set_node(NodeUpsert(
@@ -434,7 +434,7 @@ await scratch.create_tables()   # creates: scratch_nodes, scratch_edges, scratch
 | `delete_edge(id)` | Delete an edge |
 | `search_edges(SearchQuery)` | Search edges |
 | `search_edges_projection(SearchQuery)` | Search edges with field projection |
-| `register_schema(name, schema, kind="node")` | Register or update a node/edge JSON schema |
+| `upsert_schema(name, schema, kind="node")` | Register or update a node/edge JSON schema |
 | `get_schema(name)` | Get a schema |
 | `delete_schema(name)` | Delete a schema (fails if in use) |
 | `list_schemas(kind=None)` | List all schema names, optionally filtered by kind |

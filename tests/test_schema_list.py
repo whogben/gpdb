@@ -16,9 +16,9 @@ async def test_list_schemas(db: GPGraph):
     schema2 = {"type": "object", "properties": {"value": {"type": "integer"}}}
     schema3 = {"type": "object", "properties": {"flag": {"type": "boolean"}}}
 
-    await db.register_schema(SchemaUpsert(name="schema1", json_schema=schema1))
-    await db.register_schema(SchemaUpsert(name="schema2", json_schema=schema2))
-    await db.register_schema(SchemaUpsert(name="schema3", json_schema=schema3))
+    await db.upsert_schema(SchemaUpsert(name="schema1", json_schema=schema1))
+    await db.upsert_schema(SchemaUpsert(name="schema2", json_schema=schema2))
+    await db.upsert_schema(SchemaUpsert(name="schema3", json_schema=schema3))
 
     # List all schemas
     schemas = await db.list_schemas()
@@ -47,7 +47,9 @@ async def test_schema_version_tracking(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.register_schema(SchemaUpsert(name="person_version", json_schema=person_schema_v1))
+    await db.upsert_schema(
+        SchemaUpsert(name="person_version", json_schema=person_schema_v1)
+    )
 
     # Verify version is 1
     schema = await db.get_schema("person_version")
@@ -62,7 +64,9 @@ async def test_schema_version_tracking(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.register_schema(SchemaUpsert(name="person_version", json_schema=person_schema_v2))
+    await db.upsert_schema(
+        SchemaUpsert(name="person_version", json_schema=person_schema_v2)
+    )
 
     # Verify version is now 1.1.0 (minor bump)
     schema = await db.get_schema("person_version")
@@ -78,7 +82,9 @@ async def test_schema_version_tracking(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.register_schema(SchemaUpsert(name="person_version", json_schema=person_schema_v3))
+    await db.upsert_schema(
+        SchemaUpsert(name="person_version", json_schema=person_schema_v3)
+    )
 
     # Verify version is now 1.2.0 (minor bump)
     schema = await db.get_schema("person_version")
@@ -103,7 +109,11 @@ async def test_edge_schema_validation_persistence(db: GPGraph):
         },
         "required": ["weight"],
     }
-    await db.register_schema(SchemaUpsert(name="relationship_persist", json_schema=relationship_schema, kind="edge"))
+    await db.upsert_schema(
+        SchemaUpsert(
+            name="relationship_persist", json_schema=relationship_schema, kind="edge"
+        )
+    )
 
     # Create two nodes
     node1 = NodeUpsert(type="test", data={"label": "A"})

@@ -20,9 +20,7 @@ def test_rest_payload_set_then_get_returns_stored_payload(admin_test_env):
 
     _bootstrap_owner(client)
     _login(client)
-    graph_id, node_id, api_key_value = _graph_and_node_without_payload(
-        client, manager
-    )
+    graph_id, node_id, api_key_value = _graph_and_node_without_payload(client, manager)
 
     payload_bytes = b"rest payload set only"
     response = client.post(
@@ -61,9 +59,7 @@ def test_mcp_payload_set_then_get_returns_stored_payload(admin_test_env):
 
     _bootstrap_owner(client)
     _login(client)
-    graph_id, node_id, api_key_value = _graph_and_node_without_payload(
-        client, manager
-    )
+    graph_id, node_id, api_key_value = _graph_and_node_without_payload(client, manager)
 
     payload_bytes = b"mcp payload set only"
     _call_persisted_authenticated_mcp_tool(
@@ -98,9 +94,7 @@ def test_payload_get_without_payload_returns_400_rest(admin_test_env):
 
     _bootstrap_owner(client)
     _login(client)
-    graph_id, node_id, api_key_value = _graph_and_node_without_payload(
-        client, manager
-    )
+    graph_id, node_id, api_key_value = _graph_and_node_without_payload(client, manager)
 
     response = client.post(
         "/api/graph_node_payload_get",
@@ -118,9 +112,7 @@ def test_payload_get_without_payload_returns_error_mcp(admin_test_env):
 
     _bootstrap_owner(client)
     _login(client)
-    graph_id, node_id, api_key_value = _graph_and_node_without_payload(
-        client, manager
-    )
+    graph_id, node_id, api_key_value = _graph_and_node_without_payload(client, manager)
 
     with pytest.raises(Exception) as exc_info:
         _call_persisted_authenticated_mcp_tool(
@@ -139,9 +131,7 @@ def test_payload_get_nonexistent_node_returns_404(admin_test_env):
 
     _bootstrap_owner(client)
     _login(client)
-    graph_id, _, api_key_value = _graph_and_node_without_payload(
-        client, manager
-    )
+    graph_id, _, api_key_value = _graph_and_node_without_payload(client, manager)
     nonexistent_id = "nonexistent-node-id"
 
     response = client.post(
@@ -159,9 +149,7 @@ def test_payload_set_invalid_base64_returns_400(admin_test_env):
 
     _bootstrap_owner(client)
     _login(client)
-    graph_id, node_id, api_key_value = _graph_and_node_without_payload(
-        client, manager
-    )
+    graph_id, node_id, api_key_value = _graph_and_node_without_payload(client, manager)
 
     response = client.post(
         "/api/graph_node_payload_set",
@@ -184,9 +172,7 @@ def test_payload_binary_roundtrip(admin_test_env):
 
     _bootstrap_owner(client)
     _login(client)
-    graph_id, node_id, api_key_value = _graph_and_node_without_payload(
-        client, manager
-    )
+    graph_id, node_id, api_key_value = _graph_and_node_without_payload(client, manager)
 
     payload_bytes = bytes(range(256))
     response = client.post(
@@ -218,9 +204,7 @@ def test_payload_set_replaces_existing_payload(admin_test_env):
 
     _bootstrap_owner(client)
     _login(client)
-    graph_id, node_id, api_key_value = _graph_and_node_without_payload(
-        client, manager
-    )
+    graph_id, node_id, api_key_value = _graph_and_node_without_payload(client, manager)
 
     first = b"first payload"
     response = client.post(
@@ -345,9 +329,7 @@ def _graph_and_api_key(client, manager):
     graph = _read_graph_by_prefix(manager, table_prefix="payload_tests")
     assert graph is not None
     graph_id = graph.id
-    _seed_graph_schema(
-        manager, table_prefix="payload_tests", schema_name="task_schema"
-    )
+    _seed_graph_schema(manager, table_prefix="payload_tests", schema_name="task_schema")
     response = client.post(
         "/apikeys",
         data={"label": "Payload test key"},
@@ -440,7 +422,13 @@ def _seed_graph_schema(
     async def _seed() -> None:
         db = GPGraph(services.captive_server.get_uri(), table_prefix=table_prefix)
         try:
-            await db.register_schema(SchemaUpsert(name=schema_name, json_schema=_schema_definition(f"{schema_name} schema"), kind=kind))
+            await db.upsert_schema(
+                SchemaUpsert(
+                    name=schema_name,
+                    json_schema=_schema_definition(f"{schema_name} schema"),
+                    kind=kind,
+                )
+            )
         finally:
             await db.sqla_engine.dispose()
 

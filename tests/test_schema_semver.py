@@ -1,7 +1,13 @@
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
-from gpdb import GPGraph, NodeUpsert, SchemaBreakingChangeError, SchemaValidationError, SchemaUpsert
+from gpdb import (
+    GPGraph,
+    NodeUpsert,
+    SchemaBreakingChangeError,
+    SchemaValidationError,
+    SchemaUpsert,
+)
 
 
 # --- Tests ---
@@ -22,7 +28,7 @@ async def test_semver_patch_change(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.register_schema(SchemaUpsert(name="person", json_schema=person_schema_v1))
+    await db.upsert_schema(SchemaUpsert(name="person", json_schema=person_schema_v1))
 
     # Update with only description change (patch)
     person_schema_v2 = {
@@ -33,7 +39,7 @@ async def test_semver_patch_change(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.register_schema(SchemaUpsert(name="person", json_schema=person_schema_v2))
+    await db.upsert_schema(SchemaUpsert(name="person", json_schema=person_schema_v2))
 
     # Verify version incremented (patch: 1.0.0 -> 1.0.1)
     schema = await db.get_schema("person")
@@ -54,7 +60,9 @@ async def test_semver_minor_change(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.register_schema(SchemaUpsert(name="person_minor", json_schema=person_schema_v1))
+    await db.upsert_schema(
+        SchemaUpsert(name="person_minor", json_schema=person_schema_v1)
+    )
 
     # Create node with old schema
     node = NodeUpsert(type="person", schema_name="person_minor", data={"name": "Alice"})
@@ -69,7 +77,9 @@ async def test_semver_minor_change(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.register_schema(SchemaUpsert(name="person_minor", json_schema=person_schema_v2))
+    await db.upsert_schema(
+        SchemaUpsert(name="person_minor", json_schema=person_schema_v2)
+    )
 
     # Verify version incremented (minor: 1.0.0 -> 1.1.0)
     schema = await db.get_schema("person_minor")
@@ -85,7 +95,7 @@ async def test_semver_minor_change(db: GPGraph):
 async def test_semver_major_change_detection(db: GPGraph):
     """
     Test that breaking changes (adding required field, removing field, changing type) are detected.
-    register_schema should raise SchemaBreakingChangeError by default.
+    upsert_schema should raise SchemaBreakingChangeError by default.
     """
     # Register initial schema v1
     person_schema_v1 = {
@@ -96,7 +106,7 @@ async def test_semver_major_change_detection(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.register_schema(SchemaUpsert(name="person", json_schema=person_schema_v1))
+    await db.upsert_schema(SchemaUpsert(name="person", json_schema=person_schema_v1))
 
     # Test 1: Adding required field (breaking)
     person_schema_v2_required = {
@@ -109,7 +119,9 @@ async def test_semver_major_change_detection(db: GPGraph):
         "required": ["name", "email"],
     }
     with pytest.raises(SchemaBreakingChangeError):
-        await db.register_schema(SchemaUpsert(name="person", json_schema=person_schema_v2_required))
+        await db.upsert_schema(
+            SchemaUpsert(name="person", json_schema=person_schema_v2_required)
+        )
 
     # Test 2: Removing field (breaking)
     person_schema_v2_removed = {
@@ -120,7 +132,9 @@ async def test_semver_major_change_detection(db: GPGraph):
         "required": ["name"],
     }
     with pytest.raises(SchemaBreakingChangeError):
-        await db.register_schema(SchemaUpsert(name="person", json_schema=person_schema_v2_removed))
+        await db.upsert_schema(
+            SchemaUpsert(name="person", json_schema=person_schema_v2_removed)
+        )
 
     # Test 3: Changing type (breaking)
     person_schema_v2_type = {
@@ -132,7 +146,9 @@ async def test_semver_major_change_detection(db: GPGraph):
         "required": ["name"],
     }
     with pytest.raises(SchemaBreakingChangeError):
-        await db.register_schema(SchemaUpsert(name="person", json_schema=person_schema_v2_type))
+        await db.upsert_schema(
+            SchemaUpsert(name="person", json_schema=person_schema_v2_type)
+        )
 
 
 @pytest.mark.asyncio
@@ -149,7 +165,9 @@ async def test_forced_update_bypasses_check(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.register_schema(SchemaUpsert(name="person_force", json_schema=person_schema_v1))
+    await db.upsert_schema(
+        SchemaUpsert(name="person_force", json_schema=person_schema_v1)
+    )
 
     # Try breaking change (should fail)
     person_schema_v2 = {
@@ -161,7 +179,9 @@ async def test_forced_update_bypasses_check(db: GPGraph):
         "required": ["name", "email"],
     }
     with pytest.raises(SchemaBreakingChangeError):
-        await db.register_schema(SchemaUpsert(name="person_force", json_schema=person_schema_v2))
+        await db.upsert_schema(
+            SchemaUpsert(name="person_force", json_schema=person_schema_v2)
+        )
 
     # Verify schema was NOT updated
     schema = await db.get_schema("person_force")
