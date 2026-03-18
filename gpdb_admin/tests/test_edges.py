@@ -935,12 +935,14 @@ def _seed_graph_schema(
     async def _seed() -> None:
         db = GPGraph(services.captive_server.get_uri(), table_prefix=table_prefix)
         try:
-            await db.set_schema(
-                SchemaUpsert(
-                    name=schema_name,
-                    json_schema=_schema_definition(f"{schema_name} schema"),
-                    kind=kind,
-                )
+            await db.set_schemas(
+                [
+                    SchemaUpsert(
+                        name=schema_name,
+                        json_schema=_schema_definition(f"{schema_name} schema"),
+                        kind=kind,
+                    )
+                ]
             )
         finally:
             await db.sqla_engine.dispose()
@@ -965,16 +967,19 @@ def _seed_node_record(
     async def _seed() -> str:
         db = GPGraph(services.captive_server.get_uri(), table_prefix=table_prefix)
         try:
-            node = await db.set_node(
-                NodeUpsert(
-                    type=type,
-                    name=name,
-                    parent_id=parent_id,
-                    schema_name=schema_name,
-                    data=data,
-                    tags=list(tags or []),
-                )
+            node_list = await db.set_nodes(
+                [
+                    NodeUpsert(
+                        type=type,
+                        name=name,
+                        parent_id=parent_id,
+                        schema_name=schema_name,
+                        data=data,
+                        tags=list(tags or []),
+                    )
+                ]
             )
+            node = node_list[0]
             return node.id
         finally:
             await db.sqla_engine.dispose()
@@ -999,16 +1004,16 @@ def _seed_edge_record(
     async def _seed() -> str:
         db = GPGraph(services.captive_server.get_uri(), table_prefix=table_prefix)
         try:
-            edge = await db.set_edge(
-                EdgeUpsert(
+            edge = (await db.set_edges(
+                [EdgeUpsert(
                     type=type,
                     source_id=source_id,
                     target_id=target_id,
                     schema_name=schema_name,
                     data=data,
                     tags=list(tags or []),
-                )
-            )
+                )]
+            ))[0]
             return edge.id
         finally:
             await db.sqla_engine.dispose()

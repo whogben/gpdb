@@ -241,9 +241,9 @@ def _read_stored_api_key(manager, *, label: str) -> dict[str, object]:
             assert owner is not None
             api_keys = await store.list_api_keys_for_user(owner.id)
             api_key = next(item for item in api_keys if item.label == label)
-            node = await store.db.get_node(api_key.id)
-            assert node is not None
-            return dict(node.data)
+            nodes = await store.db.get_nodes([api_key.id])
+            assert len(nodes) == 1
+            return dict(nodes[0].data)
         finally:
             await store.close()
 

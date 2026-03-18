@@ -202,10 +202,14 @@ class AdminStore:
 
     async def get_user_by_id(self, user_id: str) -> AdminUser | None:
         """Return a user by id if present."""
-        node = await self.db.get_node(user_id)
-        if node is None or node.type != "user":
+        try:
+            nodes = await self.db.get_nodes([user_id])
+            node = nodes[0]
+            if node.type != "user":
+                return None
+            return _admin_user_from_node(node)
+        except ValueError:
             return None
-        return _admin_user_from_node(node)
 
     async def create_initial_owner(
         self,
@@ -220,20 +224,23 @@ class AdminStore:
         if await self.get_user_by_username(username):
             raise UserAlreadyExistsError(f"User '{username}' already exists")
 
-        node = await self.db.set_node(
-            NodeUpsert(
-                type="user",
-                name=username,
-                data={
-                    "username": username,
-                    "display_name": display_name or username,
-                    "password_hash": password_hash,
-                    "is_owner": True,
-                    "is_active": True,
-                    "auth_version": 1,
-                },
-            )
+        node_list = await self.db.set_nodes(
+            [
+                NodeUpsert(
+                    type="user",
+                    name=username,
+                    data={
+                        "username": username,
+                        "display_name": display_name or username,
+                        "password_hash": password_hash,
+                        "is_owner": True,
+                        "is_active": True,
+                        "auth_version": 1,
+                    },
+                )
+            ]
         )
+        node = node_list[0]
         return _admin_user_from_node(node)
 
     async def verify_user_credentials(
@@ -276,10 +283,14 @@ class AdminStore:
 
     async def get_api_key_by_id(self, api_key_id: str) -> AdminAPIKey | None:
         """Return one API key by its admin node id."""
-        node = await self.db.get_node(api_key_id)
-        if node is None or node.type != API_KEY_NODE_TYPE or not node.parent_id:
+        try:
+            nodes = await self.db.get_nodes([api_key_id])
+            node = nodes[0]
+            if node.type != API_KEY_NODE_TYPE or not node.parent_id:
+                return None
+            return _admin_api_key_from_node(node)
+        except ValueError:
             return None
-        return _admin_api_key_from_node(node)
 
     async def get_api_key_by_key_id(self, key_id: str) -> AdminAPIKey | None:
         """Return one API key by its public identifier."""
@@ -304,53 +315,67 @@ class AdminStore:
         key_value: str,
     ) -> AdminAPIKey:
         """Create and persist one API key for a user."""
-        node = await self.db.set_node(
-            NodeUpsert(
-                type=API_KEY_NODE_TYPE,
-                name=key_id,
-                parent_id=user_id,
-                data={
-                    "label": label,
-                    "key_id": key_id,
-                    "preview": preview,
-                    "secret_hash": secret_hash,
-                    "key_value": self._encrypt_instance_secret(key_value),
-                    "created_at": _timestamp_now(),
-                    "last_used_at": None,
-                    "revoked_at": None,
-                    "is_active": True,
-                },
-            )
+        node_list = await self.db.set_nodes(
+            [
+                NodeUpsert(
+                    type=API_KEY_NODE_TYPE,
+                    name=key_id,
+                    parent_id=user_id,
+                    data={
+                        "label": label,
+                        "key_id": key_id,
+                        "preview": preview,
+                        "secret_hash": secret_hash,
+                        "key_value": self._encrypt_instance_secret(key_value),
+                        "created_at": _timestamp_now(),
+                        "last_used_at": None,
+                        "revoked_at": None,
+                        "is_active": True,
+                    },
+                )
+            ]
         )
+        node = node_list[0]
         return _admin_api_key_from_node(node)
 
     async def reveal_api_key(self, api_key_id: str) -> str | None:
         """Return the stored plaintext API key for one key record."""
-        node = await self.db.get_node(api_key_id)
-        if node is None or node.type != API_KEY_NODE_TYPE:
+        try:
+            nodes = await self.db.get_nodes([api_key_id])
+            node = nodes[0]
+            if node.type != API_KEY_NODE_TYPE:
+                return None
+            return self._decrypt_instance_secret(
+                _optional_string(node.data.get("key_value"))
+            )
+        except ValueError:
             return None
-        return self._decrypt_instance_secret(
-            _optional_string(node.data.get("key_value"))
-        )
 
     async def revoke_api_key(self, api_key_id: str) -> AdminAPIKey | None:
         """Revoke one API key and prevent future authentication."""
-        node = await self.db.get_node(api_key_id)
-        if node is None or node.type != API_KEY_NODE_TYPE or not node.parent_id:
-            return None
-        updated_data = dict(node.data)
-        updated_data["is_active"] = False
-        updated_data["revoked_at"] = updated_data.get("revoked_at") or _timestamp_now()
-        updated = await self.db.set_node(
-            NodeUpsert(
-                id=node.id,
-                type=node.type,
-                name=node.name,
-                parent_id=node.parent_id,
-                data=updated_data,
+        try:
+            nodes = await self.db.get_nodes([api_key_id])
+            node = nodes[0]
+            if node.type != API_KEY_NODE_TYPE or not node.parent_id:
+                return None
+            updated_data = dict(node.data)
+            updated_data["is_active"] = False
+            updated_data["revoked_at"] = updated_data.get("revoked_at") or _timestamp_now()
+            updated_list = await self.db.set_nodes(
+                [
+                    NodeUpsert(
+                        id=node.id,
+                        type=node.type,
+                        name=node.name,
+                        parent_id=node.parent_id,
+                        data=updated_data,
+                    )
+                ]
             )
-        )
-        return _admin_api_key_from_node(updated)
+            updated = updated_list[0]
+            return _admin_api_key_from_node(updated)
+        except ValueError:
+            return None
 
     async def authenticate_api_key(
         self,
@@ -387,15 +412,18 @@ class AdminStore:
         updated_data = dict(node.data)
         updated_data["last_used_at"] = _timestamp_now()
         try:
-            updated = await self.db.set_node(
-                NodeUpsert(
-                    id=node.id,
-                    type=node.type,
-                    name=node.name,
-                    parent_id=node.parent_id,
-                    data=updated_data,
-                )
+            updated_list = await self.db.set_nodes(
+                [
+                    NodeUpsert(
+                        id=node.id,
+                        type=node.type,
+                        name=node.name,
+                        parent_id=node.parent_id,
+                        data=updated_data,
+                    )
+                ]
             )
+            updated = updated_list[0]
             return user, _admin_api_key_from_node(updated)
         except StaleDataError:
             # Concurrent update on last_used_at - non-critical, return success
@@ -419,10 +447,14 @@ class AdminStore:
 
     async def get_instance_by_id(self, instance_id: str) -> ManagedInstance | None:
         """Return one managed instance by node id."""
-        node = await self.db.get_node(instance_id)
-        if node is None or node.type != INSTANCE_NODE_TYPE:
+        try:
+            nodes = await self.db.get_nodes([instance_id])
+            node = nodes[0]
+            if node.type != INSTANCE_NODE_TYPE:
+                return None
+            return self._managed_instance_from_node(node)
+        except ValueError:
             return None
-        return self._managed_instance_from_node(node)
 
     async def get_instance_by_slug(self, slug: str) -> ManagedInstance | None:
         """Return one managed instance by slug."""
@@ -471,14 +503,17 @@ class AdminStore:
                 existing.data.get("last_checked_at") if existing else None
             ),
         }
-        node = await self.db.set_node(
-            NodeUpsert(
-                id=existing.id if existing else None,
-                type=INSTANCE_NODE_TYPE,
-                name=DEFAULT_INSTANCE_SLUG,
-                data=payload,
-            )
+        node_list = await self.db.set_nodes(
+            [
+                NodeUpsert(
+                    id=existing.id if existing else None,
+                    type=INSTANCE_NODE_TYPE,
+                    name=DEFAULT_INSTANCE_SLUG,
+                    data=payload,
+                )
+            ]
         )
+        node = node_list[0]
         return self._managed_instance_from_node(node)
 
     async def create_instance(
@@ -497,30 +532,33 @@ class AdminStore:
         if await self.get_instance_by_slug(slug):
             raise InstanceAlreadyExistsError(f"Instance '{slug}' already exists")
 
-        node = await self.db.set_node(
-            NodeUpsert(
-                type=INSTANCE_NODE_TYPE,
-                name=slug,
-                data={
-                    "slug": slug,
-                    "display_name": display_name,
-                    "description": description,
-                    "mode": "external",
-                    "is_builtin": False,
-                    "is_default": False,
-                    "is_active": True,
-                    "connection_kind": "postgres",
-                    "host": host,
-                    "port": port,
-                    "database": database,
-                    "username": username,
-                    "password": self._encrypt_instance_secret(password),
-                    "status": "checking",
-                    "status_message": None,
-                    "last_checked_at": None,
-                },
-            )
+        node_list = await self.db.set_nodes(
+            [
+                NodeUpsert(
+                    type=INSTANCE_NODE_TYPE,
+                    name=slug,
+                    data={
+                        "slug": slug,
+                        "display_name": display_name,
+                        "description": description,
+                        "mode": "external",
+                        "is_builtin": False,
+                        "is_default": False,
+                        "is_active": True,
+                        "connection_kind": "postgres",
+                        "host": host,
+                        "port": port,
+                        "database": database,
+                        "username": username,
+                        "password": self._encrypt_instance_secret(password),
+                        "status": "checking",
+                        "status_message": None,
+                        "last_checked_at": None,
+                    },
+                )
+            ]
         )
+        node = node_list[0]
         return self._managed_instance_from_node(node)
 
     async def update_instance(
@@ -537,42 +575,49 @@ class AdminStore:
         password: str | None = None,
     ) -> ManagedInstance | None:
         """Update one managed instance's metadata and connection fields. Omitted fields are left unchanged."""
-        node = await self.db.get_node(instance_id)
-        if node is None or node.type != INSTANCE_NODE_TYPE:
-            return None
+        try:
+            nodes = await self.db.get_nodes([instance_id])
+            node = nodes[0]
+            if node.type != INSTANCE_NODE_TYPE:
+                return None
 
-        updated_data = dict(node.data)
-        if display_name is not None:
-            updated_data["display_name"] = display_name
-        if description is not None:
-            updated_data["description"] = description
-        if is_active is not None:
-            updated_data["is_active"] = is_active
+            updated_data = dict(node.data)
+            if display_name is not None:
+                updated_data["display_name"] = display_name
+            if description is not None:
+                updated_data["description"] = description
+            if is_active is not None:
+                updated_data["is_active"] = is_active
 
-        if updated_data.get("mode") == "external":
-            if host is not None:
-                updated_data["host"] = host
-            if port is not None:
-                updated_data["port"] = port
-            if database is not None:
-                updated_data["database"] = database
-            if username is not None:
-                updated_data["username"] = username
-            if password is not None:
-                updated_data["password"] = self._encrypt_instance_secret(password)
-            # When password is not in the update set, updated_data already has the
-            # existing encrypted password from dict(node.data); no decrypt/re-encrypt.
+            if updated_data.get("mode") == "external":
+                if host is not None:
+                    updated_data["host"] = host
+                if port is not None:
+                    updated_data["port"] = port
+                if database is not None:
+                    updated_data["database"] = database
+                if username is not None:
+                    updated_data["username"] = username
+                if password is not None:
+                    updated_data["password"] = self._encrypt_instance_secret(password)
+                # When password is not in the update set, updated_data already has the
+                # existing encrypted password from dict(node.data); no decrypt/re-encrypt.
 
-        updated = await self.db.set_node(
-            NodeUpsert(
-                id=node.id,
-                type=node.type,
-                name=node.name,
-                parent_id=node.parent_id,
-                data=updated_data,
+            updated_list = await self.db.set_nodes(
+                [
+                    NodeUpsert(
+                        id=node.id,
+                        type=node.type,
+                        name=node.name,
+                        parent_id=node.parent_id,
+                        data=updated_data,
+                    )
+                ]
             )
-        )
-        return self._managed_instance_from_node(updated)
+            updated = updated_list[0]
+            return self._managed_instance_from_node(updated)
+        except ValueError:
+            return None
 
     async def delete_instance(self, instance_id: str) -> None:
         """Delete an external managed instance and its graph metadata."""
@@ -583,9 +628,8 @@ class AdminStore:
             raise ValueError("The built-in instance cannot be deleted")
 
         graphs = await self.list_graphs_for_instance(instance_id)
-        for graph in graphs:
-            await self.db.delete_node(graph.id)
-        await self.db.delete_node(instance_id)
+        graph_ids = [graph.id for graph in graphs]
+        await self.db.delete_nodes(graph_ids + [instance_id])
 
     async def update_instance_status(
         self,
@@ -595,24 +639,31 @@ class AdminStore:
         status_message: str | None,
     ) -> ManagedInstance | None:
         """Persist the latest instance health status."""
-        node = await self.db.get_node(instance_id)
-        if node is None or node.type != INSTANCE_NODE_TYPE:
-            return None
+        try:
+            nodes = await self.db.get_nodes([instance_id])
+            node = nodes[0]
+            if node.type != INSTANCE_NODE_TYPE:
+                return None
 
-        updated_data = dict(node.data)
-        updated_data["status"] = status
-        updated_data["status_message"] = status_message
-        updated_data["last_checked_at"] = _timestamp_now()
-        updated = await self.db.set_node(
-            NodeUpsert(
-                id=node.id,
-                type=node.type,
-                name=node.name,
-                parent_id=node.parent_id,
-                data=updated_data,
+            updated_data = dict(node.data)
+            updated_data["status"] = status
+            updated_data["status_message"] = status_message
+            updated_data["last_checked_at"] = _timestamp_now()
+            updated_list = await self.db.set_nodes(
+                [
+                    NodeUpsert(
+                        id=node.id,
+                        type=node.type,
+                        name=node.name,
+                        parent_id=node.parent_id,
+                        data=updated_data,
+                    )
+                ]
             )
-        )
-        return self._managed_instance_from_node(updated)
+            updated = updated_list[0]
+            return self._managed_instance_from_node(updated)
+        except ValueError:
+            return None
 
     async def list_graphs(self) -> list[ManagedGraph]:
         """Return all managed graph records across all instances."""
@@ -659,13 +710,17 @@ class AdminStore:
 
     async def get_graph_by_id(self, graph_id: str) -> ManagedGraph | None:
         """Return one managed graph by node id."""
-        node = await self.db.get_node(graph_id)
-        if node is None or node.type != GRAPH_NODE_TYPE or not node.parent_id:
+        try:
+            nodes = await self.db.get_nodes([graph_id])
+            node = nodes[0]
+            if node.type != GRAPH_NODE_TYPE or not node.parent_id:
+                return None
+            instance = await self.get_instance_by_id(node.parent_id)
+            if instance is None:
+                return None
+            return _managed_graph_from_node(node, instance)
+        except ValueError:
             return None
-        instance = await self.get_instance_by_id(node.parent_id)
-        if instance is None:
-            return None
-        return _managed_graph_from_node(node, instance)
 
     async def get_graph_by_scope(
         self,
@@ -694,30 +749,37 @@ class AdminStore:
         display_name: str | None = None,
     ) -> ManagedGraph | None:
         """Update one managed graph's display name. Omitted fields are left unchanged."""
-        node = await self.db.get_node(graph_id)
-        if node is None or node.type != GRAPH_NODE_TYPE or not node.parent_id:
-            return None
-        instance = await self.get_instance_by_id(node.parent_id)
-        if instance is None:
-            return None
+        try:
+            nodes = await self.db.get_nodes([graph_id])
+            node = nodes[0]
+            if node.type != GRAPH_NODE_TYPE or not node.parent_id:
+                return None
+            instance = await self.get_instance_by_id(node.parent_id)
+            if instance is None:
+                return None
 
-        updated_data = dict(node.data)
-        if display_name is not None:
-            updated_data["display_name"] = display_name
-        updated = await self.db.set_node(
-            NodeUpsert(
-                id=node.id,
-                type=node.type,
-                name=node.name,
-                parent_id=node.parent_id,
-                data=updated_data,
+            updated_data = dict(node.data)
+            if display_name is not None:
+                updated_data["display_name"] = display_name
+            updated_list = await self.db.set_nodes(
+                [
+                    NodeUpsert(
+                        id=node.id,
+                        type=node.type,
+                        name=node.name,
+                        parent_id=node.parent_id,
+                        data=updated_data,
+                    )
+                ]
             )
-        )
-        return _managed_graph_from_node(updated, instance)
+            updated = updated_list[0]
+            return _managed_graph_from_node(updated, instance)
+        except ValueError:
+            return None
 
     async def delete_graph(self, graph_id: str) -> None:
         """Delete one managed graph metadata node."""
-        await self.db.delete_node(graph_id)
+        await self.db.delete_nodes([graph_id])
 
     async def upsert_graph_metadata(
         self,
@@ -757,33 +819,36 @@ class AdminStore:
                 )
 
         current_data = dict(existing_node.data) if existing_node else {}
-        node = await self.db.set_node(
-            NodeUpsert(
-                id=existing_node.id if existing_node else None,
-                type=GRAPH_NODE_TYPE,
-                name=graph_name,
-                parent_id=instance_id,
-                data={
-                    "table_prefix": table_prefix,
-                    "display_name": display_name
-                    or current_data.get("display_name")
-                    or _default_graph_display_name(table_prefix, instance.display_name),
-                    "status": status or current_data.get("status", "checking"),
-                    "status_message": (
-                        status_message
-                        if status_message is not None
-                        else current_data.get("status_message")
-                    ),
-                    "last_checked_at": _timestamp_now(),
-                    "exists_in_instance": (
-                        exists_in_instance
-                        if exists_in_instance is not None
-                        else current_data.get("exists_in_instance", False)
-                    ),
-                    "source": source or current_data.get("source", "discovered"),
-                },
-            )
+        node_list = await self.db.set_nodes(
+            [
+                NodeUpsert(
+                    id=existing_node.id if existing_node else None,
+                    type=GRAPH_NODE_TYPE,
+                    name=graph_name,
+                    parent_id=instance_id,
+                    data={
+                        "table_prefix": table_prefix,
+                        "display_name": display_name
+                        or current_data.get("display_name")
+                        or _default_graph_display_name(table_prefix, instance.display_name),
+                        "status": status or current_data.get("status", "checking"),
+                        "status_message": (
+                            status_message
+                            if status_message is not None
+                            else current_data.get("status_message")
+                        ),
+                        "last_checked_at": _timestamp_now(),
+                        "exists_in_instance": (
+                            exists_in_instance
+                            if exists_in_instance is not None
+                            else current_data.get("exists_in_instance", False)
+                        ),
+                        "source": source or current_data.get("source", "discovered"),
+                    },
+                )
+            ]
         )
+        node = node_list[0]
         return _managed_graph_from_node(node, instance)
 
     async def sync_graph_snapshot(

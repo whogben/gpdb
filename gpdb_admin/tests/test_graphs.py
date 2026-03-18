@@ -189,41 +189,51 @@ def _seed_graph_content(manager, *, table_prefix: str) -> None:
     async def _seed() -> None:
         db = GPGraph(services.captive_server.get_uri(), table_prefix=table_prefix)
         try:
-            await db.set_schema(
-                SchemaUpsert(
-                    name="task_schema",
-                    json_schema={
-                        "type": "object",
-                        "properties": {
-                            "label": {"type": "string"},
+            await db.set_schemas(
+                [
+                    SchemaUpsert(
+                        name="task_schema",
+                        json_schema={
+                            "type": "object",
+                            "properties": {
+                                "label": {"type": "string"},
+                            },
+                            "required": ["label"],
                         },
-                        "required": ["label"],
-                    },
-                )
+                    )
+                ]
             )
-            source = await db.set_node(
-                NodeUpsert(
-                    type="task",
-                    name="source",
-                    schema_name="task_schema",
-                    data={"label": "Source task"},
-                )
+            source_list = await db.set_nodes(
+                [
+                    NodeUpsert(
+                        type="task",
+                        name="source",
+                        schema_name="task_schema",
+                        data={"label": "Source task"},
+                    )
+                ]
             )
-            target = await db.set_node(
-                NodeUpsert(
-                    type="task",
-                    name="target",
-                    data={},
-                )
+            source = source_list[0]
+            target_list = await db.set_nodes(
+                [
+                    NodeUpsert(
+                        type="task",
+                        name="target",
+                        data={},
+                    )
+                ]
             )
-            await db.set_edge(
-                EdgeUpsert(
-                    type="depends_on",
-                    source_id=source.id,
-                    target_id=target.id,
-                    data={},
-                )
-            )
+            target = target_list[0]
+            _ = (await db.set_edges(
+                [
+                    EdgeUpsert(
+                        type="depends_on",
+                        source_id=source.id,
+                        target_id=target.id,
+                        data={},
+                    )
+                ]
+            ))[0]
         finally:
             await db.sqla_engine.dispose()
 

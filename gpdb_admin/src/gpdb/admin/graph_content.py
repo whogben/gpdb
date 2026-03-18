@@ -386,17 +386,35 @@ class GraphContentService:
         try:
             items: list[GraphSchemaRecord] = []
             clean_kind = self._normalize_optional_schema_kind(kind)
-            for schema_name in sorted(await db.list_schemas(kind=clean_kind)):
-                schema = await db.get_schema(schema_name)
-                if schema is None:
-                    continue
-                items.append(
-                    self._serialize_schema_record(
-                        schema,
-                        include_json_schema=include_json_schema,
-                        usage=GraphSchemaUsage(),
-                    )
-                )
+            schema_names = sorted(await db.list_schemas(kind=clean_kind))
+            if schema_names:
+                try:
+                    schemas = await db.get_schemas(schema_names)
+                    for schema in schemas:
+                        items.append(
+                            self._serialize_schema_record(
+                                schema,
+                                include_json_schema=include_json_schema,
+                                usage=GraphSchemaUsage(),
+                            )
+                        )
+                except SchemaNotFoundError:
+                    # TOCTOU protection: `list_schemas()` may become stale
+                    # if another user deletes a schema between list+get.
+                    # Best-effort: skip missing schemas and return the rest.
+                    for schema_name in schema_names:
+                        try:
+                            schemas = await db.get_schemas([schema_name])
+                            schema = schemas[0]
+                        except SchemaNotFoundError:
+                            continue
+                        items.append(
+                            self._serialize_schema_record(
+                                schema,
+                                include_json_schema=include_json_schema,
+                                usage=GraphSchemaUsage(),
+                            )
+                        )
             return GraphSchemaList(
                 items=items,
                 total=len(items),
@@ -424,9 +442,13 @@ class GraphContentService:
             permission_kind="view",
         )
         try:
-            schema = await db.get_schema(clean_name)
-            if schema is None:
-                raise GraphContentNotFoundError(f"Schema '{clean_name}' was not found.")
+            try:
+                schemas = await db.get_schemas([clean_name])
+            except SchemaNotFoundError as exc:
+                raise GraphContentNotFoundError(
+                    f"Schema '{clean_name}' was not found."
+                ) from exc
+            schema = schemas[0]
             return GraphSchemaDetail(
                 schema_record=self._serialize_schema_record(
                     schema,
@@ -459,18 +481,24 @@ class GraphContentService:
             permission_kind="manage_schemas",
         )
         try:
-            if await db.get_schema(clean_name) is not None:
+            try:
+                await db.get_schemas([clean_name])
                 raise GraphContentConflictError(
                     f"Schema '{clean_name}' already exists."
                 )
+            except SchemaNotFoundError:
+                pass
             try:
-                schema = await db.set_schema(
-                    SchemaUpsert(
-                        name=clean_name,
-                        json_schema=json_schema,
-                        kind=clean_kind,
-                    )
+                schemas = await db.set_schemas(
+                    [
+                        SchemaUpsert(
+                            name=clean_name,
+                            json_schema=json_schema,
+                            kind=clean_kind,
+                        )
+                    ]
                 )
+                schema = schemas[0]
             except (SchemaBreakingChangeError, ValueError) as exc:
                 raise GraphContentValidationError(str(exc)) from exc
             return GraphSchemaDetail(
@@ -505,9 +533,13 @@ class GraphContentService:
             permission_kind="manage_schemas",
         )
         try:
-            existing = await db.get_schema(clean_name)
-            if existing is None:
-                raise GraphContentNotFoundError(f"Schema '{clean_name}' was not found.")
+            try:
+                existing_schemas = await db.get_schemas([clean_name])
+            except SchemaNotFoundError as exc:
+                raise GraphContentNotFoundError(
+                    f"Schema '{clean_name}' was not found."
+                ) from exc
+            existing = existing_schemas[0]
             json_schema_ = (
                 json_schema if json_schema is not None else existing.json_schema
             )
@@ -517,13 +549,16 @@ class GraphContentService:
                 else self._schema_kind_from_record(existing)
             )
             try:
-                schema = await db.set_schema(
-                    SchemaUpsert(
-                        name=clean_name,
-                        json_schema=json_schema_,
-                        kind=kind_,
-                    )
+                schemas = await db.set_schemas(
+                    [
+                        SchemaUpsert(
+                            name=clean_name,
+                            json_schema=json_schema_,
+                            kind=kind_,
+                        )
+                    ]
                 )
+                schema = schemas[0]
             except SchemaBreakingChangeError as exc:
                 raise GraphContentValidationError(
                     "Breaking schema changes are not supported here yet. "
@@ -541,16 +576,16 @@ class GraphContentService:
         finally:
             await db.sqla_engine.dispose()
 
-    async def delete_graph_schema(
+    async def delete_graph_schemas(
         self,
         *,
         graph_id: str,
-        name: str,
+        names: list[str],
         current_user: AdminUser | None,
         allow_local_system: bool = False,
-    ) -> GraphSchemaDetail:
-        """Delete one unused schema from a managed graph."""
-        clean_name = self._validate_schema_name(name)
+    ) -> list[GraphSchemaDetail]:
+        """Delete multiple unused schemas from a managed graph."""
+        clean_names = [self._validate_schema_name(name) for name in names]
 
         graph, instance, db = await self._open_graph(
             graph_id=graph_id,
@@ -559,23 +594,52 @@ class GraphContentService:
             permission_kind="manage_schemas",
         )
         try:
-            schema = await db.get_schema(clean_name)
-            if schema is None:
-                raise GraphContentNotFoundError(f"Schema '{clean_name}' was not found.")
-            usage = await self._inspect_schema_usage(db, clean_name)
-            deleted = GraphSchemaDetail(
-                schema_record=self._serialize_schema_record(
-                    schema,
-                    include_json_schema=True,
-                    usage=usage,
-                ),
-            )
             try:
-                await db.delete_schema(clean_name)
-            except SchemaInUseError as exc:
-                raise GraphContentConflictError(
-                    self._format_schema_delete_blocker_message(clean_name, usage)
+                schemas = await db.get_schemas(clean_names)
+            except SchemaNotFoundError as exc:
+                # Translate missing schema names into admin-facing not-found errors
+                # (web routes and REST tool handlers catch GraphContentError).
+                missing: list[str] = []
+                for clean_name in clean_names:
+                    try:
+                        await db.get_schemas([clean_name])
+                    except SchemaNotFoundError:
+                        missing.append(clean_name)
+
+                if len(missing) == 1:
+                    raise GraphContentNotFoundError(
+                        f"Schema '{missing[0]}' was not found."
+                    ) from exc
+                raise GraphContentNotFoundError(
+                    f"Schemas not found: {missing}"
                 ) from exc
+            in_use_messages: list[str] = []
+            deleted = []
+            for schema in schemas:
+                usage = await self._inspect_schema_usage(db, schema.name)
+                if usage.node_count or usage.edge_count:
+                    in_use_messages.append(
+                        self._format_schema_delete_blocker_message(
+                            schema.name, usage
+                        )
+                    )
+                deleted.append(
+                    GraphSchemaDetail(
+                        schema_record=self._serialize_schema_record(
+                            schema,
+                            include_json_schema=True,
+                            usage=usage,
+                        ),
+                    )
+                )
+            if in_use_messages:
+                # Keep the user-facing error message stable by formatting
+                # from computed usage counts (matches UI tests).
+                raise GraphContentConflictError("; ".join(in_use_messages))
+            try:
+                await db.delete_schemas(clean_names)
+            except SchemaInUseError as exc:
+                raise GraphContentConflictError(str(exc)) from exc
             return deleted
         finally:
             await db.sqla_engine.dispose()
@@ -657,17 +721,20 @@ class GraphContentService:
             permission_kind="view",
         )
         try:
-            node = await db.get_node(clean_node_id)
-            if node is None:
-                raise GraphContentNotFoundError(
-                    f"Node '{clean_node_id}' was not found."
-                )
+            nodes = await db.get_nodes([clean_node_id])
+            node = nodes[0]
             return GraphNodeDetail(
                 node_record=self._serialize_node_record(node),
                 delete_blockers=await self._inspect_node_delete_blockers(
                     db, clean_node_id
                 ),
             )
+        except ValueError as e:
+            if "Node ids not found" in str(e):
+                raise GraphContentNotFoundError(
+                    f"Node '{clean_node_id}' was not found."
+                )
+            raise
         finally:
             await db.sqla_engine.dispose()
 
@@ -712,20 +779,23 @@ class GraphContentService:
         )
         try:
             try:
-                node = await db.set_node(
-                    NodeUpsert(
-                        type=clean_type,
-                        name=clean_name,
-                        owner_id=clean_owner_id,
-                        parent_id=clean_parent_id,
-                        schema_name=clean_schema_name,
-                        data=data,
-                        tags=normalized_tags,
-                        payload=payload,
-                        payload_mime=clean_payload_mime,
-                        payload_filename=clean_payload_filename,
-                    )
+                node_list = await db.set_nodes(
+                    [
+                        NodeUpsert(
+                            type=clean_type,
+                            name=clean_name,
+                            owner_id=clean_owner_id,
+                            parent_id=clean_parent_id,
+                            schema_name=clean_schema_name,
+                            data=data,
+                            tags=normalized_tags,
+                            payload=payload,
+                            payload_mime=clean_payload_mime,
+                            payload_filename=clean_payload_filename,
+                        )
+                    ]
                 )
+                node = node_list[0]
             except (SchemaNotFoundError, SchemaValidationError, ValueError) as exc:
                 raise GraphContentValidationError(str(exc)) from exc
             return GraphNodeDetail(
@@ -772,11 +842,8 @@ class GraphContentService:
             permission_kind="manage_nodes",
         )
         try:
-            existing = await db.get_node(clean_node_id)
-            if existing is None:
-                raise GraphContentNotFoundError(
-                    f"Node '{clean_node_id}' was not found."
-                )
+            nodes = await db.get_nodes([clean_node_id])
+            existing = nodes[0]
             type_ = (
                 self._validate_node_type(type) if type is not None else existing.type
             )
@@ -833,21 +900,24 @@ class GraphContentService:
                 )
             try:
                 async with db.transaction():
-                    node = await db.set_node(
-                        NodeUpsert(
-                            id=clean_node_id,
-                            type=type_,
-                            name=name_,
-                            owner_id=owner_id_,
-                            parent_id=parent_id_,
-                            schema_name=schema_name_,
-                            data=data_,
-                            tags=tags_,
-                            payload=payload_,
-                            payload_mime=payload_mime_,
-                            payload_filename=payload_filename_,
-                        )
+                    node_list = await db.set_nodes(
+                        [
+                            NodeUpsert(
+                                id=clean_node_id,
+                                type=type_,
+                                name=name_,
+                                owner_id=owner_id_,
+                                parent_id=parent_id_,
+                                schema_name=schema_name_,
+                                data=data_,
+                                tags=tags_,
+                                payload=payload_,
+                                payload_mime=payload_mime_,
+                                payload_filename=payload_filename_,
+                            )
+                        ]
                     )
+                    node = node_list[0]
                     if clear_payload:
                         node = await db.clear_node_payload(clean_node_id)
             except (SchemaNotFoundError, SchemaValidationError, ValueError) as exc:
@@ -858,6 +928,12 @@ class GraphContentService:
                     db, clean_node_id
                 ),
             )
+        except ValueError as e:
+            if "Node ids not found" in str(e):
+                raise GraphContentNotFoundError(
+                    f"Node '{clean_node_id}' was not found."
+                )
+            raise
         finally:
             await db.sqla_engine.dispose()
 
@@ -878,24 +954,27 @@ class GraphContentService:
             permission_kind="manage_nodes",
         )
         try:
-            node = await db.get_node(clean_node_id)
-            if node is None:
-                raise GraphContentNotFoundError(
-                    f"Node '{clean_node_id}' was not found."
-                )
+            nodes = await db.get_nodes([clean_node_id])
+            node = nodes[0]
             blockers = await self._inspect_node_delete_blockers(db, clean_node_id)
             deleted = GraphNodeDetail(
                 node_record=self._serialize_node_record(node),
                 delete_blockers=blockers,
             )
             try:
-                await db.delete_node(clean_node_id)
+                await db.delete_nodes([clean_node_id])
             except IntegrityError as exc:
                 blockers = await self._inspect_node_delete_blockers(db, clean_node_id)
                 raise GraphContentConflictError(
                     self._format_node_delete_blocker_message(clean_node_id, blockers)
                 ) from exc
             return deleted
+        except ValueError as e:
+            if "Node ids not found" in str(e):
+                raise GraphContentNotFoundError(
+                    f"Node '{clean_node_id}' was not found."
+                )
+            raise
         finally:
             await db.sqla_engine.dispose()
 
@@ -959,11 +1038,8 @@ class GraphContentService:
             permission_kind="view",
         )
         try:
-            node = await db.get_node_with_payload(clean_node_id)
-            if node is None:
-                raise GraphContentNotFoundError(
-                    f"Node '{clean_node_id}' was not found."
-                )
+            nodes = await db.get_node_payloads([clean_node_id])
+            node = nodes[0]
             if node.payload is None:
                 raise GraphContentConflictError(
                     f"Node '{clean_node_id}' does not have a payload."
@@ -974,6 +1050,12 @@ class GraphContentService:
                 payload_base64=base64.b64encode(node.payload).decode("ascii"),
                 filename=self._build_node_payload_filename(node_record),
             )
+        except ValueError as e:
+            if "not found" in str(e).lower():
+                raise GraphContentNotFoundError(
+                    f"Node '{clean_node_id}' was not found."
+                ) from e
+            raise
         finally:
             await db.sqla_engine.dispose()
 
@@ -1142,11 +1224,14 @@ class GraphContentService:
             permission_kind="view",
         )
         try:
-            edge = await db.get_edge(clean_edge_id)
-            if edge is None:
-                raise GraphContentNotFoundError(
-                    f"Edge '{clean_edge_id}' was not found."
-                )
+            try:
+                edge = (await db.get_edges([clean_edge_id]))[0]
+            except ValueError as e:
+                if "edge ids not found" in str(e).lower():
+                    raise GraphContentNotFoundError(
+                        f"Edge '{clean_edge_id}' was not found."
+                    ) from e
+                raise
             return GraphEdgeDetail(
                 edge_record=self._serialize_edge_record(edge),
             )
@@ -1182,16 +1267,16 @@ class GraphContentService:
         )
         try:
             try:
-                edge = await db.set_edge(
-                    EdgeUpsert(
+                edge = (await db.set_edges(
+                    [EdgeUpsert(
                         type=clean_type,
                         source_id=clean_source_id,
                         target_id=clean_target_id,
                         schema_name=clean_schema_name,
                         data=data,
                         tags=normalized_tags,
-                    )
-                )
+                    )]
+                ))[0]
             except IntegrityError as exc:
                 raise GraphContentValidationError(
                     "Source and target nodes must exist before creating an edge."
@@ -1236,11 +1321,14 @@ class GraphContentService:
             permission_kind="manage_edges",
         )
         try:
-            existing = await db.get_edge(clean_edge_id)
-            if existing is None:
-                raise GraphContentNotFoundError(
-                    f"Edge '{clean_edge_id}' was not found."
-                )
+            try:
+                existing = (await db.get_edges([clean_edge_id]))[0]
+            except ValueError as e:
+                if "edge ids not found" in str(e).lower():
+                    raise GraphContentNotFoundError(
+                        f"Edge '{clean_edge_id}' was not found."
+                    ) from e
+                raise
             type_ = (
                 self._validate_edge_type(type) if type is not None else existing.type
             )
@@ -1266,8 +1354,8 @@ class GraphContentService:
                 else (existing.tags or [])
             )
             try:
-                edge = await db.set_edge(
-                    EdgeUpsert(
+                edge = (await db.set_edges(
+                    [EdgeUpsert(
                         id=clean_edge_id,
                         type=type_,
                         source_id=source_id_,
@@ -1275,8 +1363,8 @@ class GraphContentService:
                         schema_name=schema_name_,
                         data=data_,
                         tags=tags_,
-                    )
-                )
+                    )]
+                ))[0]
             except IntegrityError as exc:
                 raise GraphContentValidationError(
                     "Source and target nodes must exist before updating an edge."
@@ -1306,15 +1394,18 @@ class GraphContentService:
             permission_kind="manage_edges",
         )
         try:
-            edge = await db.get_edge(clean_edge_id)
-            if edge is None:
-                raise GraphContentNotFoundError(
-                    f"Edge '{clean_edge_id}' was not found."
-                )
+            try:
+                edge = (await db.get_edges([clean_edge_id]))[0]
+            except ValueError as e:
+                if "edge ids not found" in str(e).lower():
+                    raise GraphContentNotFoundError(
+                        f"Edge '{clean_edge_id}' was not found."
+                    ) from e
+                raise
             deleted = GraphEdgeDetail(
                 edge_record=self._serialize_edge_record(edge),
             )
-            await db.delete_edge(clean_edge_id)
+            await db.delete_edges([clean_edge_id])
             return deleted
         finally:
             await db.sqla_engine.dispose()

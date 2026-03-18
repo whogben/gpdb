@@ -33,9 +33,12 @@ async def db(pg_server):
 async def test_search_basic(db: GPGraph):
     """Test basic equality search on standard columns."""
     # Create nodes
-    n1 = await db.set_node(NodeUpsert(type="user", name="alice"))
-    n2 = await db.set_node(NodeUpsert(type="user", name="bob"))
-    n3 = await db.set_node(NodeUpsert(type="group", name="admins"))
+    n1_list = await db.set_nodes([NodeUpsert(type="user", name="alice")])
+    n2_list = await db.set_nodes([NodeUpsert(type="user", name="bob")])
+    n3_list = await db.set_nodes([NodeUpsert(type="group", name="admins")])
+    n1 = n1_list[0]
+    n2 = n2_list[0]
+    n3 = n3_list[0]
 
     # Search for type="user"
     query = SearchQuery(filter=Filter(field="type", op=Op.EQ, value="user"))
@@ -56,9 +59,12 @@ async def test_search_basic(db: GPGraph):
 async def test_search_jsonb(db: GPGraph):
     """Test search on JSONB fields."""
     # Create nodes with data
-    n1 = await db.set_node(NodeUpsert(type="item", data={"color": "red", "size": 10}))
-    n2 = await db.set_node(NodeUpsert(type="item", data={"color": "blue", "size": 20}))
-    n3 = await db.set_node(NodeUpsert(type="item", data={"color": "red", "size": 30}))
+    n1_list = await db.set_nodes([NodeUpsert(type="item", data={"color": "red", "size": 10})])
+    n2_list = await db.set_nodes([NodeUpsert(type="item", data={"color": "blue", "size": 20})])
+    n3_list = await db.set_nodes([NodeUpsert(type="item", data={"color": "red", "size": 30})])
+    n1 = n1_list[0]
+    n2 = n2_list[0]
+    n3 = n3_list[0]
 
     # Search data.color = "red"
     query = SearchQuery(filter=Filter(field="data.color", op=Op.EQ, value="red"))
@@ -76,9 +82,12 @@ async def test_search_jsonb(db: GPGraph):
 @pytest.mark.asyncio
 async def test_search_logic(db: GPGraph):
     """Test AND/OR logic."""
-    n1 = await db.set_node(NodeUpsert(type="A", data={"x": 1}))
-    n2 = await db.set_node(NodeUpsert(type="A", data={"x": 2}))
-    n3 = await db.set_node(NodeUpsert(type="B", data={"x": 1}))
+    n1_list = await db.set_nodes([NodeUpsert(type="A", data={"x": 1})])
+    n2_list = await db.set_nodes([NodeUpsert(type="A", data={"x": 2})])
+    n3_list = await db.set_nodes([NodeUpsert(type="B", data={"x": 1})])
+    n1 = n1_list[0]
+    n2 = n2_list[0]
+    n3 = n3_list[0]
 
     # (type=A AND data.x=1)
     query = SearchQuery(
@@ -114,7 +123,8 @@ async def test_search_paging(db: GPGraph):
     # Create 10 nodes
     nodes = []
     for i in range(10):
-        nodes.append(await db.set_node(NodeUpsert(type="page_test", name=str(i))))
+        node_list = await db.set_nodes([NodeUpsert(type="page_test", name=str(i))])
+        nodes.append(node_list[0])
 
     # Page 1: limit=3, offset=0
     query = SearchQuery(
@@ -134,8 +144,10 @@ async def test_search_paging(db: GPGraph):
 @pytest.mark.asyncio
 async def test_search_nested_json(db: GPGraph):
     """Test deeply nested JSON access."""
-    n1 = await db.set_node(NodeUpsert(type="deep", data={"a": {"b": {"c": "found"}}}))
-    n2 = await db.set_node(NodeUpsert(type="deep", data={"a": {"b": {"c": "other"}}}))
+    n1_list = await db.set_nodes([NodeUpsert(type="deep", data={"a": {"b": {"c": "found"}}})])
+    n2_list = await db.set_nodes([NodeUpsert(type="deep", data={"a": {"b": {"c": "other"}}})])
+    n1 = n1_list[0]
+    n2 = n2_list[0]
 
     query = SearchQuery(filter=Filter(field="data.a.b.c", op=Op.EQ, value="found"))
     result = await db.search_nodes(query)
@@ -146,7 +158,8 @@ async def test_search_nested_json(db: GPGraph):
 @pytest.mark.asyncio
 async def test_search_select_columns(db: GPGraph):
     """Test selecting specific top-level columns."""
-    n1 = await db.set_node(NodeUpsert(type="user", name="alice", data={"age": 30}))
+    n1_list = await db.set_nodes([NodeUpsert(type="user", name="alice", data={"age": 30})])
+    n1 = n1_list[0]
 
     query = SearchQuery(
         select=["id", "name"], filter=Filter(field="name", value="alice")
@@ -167,13 +180,14 @@ async def test_search_select_columns(db: GPGraph):
 @pytest.mark.asyncio
 async def test_search_select_json_fields(db: GPGraph):
     """Test selecting deep JSON fields."""
-    n1 = await db.set_node(
+    n1_list = await db.set_nodes([
         NodeUpsert(
             type="product",
             data={"specs": {"color": "red", "weight": 10}, "active": True},
             tags=["imported", "active"],
         )
-    )
+    ])
+    n1 = n1_list[0]
 
     query = SearchQuery(select=["id", "data.specs.color", "tags"])
     result = await db.search_nodes_projection(query)
@@ -193,7 +207,8 @@ async def test_search_select_json_fields(db: GPGraph):
 @pytest.mark.asyncio
 async def test_search_select_mixed(db: GPGraph):
     """Test selecting mix of standard columns and JSON fields."""
-    n1 = await db.set_node(NodeUpsert(type="test", name="foo", data={"val": 123}))
+    n1_list = await db.set_nodes([NodeUpsert(type="test", name="foo", data={"val": 123})])
+    n1 = n1_list[0]
 
     query = SearchQuery(select=["type", "data.val"])
     result = await db.search_nodes_projection(query)
@@ -208,11 +223,13 @@ async def test_search_select_mixed(db: GPGraph):
 @pytest.mark.asyncio
 async def test_search_edges_projection_select_columns(db: GPGraph):
     """Test selecting specific columns on edges."""
-    n1 = await db.set_node(NodeUpsert(type="a", name="a"))
-    n2 = await db.set_node(NodeUpsert(type="b", name="b"))
-    e1 = await db.set_edge(
-        EdgeUpsert(type="link", source_id=n1.id, target_id=n2.id, data={"weight": 2})
-    )
+    n1_list = await db.set_nodes([NodeUpsert(type="a", name="a")])
+    n2_list = await db.set_nodes([NodeUpsert(type="b", name="b")])
+    n1 = n1_list[0]
+    n2 = n2_list[0]
+    e1 = (await db.set_edges(
+        [EdgeUpsert(type="link", source_id=n1.id, target_id=n2.id, data={"weight": 2})]
+    ))[0]
 
     query = SearchQuery(
         select=["id", "type", "source_id", "target_id"],
@@ -234,16 +251,18 @@ async def test_search_edges_projection_select_columns(db: GPGraph):
 @pytest.mark.asyncio
 async def test_search_edges_projection_select_data_and_tags(db: GPGraph):
     """Test selecting edge data and tags."""
-    n1 = await db.set_node(NodeUpsert(type="x", name="x"))
-    n2 = await db.set_node(NodeUpsert(type="y", name="y"))
-    await db.set_edge(
-        EdgeUpsert(
+    n1_list = await db.set_nodes([NodeUpsert(type="x", name="x")])
+    n2_list = await db.set_nodes([NodeUpsert(type="y", name="y")])
+    n1 = n1_list[0]
+    n2 = n2_list[0]
+    await db.set_edges(
+        [EdgeUpsert(
             type="rel",
             source_id=n1.id,
             target_id=n2.id,
             data={"score": 10, "meta": {"n": 1}},
             tags=["foo", "bar"],
-        )
+        )]
     )
 
     query = SearchQuery(
@@ -270,7 +289,8 @@ async def test_search_edges_projection_requires_select(db: GPGraph):
 @pytest.mark.asyncio
 async def test_select_fallback(db: GPGraph):
     """Test that default behavior (no select) still returns models."""
-    n1 = await db.set_node(NodeUpsert(type="test"))
+    n1_list = await db.set_nodes([NodeUpsert(type="test")])
+    n1 = n1_list[0]
 
     query = SearchQuery(limit=1)
     result = await db.search_nodes(query)
@@ -283,13 +303,16 @@ async def test_select_fallback(db: GPGraph):
 async def test_search_dsl_integration(db: GPGraph):
     """Test that SearchQuery automatically parses DSL strings."""
     # Create test data
-    n1 = await db.set_node(
+    n1_list = await db.set_nodes([
         NodeUpsert(type="task", data={"priority": "high", "score": 10}, tags=["urgent"])
-    )
-    n2 = await db.set_node(
+    ])
+    n2_list = await db.set_nodes([
         NodeUpsert(type="task", data={"priority": "low", "score": 5})
-    )
-    n3 = await db.set_node(NodeUpsert(type="note", data={"score": 20}))
+    ])
+    n3_list = await db.set_nodes([NodeUpsert(type="note", data={"score": 20})])
+    n1 = n1_list[0]
+    n2 = n2_list[0]
+    n3 = n3_list[0]
 
     # 1. Simple equality (type:task)
     query = SearchQuery(filter="type:task")

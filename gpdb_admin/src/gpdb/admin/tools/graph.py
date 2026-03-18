@@ -393,13 +393,16 @@ def _build_graph_content_service(services: AdminServices) -> ToolService:
         ctx: InvocationContext = inject_context(),
     ) -> GraphSchemaDetail:
         """Delete one graph schema for the authenticated caller."""
-        return await _call_graph_content_from_context(
+        deleted = await _call_graph_content_from_context(
             services,
-            "delete_graph_schema",
+            "delete_graph_schemas",
             ctx,
             graph_id=params.graph_id,
-            name=params.name,
+            names=[params.name],
         )
+        if len(deleted) != 1:
+            raise RuntimeError("Expected exactly one schema to be deleted")
+        return deleted[0]
 
     @service.tool(
         name="instance_list",

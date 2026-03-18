@@ -743,6 +743,10 @@ def _node_upsert_to_orm(
 ) -> Any:
     """Convert NodeUpsert DTO to ORM instance."""
     if existing:
+        # `NodeUpsert.data` / `NodeUpsert.tags` have default values, so
+        # `dto.data` is never None even when the caller omitted them.
+        # Use `model_fields_set` to detect what the caller explicitly provided.
+        fields_set = dto.model_fields_set
         # Update existing
         if dto.type is not None:
             existing.type = dto.type
@@ -754,9 +758,9 @@ def _node_upsert_to_orm(
             existing.parent_id = dto.parent_id
         if dto.schema_name is not None:
             existing.schema_name = dto.schema_name
-        if dto.data is not None:
+        if "data" in fields_set:
             existing.data = dto.data
-        if dto.tags is not None:
+        if "tags" in fields_set:
             existing.tags = dto.tags
         if dto.payload is not None:
             existing.payload = dto.payload
@@ -802,6 +806,10 @@ def _edge_upsert_to_orm(
 ) -> Any:
     """Convert EdgeUpsert DTO to ORM instance."""
     if existing:
+        # `EdgeUpsert.data` / `EdgeUpsert.tags` have default values, so
+        # `dto.data` is never None even when the caller omitted them.
+        # Use `model_fields_set` to detect what the caller explicitly provided.
+        fields_set = dto.model_fields_set
         if dto.type is not None:
             existing.type = dto.type
         if dto.source_id is not None:
@@ -810,9 +818,9 @@ def _edge_upsert_to_orm(
             existing.target_id = dto.target_id
         if dto.schema_name is not None:
             existing.schema_name = dto.schema_name
-        if dto.data is not None:
+        if "data" in fields_set:
             existing.data = dto.data
-        if dto.tags is not None:
+        if "tags" in fields_set:
             existing.tags = dto.tags
         return existing
     # Create new - only pass id if provided, otherwise let SQLAlchemy use its default
@@ -885,15 +893,15 @@ class GPGraph:
 
         Usage:
             async with db.transaction():
-                await db.set_node(NodeUpsert(...))
-                await db.set_edge(EdgeUpsert(...))
+                await db.set_nodes([NodeUpsert(...)])
+                await db.set_edges([EdgeUpsert(...)])
                 # Both committed together, or both rolled back on error
         """
         async with self.sqla_sessionmaker() as session:
             async with session.begin():
                 token = self._session_ctx.set(session)
                 try:
-                    yield  # Yield nothing — callers use self.set_node() etc.
+                    yield  # Yield nothing — callers use self.set_nodes() etc.
                 finally:
                     self._session_ctx.reset(token)
 
@@ -1147,9 +1155,9 @@ class GPGraph:
         json_schema[_SCHEMA_KIND_FIELD] = resolved_kind
         return json_schema, resolved_kind
 
-    async def set_schema(self, schema_upsert: SchemaUpsert):
+    async def set_schemas(self, schemas: list[SchemaUpsert]) -> list[Any]:
         """
-        Register a JSON schema in the schema registry.
+        Register multiple JSON schemas in the schema registry.
 
         The system automatically detects the type of change and bumps the version:
         - Major: Breaking changes (removed fields, type changes, newly required fields)
@@ -1157,110 +1165,158 @@ class GPGraph:
         - Patch: Non-consequential changes (descriptions, titles, examples)
 
         Args:
-            schema_upsert: SchemaUpsert model containing name, json_schema, and kind
+            schemas: List of SchemaUpsert models containing name, json_schema, and kind
 
         Raises:
             SchemaBreakingChangeError: If breaking changes are detected
+            ValueError: If duplicate schema names are provided
 
         Returns:
-            The schema ORM object with updated version
+            List of schema ORM objects with updated versions
         """
+        # Reject duplicate names before any database writes
+        names = [s.name for s in schemas]
+        if len(names) != len(set(names)):
+            raise ValueError("Duplicate schema names are not allowed")
+
         async with self._get_session() as session:
-            # Check if schema already exists
-            existing = await session.get(self._Schema, schema_upsert.name)
-            json_schema, resolved_kind = self._prepare_schema_registration(
-                schema_upsert.json_schema,
-                kind=schema_upsert.kind,
-                existing=existing,
-            )
-            if existing:
-                existing_kind = self._schema_kind_from_record(existing)
-                if resolved_kind != existing_kind:
-                    raise SchemaBreakingChangeError(
-                        f"Schema '{schema_upsert.name}' cannot change kind from "
-                        f"'{existing_kind}' to '{resolved_kind}'."
-                    )
-                # Detect type of change
-                change_type = self._detect_semver_change(
-                    existing.json_schema, json_schema
+            results = []
+            for schema_upsert in schemas:
+                # Check if schema already exists
+                existing = await session.get(self._Schema, schema_upsert.name)
+                json_schema, resolved_kind = self._prepare_schema_registration(
+                    schema_upsert.json_schema,
+                    kind=schema_upsert.kind,
+                    existing=existing,
                 )
-
-                # Fail on breaking changes
-                if change_type == "major":
-                    self._check_breaking_changes(
-                        existing.json_schema, json_schema, schema_upsert.name
+                if existing:
+                    existing_kind = self._schema_kind_from_record(existing)
+                    if resolved_kind != existing_kind:
+                        raise SchemaBreakingChangeError(
+                            f"Schema '{schema_upsert.name}' cannot change kind from "
+                            f"'{existing_kind}' to '{resolved_kind}'."
+                        )
+                    # Detect type of change
+                    change_type = self._detect_semver_change(
+                        existing.json_schema, json_schema
                     )
 
-                # Bump version
-                new_version = self._bump_semver(existing.version, change_type)
+                    # Fail on breaking changes
+                    if change_type == "major":
+                        self._check_breaking_changes(
+                            existing.json_schema, json_schema, schema_upsert.name
+                        )
 
-                # Update existing schema
-                existing.json_schema = json_schema
-                existing.version = new_version
-                self._validators.pop(
-                    schema_upsert.name, None
-                )  # invalidate cache for updated schema
-                self._schema_kinds.pop(schema_upsert.name, None)
-                await session.flush()
-                await session.refresh(existing)
-                return existing
+                    # Bump version
+                    new_version = self._bump_semver(existing.version, change_type)
 
-            # Create new schema with version 1.0.0
-            new_schema = self._Schema(
-                name=schema_upsert.name, json_schema=json_schema, version="1.0.0"
-            )
-            session.add(new_schema)
-            self._schema_kinds.pop(schema_upsert.name, None)
+                    # Update existing schema
+                    existing.json_schema = json_schema
+                    existing.version = new_version
+                    self._validators.pop(
+                        schema_upsert.name, None
+                    )  # invalidate cache for updated schema
+                    self._schema_kinds.pop(schema_upsert.name, None)
+                    results.append(existing)
+                else:
+                    # Create new schema with version 1.0.0
+                    new_schema = self._Schema(
+                        name=schema_upsert.name, json_schema=json_schema, version="1.0.0"
+                    )
+                    session.add(new_schema)
+                    self._schema_kinds.pop(schema_upsert.name, None)
+                    results.append(new_schema)
+
             await session.flush()
-            await session.refresh(new_schema)
-            return new_schema
+            for result in results:
+                await session.refresh(result)
+            return results
 
-    async def get_schema(self, name: str) -> Optional[Any]:
+    async def get_schemas(self, names: list[str]) -> list[Any]:
         """
-        Retrieve a registered schema by name.
+        Retrieve registered schemas by names.
 
         Args:
-            name: Schema name to retrieve
+            names: List of schema names to retrieve
 
         Returns:
-            Schema ORM object if found, None otherwise
-        """
-        async with self._get_session() as session:
-            return await session.get(self._Schema, name)
-
-    async def delete_schema(self, name: str) -> None:
-        """
-        Delete a schema from the registry.
-
-        Args:
-            name: Schema name to delete
+            List of schema ORM objects in the same order as input names
 
         Raises:
-            SchemaInUseError: If any nodes or edges reference this schema
+            ValueError: If duplicate names are provided
+            SchemaNotFoundError: If any requested schema is not found
         """
+        # Reject duplicate names before doing any work
+        if len(names) != len(set(names)):
+            duplicates = [name for name in names if names.count(name) > 1]
+            raise ValueError(f"Duplicate schema names provided: {set(duplicates)}")
+
         async with self._get_session() as session:
-            # Check if any nodes use this schema
-            node_stmt = select(self._Node).where(self._Node.schema_name == name)
-            node_result = await session.execute(node_stmt)
-            if node_result.scalars().first() is not None:
-                raise SchemaInUseError(
-                    f"Cannot delete schema '{name}': it is referenced by one or more nodes"
-                )
+            # Query all requested schemas in a single query
+            stmt = select(self._Schema).where(self._Schema.name.in_(names))
+            result = await session.execute(stmt)
+            found_schemas = {schema.name: schema for schema in result.scalars().all()}
 
-            # Check if any edges use this schema
-            edge_stmt = select(self._Edge).where(self._Edge.schema_name == name)
-            edge_result = await session.execute(edge_stmt)
-            if edge_result.scalars().first() is not None:
-                raise SchemaInUseError(
-                    f"Cannot delete schema '{name}': it is referenced by one or more edges"
-                )
+            # Check if any requested schema is missing
+            missing = [name for name in names if name not in found_schemas]
+            if missing:
+                raise SchemaNotFoundError(f"Schemas not found: {missing}")
 
-            # Delete the schema record
-            schema = await session.get(self._Schema, name)
-            if schema is not None:
-                await session.delete(schema)
-                self._validators.pop(name, None)
-                self._schema_kinds.pop(name, None)
+            # Return schemas in the same order as input names
+            return [found_schemas[name] for name in names]
+
+    async def delete_schemas(self, names: list[str]) -> None:
+        """
+        Delete multiple schemas from the registry.
+
+        Args:
+            names: List of schema names to delete
+
+        Raises:
+            ValueError: If duplicate names are provided
+            SchemaInUseError: If any nodes or edges reference any of the schemas
+        """
+        # Reject duplicate names before doing any work
+        if len(names) != len(set(names)):
+            duplicates = [name for name in names if names.count(name) > 1]
+            raise ValueError(f"Duplicate schema names provided: {set(duplicates)}")
+
+        async with self._get_session() as session:
+            # Verify all requested schemas exist before checking usage or deleting.
+            # This keeps bulk deletes strictly all-or-nothing even when
+            # the caller includes a missing name.
+            stmt = select(self._Schema).where(self._Schema.name.in_(names))
+            result = await session.execute(stmt)
+            found_schemas = {schema.name for schema in result.scalars().all()}
+            missing = [name for name in names if name not in found_schemas]
+            if missing:
+                raise SchemaNotFoundError(f"Schemas not found: {missing}")
+
+            # Check all schemas for usage before deleting any
+            for name in names:
+                # Check if any nodes use this schema
+                node_stmt = select(self._Node).where(self._Node.schema_name == name)
+                node_result = await session.execute(node_stmt)
+                if node_result.scalars().first() is not None:
+                    raise SchemaInUseError(
+                        f"Cannot delete schema '{name}': it is referenced by one or more nodes"
+                    )
+
+                # Check if any edges use this schema
+                edge_stmt = select(self._Edge).where(self._Edge.schema_name == name)
+                edge_result = await session.execute(edge_stmt)
+                if edge_result.scalars().first() is not None:
+                    raise SchemaInUseError(
+                        f"Cannot delete schema '{name}': it is referenced by one or more edges"
+                    )
+
+            # Delete all schema records
+            for name in names:
+                schema = await session.get(self._Schema, name)
+                if schema is not None:
+                    await session.delete(schema)
+                    self._validators.pop(name, None)
+                    self._schema_kinds.pop(name, None)
 
     async def list_schemas(self, kind: str | None = None) -> List[str]:
         """
@@ -1431,9 +1487,8 @@ class GPGraph:
         if schema_name in self._schema_kinds:
             return self._schema_kinds[schema_name]
 
-        schema = await self.get_schema(schema_name)
-        if schema is None:
-            raise SchemaNotFoundError(f"Schema '{schema_name}' not found")
+        schemas = await self.get_schemas([schema_name])
+        schema = schemas[0]
 
         kind = self._schema_kind_from_record(schema)
         self._schema_kinds[schema_name] = kind
@@ -1455,9 +1510,8 @@ class GPGraph:
         if schema_name in self._validators:
             return self._validators[schema_name]
 
-        schema = await self.get_schema(schema_name)
-        if schema is None:
-            raise SchemaNotFoundError(f"Schema '{schema_name}' not found")
+        schemas = await self.get_schemas([schema_name])
+        schema = schemas[0]
 
         validator = jsonschema.Draft7Validator(schema.json_schema)
         self._validators[schema_name] = validator
@@ -1496,81 +1550,167 @@ class GPGraph:
                 f"Validation failed for schema '{schema_name}': {error_details}"
             )
 
-    async def set_node(self, node: NodeUpsert) -> NodeRead:
+    async def set_nodes(self, nodes: list[NodeUpsert]) -> list[NodeRead]:
         """
-        Upsert a Node.
+        Upsert multiple Nodes.
         Creates if new, updates if existing (matched by id).
-        Returns NodeRead (without payload).
+        Returns list of NodeRead objects (without payload).
 
         Note: If node.payload is provided, it will be stored.
         For updating only payload, use set_node_payload().
+
+        Rejects duplicate ids in the input before any database writes.
+        Performs the entire batch atomically in a single transaction.
+        Preserves the existing semantics of omitted fields on update paths.
         """
-        async with self._get_session() as session:
-            existing = None
-            if node.id:
-                existing = await session.get(self._Node, node.id)
+        if not nodes:
+            return []
 
-            schema_to_validate = node.schema_name
-            if existing and node.schema_name is None and existing.schema_name:
-                schema_to_validate = existing.schema_name
-                node.schema_name = schema_to_validate
+        # Reject duplicate ids before doing any database writes
+        node_ids = [node.id for node in nodes if node.id is not None]
+        if len(node_ids) != len(set(node_ids)):
+            duplicates = [id for id in node_ids if node_ids.count(id) > 1]
+            raise ValueError(f"Duplicate node ids provided: {set(duplicates)}")
 
-            if schema_to_validate:
-                await self._validate_data(
-                    schema_to_validate,
-                    node.data,
-                    expected_kind="node",
-                )
-
-            orm = _node_upsert_to_orm(node, existing, self._Node)
-
-            if existing is not None:
-                await session.flush()
-                await session.refresh(orm)
-                return _node_orm_to_read(orm)
-
-        # Create path: retry with fresh session on ID collision
-        for _ in range(_ID_MAX_COLLISION_ATTEMPTS):
+        # Perform all operations atomically in a single transaction
+        for attempt in range(_ID_MAX_COLLISION_ATTEMPTS):
             try:
                 async with self._get_session() as session:
-                    orm = _node_upsert_to_orm(node, None, self._Node)
-                    if not orm.id:
-                        orm.id = generate_id()
-                    session.add(orm)
+                    # Fetch all explicitly provided ids in one query.
+                    # For nodes without an explicit id, we treat them as creates
+                    # (even if the generated id collides), so collisions must
+                    # raise and trigger retry logic rather than performing a
+                    # silent update.
+                    existing_ids = [node.id for node in nodes if node.id is not None]
+                    existing_map = {}
+                    if existing_ids:
+                        stmt = select(self._Node).where(self._Node.id.in_(existing_ids))
+                        result = await session.execute(stmt)
+                        for orm in result.scalars().all():
+                            existing_map[orm.id] = orm
+
+                    # Validate schemas and prepare ORM objects
+                    orms = []
+                    for node in nodes:
+                        explicit_id = node.id is not None
+                        node_for_attempt = node
+                        existing = existing_map.get(node.id) if explicit_id else None
+
+                        if not explicit_id:
+                            # Generate ids in Python so tests can patch `generate_id()`.
+                            # On collision, we will retry the whole batch.
+                            node_for_attempt = node.model_copy(update={"id": generate_id()})
+                            existing = None  # Treat as create even if it collides.
+
+                        schema_to_validate = node_for_attempt.schema_name
+                        if explicit_id and existing is not None and node_for_attempt.schema_name is None and existing.schema_name:
+                            # Preserve schema on omitted schema_name updates, while still validating
+                            # the provided data against the existing schema.
+                            schema_to_validate = existing.schema_name
+                            node_for_attempt = node_for_attempt.model_copy(
+                                update={"schema_name": schema_to_validate}
+                            )
+
+                        if schema_to_validate:
+                            await self._validate_data(
+                                schema_to_validate,
+                                node_for_attempt.data,
+                                expected_kind="node",
+                            )
+
+                        orm = _node_upsert_to_orm(node_for_attempt, existing, self._Node)
+                        orms.append(orm)
+
+                    # Add all ORM objects to session
+                    for orm in orms:
+                        session.add(orm)
+
+                    # Flush to generate IDs and validate constraints
                     await session.flush()
-                    await session.refresh(orm)
-                    return _node_orm_to_read(orm)
+
+                    # Refresh all ORM objects to get generated IDs and timestamps
+                    for orm in orms:
+                        await session.refresh(orm)
+
+                    # Return results in input order
+                    return [_node_orm_to_read(orm) for orm in orms]
+
             except Exception as e:
-                if not _is_primary_key_violation(e):
-                    raise
+                if _is_primary_key_violation(e):
+                    if attempt == _ID_MAX_COLLISION_ATTEMPTS - 1:
+                        raise RuntimeError(
+                            f"Failed to generate unique node ID after {_ID_MAX_COLLISION_ATTEMPTS} attempts."
+                        ) from e
+                    # Otherwise, retry with new IDs for creates
+                    continue
+                # Non-PK errors should never be masked by the retry limit.
+                raise
+
+        # This should never be reached, but satisfy the type checker
         raise RuntimeError(
-            "Failed to generate unique node ID after "
-            f"{_ID_MAX_COLLISION_ATTEMPTS} attempts."
+            f"Failed to generate unique node ID after {_ID_MAX_COLLISION_ATTEMPTS} attempts."
         )
 
-    async def get_node(self, id: str) -> NodeRead | None:
+    async def get_nodes(self, ids: list[str]) -> list[NodeRead]:
         """
-        Get a Node without payload.
-        Returns NodeRead if found, None if not found.
+        Get multiple Nodes without payload.
+        Returns list of NodeRead objects.
+        Raises ValueError if duplicate ids are provided.
+        Raises ValueError if any requested id is not found.
+        Preserves input order in returned results.
         """
+        if not ids:
+            return []
+        
+        # Reject duplicate ids
+        if len(ids) != len(set(ids)):
+            duplicates = [id for id in ids if ids.count(id) > 1]
+            raise ValueError(f"Duplicate node ids provided: {set(duplicates)}")
+        
         async with self._get_session() as session:
-            orm = await session.get(self._Node, id)
-            if orm is None:
-                return None
-            return _node_orm_to_read(orm)
+            # Fetch all nodes in one query
+            stmt = select(self._Node).where(self._Node.id.in_(ids))
+            result = await session.execute(stmt)
+            orms = result.scalars().all()
+            
+            # Create a mapping of id to orm for quick lookup
+            orm_map = {orm.id: orm for orm in orms}
+            
+            # Check if any requested id is missing
+            missing_ids = [id for id in ids if id not in orm_map]
+            if missing_ids:
+                raise ValueError(f"Node ids not found: {missing_ids}")
+            
+            # Return results in input order
+            return [_node_orm_to_read(orm_map[id]) for id in ids]
 
-    async def get_node_with_payload(self, id: str) -> NodeReadWithPayload | None:
+    async def get_node_payloads(self, ids: list[str]) -> list[NodeReadWithPayload]:
         """
-        Get a Node with payload included.
-        Returns NodeReadWithPayload if found, None if not found.
+        Get multiple Nodes with payloads included.
+        Returns list of NodeReadWithPayload in the same order as input ids.
+        Raises ValueError if any requested id is missing or if duplicate ids are provided.
+        Nodes without payload are still returned with id filled and no payload bytes.
         """
+        # Reject duplicate ids before doing any work
+        if len(ids) != len(set(ids)):
+            raise ValueError("Duplicate node ids provided")
+        
         async with self._get_session() as session:
-            orm = await session.get(
-                self._Node, id, options=[undefer(self._Node.payload)]
-            )
-            if orm is None:
-                return None
-            return _node_orm_to_read_with_payload(orm)
+            # Fetch all nodes in one query with payload undeferred
+            stmt = select(self._Node).where(self._Node.id.in_(ids)).options(undefer(self._Node.payload))
+            result = await session.execute(stmt)
+            orms = result.scalars().all()
+            
+            # Create a mapping of id to orm for ordered lookup
+            orm_map = {orm.id: orm for orm in orms}
+            
+            # Verify all requested ids exist
+            missing_ids = [id for id in ids if id not in orm_map]
+            if missing_ids:
+                raise ValueError(f"Node(s) not found: {', '.join(missing_ids)}")
+            
+            # Return results in input order
+            return [_node_orm_to_read_with_payload(orm_map[id]) for id in ids]
 
     async def get_node_payload(self, id: str) -> bytes | None:
         """
@@ -1636,18 +1776,40 @@ class GPGraph:
                 return None
             return _node_orm_to_read(orm)
 
-    async def delete_node(self, id: str):
+    async def delete_nodes(self, ids: list[str]) -> None:
         """
-        Hard delete a Node.
+        Hard delete multiple Nodes.
+        
+        Rejects duplicate ids before doing any work.
+        If any deletion would fail, fails the entire batch.
         """
+        if not ids:
+            return
+        
+        # Reject duplicate ids
+        if len(ids) != len(set(ids)):
+            duplicates = [id for id in ids if ids.count(id) > 1]
+            raise ValueError(f"Duplicate node ids: {duplicates}")
+        
         async with self._get_session() as session:
-            await session.execute(delete(self._Node).where(self._Node.id == id))
+            # Ensure all requested ids exist before deleting anything.
+            # This keeps bulk deletes strictly all-or-nothing even when
+            # the caller includes a missing id.
+            stmt = select(self._Node).where(self._Node.id.in_(ids))
+            result = await session.execute(stmt)
+            found_ids = {orm.id for orm in result.scalars().all()}
+            missing_ids = [id for id in ids if id not in found_ids]
+            if missing_ids:
+                raise ValueError(f"Node ids not found: {missing_ids}")
+
+            # Delete all nodes in a single operation - atomic all-or-nothing
+            await session.execute(delete(self._Node).where(self._Node.id.in_(ids)))
 
     async def search_nodes(self, query: SearchQuery) -> Page[NodeRead]:
         """
         Search for Nodes. Returns NodeRead without payload.
 
-        For nodes with payload, use get_node_with_payload() on individual results.
+        For nodes with payload, use get_node_payloads() on individual results.
         For column projection, use search_nodes_projection().
         """
         if query.select:
@@ -1676,77 +1838,146 @@ class GPGraph:
             raise ValueError("query.select is required for projection search")
         return await self._search(self._Node, query)
 
-    async def set_edge(self, edge: EdgeUpsert) -> EdgeRead:
+    async def set_edges(self, edges: list[EdgeUpsert]) -> list[EdgeRead]:
         """
-        Upsert an Edge.
+        Upsert multiple Edges.
         Creates if new, updates if existing (matched by id).
+        All operations are performed atomically in a single transaction.
         """
-        # Preserve existing schema_name if updating and not provided
-        schema_to_validate = edge.schema_name
-        if edge.id and edge.schema_name is None:
-            async with self._get_session() as session:
-                existing = await session.get(self._Edge, edge.id)
-                if existing and existing.schema_name:
-                    schema_to_validate = existing.schema_name
-                    # Update DTO to ensure schema persistence
-                    edge.schema_name = schema_to_validate
+        # Reject duplicate ids in the input before doing any database writes
+        edge_ids = [edge.id for edge in edges if edge.id is not None]
+        if len(edge_ids) != len(set(edge_ids)):
+            raise ValueError("Duplicate edge ids provided")
 
-        # Validate data against schema if schema_name is provided
-        if schema_to_validate:
-            await self._validate_data(
-                schema_to_validate,
-                edge.data,
-                expected_kind="edge",
-            )
+        # Preserve existing schema_names and validate all edges before any writes
+        edges_to_process = []
+        for edge in edges:
+            schema_to_validate = edge.schema_name
+            if edge.id and edge.schema_name is None:
+                async with self._get_session() as session:
+                    existing = await session.get(self._Edge, edge.id)
+                    if existing and existing.schema_name:
+                        schema_to_validate = existing.schema_name
+                        # Update DTO to ensure schema persistence
+                        edge.schema_name = schema_to_validate
 
-        async with self._get_session() as session:
-            existing = None
-            if edge.id:
-                existing = await session.get(self._Edge, edge.id)
+            # Validate data against schema if schema_name is provided
+            if schema_to_validate:
+                await self._validate_data(
+                    schema_to_validate,
+                    edge.data,
+                    expected_kind="edge",
+                )
+            edges_to_process.append(edge)
 
-            orm = _edge_upsert_to_orm(edge, existing, self._Edge)
-
-            if existing is not None:
-                await session.flush()
-                await session.refresh(orm)
-                return _edge_orm_to_read(orm)
-
-        # Create path: retry with fresh session on ID collision
-        for _ in range(_ID_MAX_COLLISION_ATTEMPTS):
+        # Perform all operations atomically in a single transaction
+        for attempt in range(_ID_MAX_COLLISION_ATTEMPTS):
             try:
                 async with self._get_session() as session:
-                    orm = _edge_upsert_to_orm(edge, None, self._Edge)
-                    if not orm.id:
-                        orm.id = generate_id()
-                    session.add(orm)
+                    results = []
+                    for edge in edges_to_process:
+                        existing = None
+                        if edge.id:
+                            existing = await session.get(self._Edge, edge.id)
+
+                        orm = _edge_upsert_to_orm(edge, existing, self._Edge)
+
+                        if existing is not None:
+                            # Update path
+                            await session.flush()
+                            await session.refresh(orm)
+                            results.append(_edge_orm_to_read(orm))
+                        else:
+                            # Create path
+                            if not orm.id:
+                                orm.id = generate_id()
+                            session.add(orm)
+                            results.append(orm)
+
+                    # Flush all creates at once
                     await session.flush()
-                    await session.refresh(orm)
-                    return _edge_orm_to_read(orm)
+
+                    # Refresh and convert all created edges
+                    final_results = []
+                    for i, result in enumerate(results):
+                        if isinstance(result, EdgeRead):
+                            # This was an update, already converted
+                            final_results.append(result)
+                        else:
+                            # This was a create, need to refresh and convert
+                            await session.refresh(result)
+                            final_results.append(_edge_orm_to_read(result))
+
+                    return final_results
             except Exception as e:
                 if not _is_primary_key_violation(e):
                     raise
+                # If this is the last attempt, raise the error
+                if attempt == _ID_MAX_COLLISION_ATTEMPTS - 1:
+                    raise RuntimeError(
+                        "Failed to generate unique edge IDs after "
+                        f"{_ID_MAX_COLLISION_ATTEMPTS} attempts."
+                    )
+                # Otherwise, retry the entire batch
         raise RuntimeError(
-            "Failed to generate unique edge ID after "
+            "Failed to generate unique edge IDs after "
             f"{_ID_MAX_COLLISION_ATTEMPTS} attempts."
         )
 
-    async def get_edge(self, id: str) -> EdgeRead | None:
+    async def get_edges(self, ids: list[str]) -> list[EdgeRead]:
         """
-        Get an Edge.
-        Returns EdgeRead if found, None if not found.
+        Get multiple Edges.
+        Returns list of EdgeRead objects.
+        Fails if any requested id is missing or if duplicate ids are provided.
         """
+        # Reject duplicate ids before doing any work
+        if len(ids) != len(set(ids)):
+            raise ValueError("Duplicate edge ids provided")
+        
         async with self._get_session() as session:
-            orm = await session.get(self._Edge, id)
-            if orm is None:
-                return None
-            return _edge_orm_to_read(orm)
+            # Fetch all edges in a single query
+            result = await session.execute(
+                select(self._Edge).where(self._Edge.id.in_(ids))
+            )
+            orms = result.scalars().all()
+            
+            # Check if all requested ids were found
+            found_ids = {orm.id for orm in orms}
+            missing_ids = set(ids) - found_ids
+            if missing_ids:
+                raise ValueError(f"Edge ids not found: {missing_ids}")
+            
+            # Preserve input order in returned results
+            id_to_orm = {orm.id: orm for orm in orms}
+            return [_edge_orm_to_read(id_to_orm[edge_id]) for edge_id in ids]
 
-    async def delete_edge(self, id: str):
+    async def delete_edges(self, ids: list[str]):
         """
-        Hard delete an Edge.
+        Hard delete Edges in bulk.
+        
+        Args:
+            ids: List of edge IDs to delete.
+            
+        Raises:
+            ValueError: If duplicate IDs are provided or if any edge ID is not found.
         """
+        # Reject duplicate ids before doing any work
+        if len(ids) != len(set(ids)):
+            duplicates = [id for id in ids if ids.count(id) > 1]
+            raise ValueError(f"Duplicate edge ids provided: {set(duplicates)}")
+        
         async with self._get_session() as session:
-            await session.execute(delete(self._Edge).where(self._Edge.id == id))
+            # Check if all requested ids exist before deleting (all-or-nothing)
+            result = await session.execute(
+                select(self._Edge.id).where(self._Edge.id.in_(ids))
+            )
+            found_ids = {row[0] for row in result.all()}
+            missing_ids = set(ids) - found_ids
+            if missing_ids:
+                raise ValueError(f"Edge ids not found: {missing_ids}")
+            
+            # Delete all edges in one operation (atomic)
+            await session.execute(delete(self._Edge).where(self._Edge.id.in_(ids)))
 
     async def search_edges(self, query: SearchQuery) -> Page[EdgeRead]:
         """

@@ -22,8 +22,8 @@ async def test_node_validation_success(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.set_schema(
-        SchemaUpsert(name="person_validation", json_schema=person_schema)
+    await db.set_schemas(
+        [SchemaUpsert(name="person_validation", json_schema=person_schema)]
     )
 
     # Create a node with schema_name and valid data
@@ -32,7 +32,8 @@ async def test_node_validation_success(db: GPGraph):
         schema_name="person_validation",
         data={"name": "Alice"},
     )
-    result = await db.set_node(node)
+    result_list = await db.set_nodes([node])
+    result = result_list[0]
 
     assert result is not None
     assert result.schema_name == "person_validation"
@@ -54,7 +55,7 @@ async def test_node_validation_failure(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.set_schema(SchemaUpsert(name="person", json_schema=person_schema))
+    await db.set_schemas([SchemaUpsert(name="person", json_schema=person_schema)])
 
     # Try to create a node with missing required field
     node = NodeUpsert(
@@ -64,7 +65,7 @@ async def test_node_validation_failure(db: GPGraph):
     )
 
     with pytest.raises(SchemaValidationError):
-        await db.set_node(node)
+        await db.set_nodes([node])
 
 
 @pytest.mark.asyncio
@@ -82,7 +83,7 @@ async def test_validator_caching(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.set_schema(SchemaUpsert(name="person_cache", json_schema=person_schema))
+    await db.set_schemas([SchemaUpsert(name="person_cache", json_schema=person_schema)])
 
     # Create multiple nodes with the same schema
     node1 = NodeUpsert(
@@ -90,8 +91,8 @@ async def test_validator_caching(db: GPGraph):
     )
     node2 = NodeUpsert(type="person", schema_name="person_cache", data={"name": "Bob"})
 
-    await db.set_node(node1)
-    await db.set_node(node2)
+    await db.set_nodes([node1])
+    await db.set_nodes([node2])
 
     # Check that validators are cached
     assert hasattr(db, "_validators")
@@ -110,15 +111,15 @@ async def test_pydantic_to_json_schema(db: GPGraph):
         age: int
 
     # Register the Pydantic model as a schema
-    await db.set_schema(SchemaUpsert(name="person_pydantic", json_schema=PersonModel))
+    await db.set_schemas([SchemaUpsert(name="person_pydantic", json_schema=PersonModel)])
 
     # Retrieve the schema and verify it's a dict (JSON Schema format)
-    retrieved = await db.get_schema("person_pydantic")
-    assert retrieved is not None
-    assert isinstance(retrieved.json_schema, dict)
-    assert "properties" in retrieved.json_schema
-    assert "name" in retrieved.json_schema["properties"]
-    assert "age" in retrieved.json_schema["properties"]
+    retrieved = await db.get_schemas(["person_pydantic"])
+    assert len(retrieved) == 1
+    assert isinstance(retrieved[0].json_schema, dict)
+    assert "properties" in retrieved[0].json_schema
+    assert "name" in retrieved[0].json_schema["properties"]
+    assert "age" in retrieved[0].json_schema["properties"]
 
 
 @pytest.mark.asyncio
@@ -140,8 +141,8 @@ async def test_nested_pydantic_model(db: GPGraph):
         address: AddressModel
 
     # Register the nested Pydantic model as a schema
-    await db.set_schema(
-        SchemaUpsert(name="person_with_address", json_schema=PersonWithAddressModel)
+    await db.set_schemas(
+        [SchemaUpsert(name="person_with_address", json_schema=PersonWithAddressModel)]
     )
 
     # Create a node with nested data
@@ -154,7 +155,8 @@ async def test_nested_pydantic_model(db: GPGraph):
             "address": {"street": "123 Main St", "city": "Springfield", "zip": "12345"},
         },
     )
-    result = await db.set_node(node)
+    result_list = await db.set_nodes([node])
+    result = result_list[0]
 
     # Verify the node was created successfully
     assert result is not None
@@ -178,7 +180,7 @@ async def test_nested_pydantic_model(db: GPGraph):
         },
     )
     with pytest.raises(SchemaValidationError):
-        await db.set_node(invalid_node)
+        await db.set_nodes([invalid_node])
 
 
 @pytest.mark.asyncio
@@ -196,15 +198,17 @@ async def test_edge_validation(db: GPGraph):
         },
         "required": ["weight"],
     }
-    await db.set_schema(
-        SchemaUpsert(name="relationship", json_schema=relationship_schema, kind="edge")
+    await db.set_schemas(
+        [SchemaUpsert(name="relationship", json_schema=relationship_schema, kind="edge")]
     )
 
     # Create two nodes
     node1 = NodeUpsert(type="test", data={"label": "A"})
     node2 = NodeUpsert(type="test", data={"label": "B"})
-    result1 = await db.set_node(node1)
-    result2 = await db.set_node(node2)
+    result1_list = await db.set_nodes([node1])
+    result2_list = await db.set_nodes([node2])
+    result1 = result1_list[0]
+    result2 = result2_list[0]
 
     # Create an edge with schema_name and valid data
     edge = EdgeUpsert(
@@ -214,7 +218,7 @@ async def test_edge_validation(db: GPGraph):
         schema_name="relationship",
         data={"weight": 0.5},
     )
-    edge_result = await db.set_edge(edge)
+    edge_result = (await db.set_edges([edge]))[0]
 
     assert edge_result is not None
     assert edge_result.schema_name == "relationship"
@@ -231,20 +235,20 @@ async def test_node_cannot_use_edge_schema(db: GPGraph):
         },
         "required": ["weight"],
     }
-    await db.set_schema(
-        SchemaUpsert(
+    await db.set_schemas(
+        [SchemaUpsert(
             name="edge_only_relationship", json_schema=relationship_schema, kind="edge"
-        )
+        )]
     )
 
     with pytest.raises(SchemaKindMismatchError):
-        await db.set_node(
+        await db.set_nodes([
             NodeUpsert(
                 type="test",
                 schema_name="edge_only_relationship",
                 data={"weight": 0.5},
             )
-        )
+        ])
 
 
 @pytest.mark.asyncio
@@ -258,20 +262,22 @@ async def test_edge_cannot_use_node_schema(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.set_schema(
-        SchemaUpsert(name="node_only_person", json_schema=person_schema, kind="node")
+    await db.set_schemas(
+        [SchemaUpsert(name="node_only_person", json_schema=person_schema, kind="node")]
     )
 
-    node1 = await db.set_node(NodeUpsert(type="test", data={"label": "A"}))
-    node2 = await db.set_node(NodeUpsert(type="test", data={"label": "B"}))
+    node1_list = await db.set_nodes([NodeUpsert(type="test", data={"label": "A"})])
+    node2_list = await db.set_nodes([NodeUpsert(type="test", data={"label": "B"})])
+    node1 = node1_list[0]
+    node2 = node2_list[0]
 
     with pytest.raises(SchemaKindMismatchError):
-        await db.set_edge(
-            EdgeUpsert(
+        await db.set_edges(
+            [EdgeUpsert(
                 source_id=node1.id,
                 target_id=node2.id,
                 type="connected",
                 schema_name="node_only_person",
                 data={"name": "invalid"},
-            )
+            )]
         )

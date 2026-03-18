@@ -22,7 +22,7 @@ async def test_migrate_schema_success(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.set_schema(SchemaUpsert(name="person", json_schema=person_schema_v1))
+    await db.set_schemas([SchemaUpsert(name="person", json_schema=person_schema_v1)])
 
     # Create nodes with v1 schema
     node1 = NodeUpsert(
@@ -31,8 +31,10 @@ async def test_migrate_schema_success(db: GPGraph):
     node2 = NodeUpsert(
         type="person", schema_name="person", data={"name": "Bob", "age": 25}
     )
-    result1 = await db.set_node(node1)
-    result2 = await db.set_node(node2)
+    result1_list = await db.set_nodes([node1])
+    result2_list = await db.set_nodes([node2])
+    result1 = result1_list[0]
+    result2 = result2_list[0]
 
     # Define v2 schema with breaking change (age -> age_years)
     person_schema_v2 = {
@@ -59,8 +61,9 @@ async def test_migrate_schema_success(db: GPGraph):
     )
 
     # Verify nodes were migrated
-    migrated_node1 = await db.get_node(result1.id)
-    migrated_node2 = await db.get_node(result2.id)
+    migrated_nodes = await db.get_nodes([result1.id, result2.id])
+    migrated_node1 = migrated_nodes[0]
+    migrated_node2 = migrated_nodes[1]
 
     assert "age_years" in migrated_node1.data
     assert "age" not in migrated_node1.data
@@ -71,16 +74,17 @@ async def test_migrate_schema_success(db: GPGraph):
     assert migrated_node2.data["age_years"] == 25
 
     # Verify schema was updated
-    schema = await db.get_schema("person")
-    assert schema.version == "2.0.0"
-    assert "age_years" in schema.json_schema["properties"]
+    schemas = await db.get_schemas(["person"])
+    assert schemas[0].version == "2.0.0"
+    assert "age_years" in schemas[0].json_schema["properties"]
 
     # Verify migrated data validates against new schema
     # Try to update a migrated node - should work since data is valid
     update_node = NodeUpsert(
         id=result1.id, type="person", schema_name="person", data=migrated_node1.data
     )
-    updated = await db.set_node(update_node)
+    updated_list = await db.set_nodes([update_node])
+    updated = updated_list[0]
     assert updated is not None
 
 
@@ -99,8 +103,8 @@ async def test_migrate_schema_validates_data(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.set_schema(
-        SchemaUpsert(name="person_validate", json_schema=person_schema_v1)
+    await db.set_schemas(
+        [SchemaUpsert(name="person_validate", json_schema=person_schema_v1)]
     )
 
     # Create a node with v1 schema
@@ -109,7 +113,8 @@ async def test_migrate_schema_validates_data(db: GPGraph):
         schema_name="person_validate",
         data={"name": "Alice", "age": 30},
     )
-    result = await db.set_node(node)
+    result_list = await db.set_nodes([node])
+    result = result_list[0]
 
     # Define v2 schema with required field
     person_schema_v2 = {
@@ -137,7 +142,7 @@ async def test_migrate_schema_validates_data(db: GPGraph):
         schema_name="person_validate",
         data={"name": "Bob"},  # No age field
     )
-    await db.set_node(node_no_age)
+    await db.set_nodes([node_no_age])
 
     # Migration should fail because bad_migration produces invalid data
     with pytest.raises(SchemaValidationError):
@@ -162,8 +167,8 @@ async def test_migrate_schema_transaction(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.set_schema(
-        SchemaUpsert(name="person_transaction", json_schema=person_schema_v1)
+    await db.set_schemas(
+        [SchemaUpsert(name="person_transaction", json_schema=person_schema_v1)]
     )
 
     # Create nodes with v1 schema
@@ -175,11 +180,14 @@ async def test_migrate_schema_transaction(db: GPGraph):
     node2 = NodeUpsert(
         type="person", schema_name="person_transaction", data={"name": "Bob", "age": 25}
     )
-    result1 = await db.set_node(node1)
-    result2 = await db.set_node(node2)
+    result1_list = await db.set_nodes([node1])
+    result2_list = await db.set_nodes([node2])
+    result1 = result1_list[0]
+    result2 = result2_list[0]
 
     # Store original data for verification
-    original_node1 = await db.get_node(result1.id)
+    original_nodes = await db.get_nodes([result1.id])
+    original_node1 = original_nodes[0]
     original_data = original_node1.data.copy()
 
     # Define v2 schema
@@ -211,8 +219,9 @@ async def test_migrate_schema_transaction(db: GPGraph):
         )
 
     # Verify no changes were persisted (transaction rolled back)
-    node1_after = await db.get_node(result1.id)
-    node2_after = await db.get_node(result2.id)
+    nodes_after = await db.get_nodes([result1.id, result2.id])
+    node1_after = nodes_after[0]
+    node2_after = nodes_after[1]
 
     # Data should be unchanged
     assert node1_after.data == original_data
@@ -220,7 +229,7 @@ async def test_migrate_schema_transaction(db: GPGraph):
     assert "age_years" not in node2_after.data
 
     # Schema should still be v1
-    schema = await db.get_schema("person_transaction")
-    assert schema.version == "1.0.0"
-    assert "age" in schema.json_schema["properties"]
-    assert "age_years" not in schema.json_schema["properties"]
+    schemas = await db.get_schemas(["person_transaction"])
+    assert schemas[0].version == "1.0.0"
+    assert "age" in schemas[0].json_schema["properties"]
+    assert "age_years" not in schemas[0].json_schema["properties"]

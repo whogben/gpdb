@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from gpdb import GPGraph, NodeUpsert
+from gpdb import GPGraph, NodeUpsert, SchemaNotFoundError
 from gpdb.admin import entry
 from gpdb.admin.auth import generate_api_key, hash_api_key_secret, hash_password
 from gpdb.admin.store import AdminStore
@@ -161,6 +161,76 @@ def test_graph_schema_registry_across_surfaces(admin_test_env):
     )
     assert mcp_get.schema.usage.node_count == 1
     assert mcp_get.schema.usage.edge_count == 0
+
+
+def test_graph_schema_list_tolerates_toctou_delete(admin_test_env, monkeypatch):
+    """Schema listing should not 500 if a schema disappears between list+get."""
+    manager = admin_test_env.manager
+    client = admin_test_env.client
+
+    graph_id = ""
+    _bootstrap_owner(client)
+    _login(client)
+
+    response = client.get("/graphs/new")
+    assert response.status_code == 200
+    default_instance_id = _extract_instance_option_value(
+        response.text, "Default instance"
+    )
+
+    table_prefix = "schema_list_toctou"
+    response = client.post(
+        "/graphs",
+        data={
+            "instance_id": default_instance_id,
+            "table_prefix": table_prefix,
+            "display_name": "Schema List TOCTOU",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    graph = _read_graph_by_prefix(manager, table_prefix=table_prefix)
+    assert graph is not None
+    graph_id = graph.id
+
+    response = client.post(
+        f"/graphs/{graph_id}/schemas",
+        data={
+            "name": "web_schema",
+            "json_schema": json.dumps(_schema_definition("web schema")),
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    response = client.post(
+        f"/graphs/{graph_id}/schemas",
+        data={
+            "name": "web_unused",
+            "json_schema": json.dumps(_schema_definition("web unused")),
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    missing_name = "web_unused"
+    original_get_schemas = GPGraph.get_schemas
+
+    async def patched_get_schemas(self, names):
+        # Simulate a concurrent delete: bulk get fails, but per-name fallback
+        # should ignore the missing entry and still return the rest.
+        if len(names) > 1 and missing_name in names:
+            raise SchemaNotFoundError(f"Schemas not found: {[missing_name]}")
+        if len(names) == 1 and names[0] == missing_name:
+            raise SchemaNotFoundError(f"Schemas not found: {[missing_name]}")
+        return await original_get_schemas(self, names)
+
+    monkeypatch.setattr(GPGraph, "get_schemas", patched_get_schemas, raising=True)
+
+    response = client.get(f"/graphs/{graph_id}/schemas")
+    assert response.status_code == 200
+    assert "web_schema" in response.text
+    assert "web_unused" not in response.text
 
 
 def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
@@ -395,6 +465,44 @@ def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
     assert "rest_schema" not in response.text
     assert "cli_schema" not in response.text
     assert "mcp_schema" not in response.text
+
+
+def test_graph_schema_delete_missing_translates_to_not_found(admin_test_env):
+    """Deleting an already-missing schema should not 500."""
+    manager = admin_test_env.manager
+    client = admin_test_env.client
+
+    _bootstrap_owner(client)
+    _login(client)
+
+    response = client.get("/graphs/new")
+    assert response.status_code == 200
+    default_instance_id = _extract_instance_option_value(
+        response.text, "Default instance"
+    )
+
+    table_prefix = "schema_delete_missing"
+    response = client.post(
+        "/graphs",
+        data={
+            "instance_id": default_instance_id,
+            "table_prefix": table_prefix,
+            "display_name": "Schema Delete Missing",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    graph = _read_graph_by_prefix(manager, table_prefix=table_prefix)
+    assert graph is not None
+    graph_id = graph.id
+
+    response = client.post(
+        f"/graphs/{graph_id}/schemas/missing_schema/delete",
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "was not found" in response.text
 
 
 def test_schema_partial_update_preserves_omitted_fields(admin_test_env):
@@ -642,41 +750,51 @@ def _seed_schema_usage(
         db = GPGraph(services.captive_server.get_uri(), table_prefix=table_prefix)
         try:
             if kind == "node":
-                await db.set_node(
-                    NodeUpsert(
-                        type="schema-test",
-                        name="source",
-                        schema_name=schema_name,
-                        data={"name": "Source"},
-                    )
+                await db.set_nodes(
+                    [
+                        NodeUpsert(
+                            type="schema-test",
+                            name="source",
+                            schema_name=schema_name,
+                            data={"name": "Source"},
+                        )
+                    ]
                 )
                 return
 
             from gpdb import EdgeUpsert
 
-            source = await db.set_node(
-                NodeUpsert(
-                    type="schema-test",
-                    name="source",
-                    data={},
-                )
+            source_list = await db.set_nodes(
+                [
+                    NodeUpsert(
+                        type="schema-test",
+                        name="source",
+                        data={},
+                    )
+                ]
             )
-            target = await db.set_node(
-                NodeUpsert(
-                    type="schema-test",
-                    name="target",
-                    data={},
-                )
+            source = source_list[0]
+            target_list = await db.set_nodes(
+                [
+                    NodeUpsert(
+                        type="schema-test",
+                        name="target",
+                        data={},
+                    )
+                ]
             )
-            await db.set_edge(
-                EdgeUpsert(
-                    type="schema-link",
-                    source_id=source.id,
-                    target_id=target.id,
-                    schema_name=schema_name,
-                    data={"name": "Edge"},
-                )
-            )
+            target = target_list[0]
+            _ = (await db.set_edges(
+                [
+                    EdgeUpsert(
+                        type="schema-link",
+                        source_id=source.id,
+                        target_id=target.id,
+                        schema_name=schema_name,
+                        data={"name": "Edge"},
+                    )
+                ]
+            ))[0]
         finally:
             await db.sqla_engine.dispose()
 

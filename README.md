@@ -35,11 +35,11 @@ db = GPGraph("postgresql://user:pass@localhost/mydb")
 await db.create_tables()
 
 # Create nodes
-alice = await db.set_node(NodeUpsert(type="user", name="alice", data={"role": "admin"}))
-bob = await db.set_node(NodeUpsert(type="user", name="bob", data={"role": "member"}))
+alice = (await db.set_nodes([NodeUpsert(type="user", name="alice", data={"role": "admin"})]))[0]
+bob = (await db.set_nodes([NodeUpsert(type="user", name="bob", data={"role": "member"})]))[0]
 
 # Connect them with an edge
-await db.set_edge(EdgeUpsert(type="follows", source_id=alice.id, target_id=bob.id))
+await db.set_edges([EdgeUpsert(type="follows", source_id=alice.id, target_id=bob.id)])
 
 # Search
 result = await db.search_nodes(
@@ -242,7 +242,8 @@ Nodes are the primary records. Each has an `id`, `type`, optional `name`, and a 
 - **Tags** — a JSONB list for lightweight categorization
 
 ```python
-node = await db.set_node(NodeUpsert(
+node = (await db.set_nodes([
+    NodeUpsert(
     type="document",
     name="notes.md",
     parent_id=folder.id,
@@ -251,22 +252,25 @@ node = await db.set_node(NodeUpsert(
     payload=b"# My notes\n...",
     payload_mime="text/markdown",
     payload_filename="notes.md",
-))
+    )
+]))[0]
 ```
 
-Payloads are deferred by default — `get_node()` skips the blob, `get_node_with_payload()` includes it.
+Payloads are deferred by default — `get_nodes()` skips the blob, `get_node_payloads()` includes it.
 
 ### Edges
 
 Edges connect two nodes with a `source_id` and `target_id`, a `type`, and their own `data` and `tags`.
 
 ```python
-edge = await db.set_edge(EdgeUpsert(
-    type="authored",
-    source_id=user.id,
-    target_id=document.id,
-    data={"timestamp": "2025-01-15"},
-))
+edge = (await db.set_edges([
+    EdgeUpsert(
+        type="authored",
+        source_id=user.id,
+        target_id=document.id,
+        data={"timestamp": "2025-01-15"},
+    )
+]))[0]
 ```
 
 ### Search
@@ -352,19 +356,20 @@ Register JSON schemas (or Pydantic models) to validate node or edge data on ever
 
 ```python
 from pydantic import BaseModel
+from gpdb import NodeUpsert, SchemaUpsert
 
 class UserData(BaseModel):
     role: str
     email: str | None = None
 
-await db.set_schema("user_data", UserData, kind="node")
+await db.set_schemas([SchemaUpsert(name="user_data", json_schema=UserData, kind="node")])
 
 # This node's data will be validated against the schema
-await db.set_node(NodeUpsert(
+await db.set_nodes([NodeUpsert(
     type="user",
     schema_name="user_data",
     data={"role": "admin", "email": "a@b.com"},
-))
+)])
 ```
 
 Schema updates are classified automatically:
@@ -387,8 +392,8 @@ class User(NodeModel):
     email: str | None = None
 
 user = User(role="admin", email="a@b.com")
-created = await db.set_node(user.to_upsert())
-loaded = User.from_read(await db.get_node(created.id))
+created = (await db.set_nodes([user.to_upsert()]))[0]
+loaded = User.from_read((await db.get_nodes([created.id]))[0])
 print(loaded.role)  # "admin"
 ```
 
@@ -398,8 +403,8 @@ Wrap multiple operations in an atomic transaction.
 
 ```python
 async with db.transaction():
-    node = await db.set_node(NodeUpsert(type="account"))
-    await db.set_edge(EdgeUpsert(type="owns", source_id=owner.id, target_id=node.id))
+    node = (await db.set_nodes([NodeUpsert(type="account")]))[0]
+    await db.set_edges([EdgeUpsert(type="owns", source_id=owner.id, target_id=node.id)])
 ```
 
 ### Table prefixes
@@ -420,23 +425,23 @@ await scratch.create_tables()   # creates: scratch_nodes, scratch_edges, scratch
 |---|---|
 | `create_tables()` | Create tables (idempotent) |
 | `drop_tables()` | Drop this instance's tables |
-| `set_node(NodeUpsert)` | Create or update a node |
-| `get_node(id)` | Get node without payload |
-| `get_node_with_payload(id)` | Get node with payload |
+| `set_nodes([NodeUpsert])` | Create or update nodes |
+| `get_nodes([ids])` | Get nodes without payload |
+| `get_node_payloads([ids])` | Get nodes with payload |
 | `get_node_payload(id)` | Get only the payload bytes |
 | `set_node_payload(id, bytes)` | Set payload on existing node |
 | `get_node_child(parent_id, name)` | Get child node by name |
-| `delete_node(id)` | Delete a node |
+| `delete_nodes([ids])` | Delete nodes |
 | `search_nodes(SearchQuery)` | Search nodes with filters/sort/pagination |
 | `search_nodes_projection(SearchQuery)` | Search with field projection |
-| `set_edge(EdgeUpsert)` | Create or update an edge |
-| `get_edge(id)` | Get an edge |
-| `delete_edge(id)` | Delete an edge |
+| `set_edges([EdgeUpsert])` | Create or update edges |
+| `get_edges([ids])` | Get edges |
+| `delete_edges([ids])` | Delete edges |
 | `search_edges(SearchQuery)` | Search edges |
 | `search_edges_projection(SearchQuery)` | Search edges with field projection |
-| `set_schema(name, schema, kind="node")` | Register or update a node/edge JSON schema |
-| `get_schema(name)` | Get a schema |
-| `delete_schema(name)` | Delete a schema (fails if in use) |
+| `set_schemas([SchemaUpsert])` | Register or update node/edge JSON schemas |
+| `get_schemas([names])` | Get schemas |
+| `delete_schemas([names])` | Delete schemas (fails if in use) |
 | `list_schemas(kind=None)` | List all schema names, optionally filtered by kind |
 | `migrate_schema(name, func, schema, kind=None)` | Atomically migrate data + schema |
 | `transaction()` | Context manager for atomic operations |

@@ -327,11 +327,15 @@ async def graph_schema_delete(
         return current_user
 
     try:
-        deleted = await require_graph_content_service(request).delete_graph_schema(
+        deleted = await require_graph_content_service(request).delete_graph_schemas(
             graph_id=graph_id,
-            name=schema_name,
+            names=[schema_name],
             current_user=current_user,
         )
+        # Unwrap the single result from the batch response
+        if len(deleted) != 1:
+            raise GraphContentError("Expected exactly one schema to be deleted")
+        deleted_schema = deleted[0]
     except GraphContentError as exc:
         return redirect_with_message(
             request,
@@ -345,7 +349,7 @@ async def graph_schema_delete(
         request,
         "graph_schema_list_page",
         graph_id=graph_id,
-        success=f"Schema '{deleted.schema.name}' deleted.",
+        success=f"Schema '{deleted_schema.schema.name}' deleted.",
     )
 
 

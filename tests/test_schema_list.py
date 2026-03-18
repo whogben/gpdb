@@ -16,9 +16,11 @@ async def test_list_schemas(db: GPGraph):
     schema2 = {"type": "object", "properties": {"value": {"type": "integer"}}}
     schema3 = {"type": "object", "properties": {"flag": {"type": "boolean"}}}
 
-    await db.set_schema(SchemaUpsert(name="schema1", json_schema=schema1))
-    await db.set_schema(SchemaUpsert(name="schema2", json_schema=schema2))
-    await db.set_schema(SchemaUpsert(name="schema3", json_schema=schema3))
+    await db.set_schemas([
+        SchemaUpsert(name="schema1", json_schema=schema1),
+        SchemaUpsert(name="schema2", json_schema=schema2),
+        SchemaUpsert(name="schema3", json_schema=schema3),
+    ])
 
     # List all schemas
     schemas = await db.list_schemas()
@@ -47,13 +49,13 @@ async def test_schema_version_tracking(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.set_schema(
-        SchemaUpsert(name="person_version", json_schema=person_schema_v1)
+    await db.set_schemas(
+        [SchemaUpsert(name="person_version", json_schema=person_schema_v1)]
     )
 
     # Verify version is 1
-    schema = await db.get_schema("person_version")
-    assert schema.version == "1.0.0"
+    schemas = await db.get_schemas(["person_version"])
+    assert schemas[0].version == "1.0.0"
 
     # Update schema with optional field (minor change)
     person_schema_v2 = {
@@ -64,13 +66,13 @@ async def test_schema_version_tracking(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.set_schema(
-        SchemaUpsert(name="person_version", json_schema=person_schema_v2)
+    await db.set_schemas(
+        [SchemaUpsert(name="person_version", json_schema=person_schema_v2)]
     )
 
     # Verify version is now 1.1.0 (minor bump)
-    schema = await db.get_schema("person_version")
-    assert schema.version == "1.1.0"
+    schemas = await db.get_schemas(["person_version"])
+    assert schemas[0].version == "1.1.0"
 
     # Update schema with another optional field (minor change)
     person_schema_v3 = {
@@ -82,13 +84,13 @@ async def test_schema_version_tracking(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.set_schema(
-        SchemaUpsert(name="person_version", json_schema=person_schema_v3)
+    await db.set_schemas(
+        [SchemaUpsert(name="person_version", json_schema=person_schema_v3)]
     )
 
     # Verify version is now 1.2.0 (minor bump)
-    schema = await db.get_schema("person_version")
-    assert schema.version == "1.2.0"
+    schemas = await db.get_schemas(["person_version"])
+    assert schemas[0].version == "1.2.0"
 
 
 @pytest.mark.asyncio
@@ -109,17 +111,19 @@ async def test_edge_schema_validation_persistence(db: GPGraph):
         },
         "required": ["weight"],
     }
-    await db.set_schema(
-        SchemaUpsert(
+    await db.set_schemas(
+        [SchemaUpsert(
             name="relationship_persist", json_schema=relationship_schema, kind="edge"
-        )
+        )]
     )
 
     # Create two nodes
     node1 = NodeUpsert(type="test", data={"label": "A"})
     node2 = NodeUpsert(type="test", data={"label": "B"})
-    result1 = await db.set_node(node1)
-    result2 = await db.set_node(node2)
+    result1_list = await db.set_nodes([node1])
+    result2_list = await db.set_nodes([node2])
+    result1 = result1_list[0]
+    result2 = result2_list[0]
 
     # Create an edge with schema_name
     edge = EdgeUpsert(
@@ -129,7 +133,7 @@ async def test_edge_schema_validation_persistence(db: GPGraph):
         schema_name="relationship_persist",
         data={"weight": 0.5, "label": "friend"},
     )
-    edge_result = await db.set_edge(edge)
+    edge_result = (await db.set_edges([edge]))[0]
     assert edge_result.schema_name == "relationship_persist"
 
     # Update the edge without providing schema_name
@@ -141,7 +145,7 @@ async def test_edge_schema_validation_persistence(db: GPGraph):
         type="connected",
         data={"weight": 0.8, "label": "close friend"},
     )
-    updated_result = await db.set_edge(updated_edge)
+    updated_result = (await db.set_edges([updated_edge]))[0]
 
     # Verify schema_name is preserved
     assert updated_result.schema_name == "relationship_persist"
@@ -159,4 +163,4 @@ async def test_edge_schema_validation_persistence(db: GPGraph):
         data={"label": "friend"},
     )
     with pytest.raises(SchemaValidationError):
-        await db.set_edge(invalid_edge)
+        await db.set_edges([invalid_edge])

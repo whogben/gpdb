@@ -1127,9 +1127,9 @@ def _read_stored_instance_password(manager, *, slug: str) -> object:
         try:
             instance = await store.get_instance_by_slug(slug)
             assert instance is not None
-            node = await store.db.get_node(instance.id)
-            assert node is not None
-            return node.data["password"]
+            nodes = await store.db.get_nodes([instance.id])
+            assert len(nodes) == 1
+            return nodes[0].data["password"]
         finally:
             await store.close()
 

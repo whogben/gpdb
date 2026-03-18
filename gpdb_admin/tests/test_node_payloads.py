@@ -422,12 +422,14 @@ def _seed_graph_schema(
     async def _seed() -> None:
         db = GPGraph(services.captive_server.get_uri(), table_prefix=table_prefix)
         try:
-            await db.set_schema(
-                SchemaUpsert(
-                    name=schema_name,
-                    json_schema=_schema_definition(f"{schema_name} schema"),
-                    kind=kind,
-                )
+            await db.set_schemas(
+                [
+                    SchemaUpsert(
+                        name=schema_name,
+                        json_schema=_schema_definition(f"{schema_name} schema"),
+                        kind=kind,
+                    )
+                ]
             )
         finally:
             await db.sqla_engine.dispose()
