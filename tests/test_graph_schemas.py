@@ -281,3 +281,93 @@ async def test_set_schemas_atomic_failure(db: GPGraph):
         await db.get_schemas(["new_schema1"])
     with pytest.raises(SchemaNotFoundError):
         await db.get_schemas(["new_schema2"])
+
+
+@pytest.mark.asyncio
+async def test_schema_preserves_json_structure(db: GPGraph):
+    """
+    Test that schemas are stored exactly as provided, without modifications.
+    """
+    # Define a schema with $defs and $ref
+    schema_with_refs = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "address": {"$ref": "#/$defs/Address"},
+        },
+        "$defs": {
+            "Address": {
+                "type": "object",
+                "properties": {
+                    "street": {"type": "string"},
+                    "city": {"type": "string"},
+                },
+            }
+        },
+    }
+
+    # Register the schema
+    await db.set_schemas([SchemaUpsert(name="address_schema", json_schema=schema_with_refs)])
+
+    # Retrieve and verify the schema is unchanged
+    retrieved = await db.get_schemas(["address_schema"])
+    assert len(retrieved) == 1
+    assert retrieved[0].json_schema == schema_with_refs
+    assert "$defs" in retrieved[0].json_schema
+    assert "$ref" in retrieved[0].json_schema["properties"]["address"]
+
+
+@pytest.mark.asyncio
+async def test_schema_kind_stored_separately(db: GPGraph):
+    """
+    Test that kind is stored in a separate column, not in json_schema.
+    """
+    # Define a simple schema
+    person_schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+        },
+    }
+
+    # Register as an edge schema
+    await db.set_schemas([SchemaUpsert(name="person_edge", json_schema=person_schema, kind="edge")])
+
+    # Retrieve and verify
+    retrieved = await db.get_schemas(["person_edge"])
+    assert len(retrieved) == 1
+    assert retrieved[0].kind == "edge"
+    # Verify json_schema doesn't contain x-gpdb-kind
+    assert "x-gpdb-kind" not in retrieved[0].json_schema
+    # Verify json_schema is exactly as provided
+    assert retrieved[0].json_schema == person_schema
+
+
+@pytest.mark.asyncio
+async def test_pydantic_model_schema_preserves_structure(db: GPGraph):
+    """
+    Test that Pydantic model schemas are stored with $defs preserved.
+    """
+    from pydantic import BaseModel
+
+    # Define nested Pydantic models
+    class Address(BaseModel):
+        street: str
+        city: str
+
+    class Person(BaseModel):
+        name: str
+        address: Address
+
+    # Register the Pydantic model
+    await db.set_schemas([SchemaUpsert(name="person_model", json_schema=Person)])
+
+    # Retrieve and verify $defs are preserved
+    retrieved = await db.get_schemas(["person_model"])
+    assert len(retrieved) == 1
+    # Pydantic generates $defs for nested models
+    assert "$defs" in retrieved[0].json_schema
+    # Verify kind is stored separately
+    assert retrieved[0].kind == "node"
+    # Verify no x-gpdb-kind in json_schema
+    assert "x-gpdb-kind" not in retrieved[0].json_schema

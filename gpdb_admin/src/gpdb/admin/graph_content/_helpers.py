@@ -254,7 +254,7 @@ def normalize_optional_text(value: str | None) -> str | None:
 
 def schema_kind_from_record(schema: Any) -> str:
     """Extract schema kind from a schema record."""
-    kind = (schema.json_schema or {}).get("x-gpdb-kind")
+    kind = schema.kind
     if kind not in {"node", "edge"}:
         raise GraphContentValidationError(
             f"Schema '{schema.name}' is missing valid kind metadata."

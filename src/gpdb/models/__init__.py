@@ -13,8 +13,6 @@ from gpdb.models.base import (
     SchemaInUseError,
     _Base,
     _normalize_schema_kind,
-    _extract_schema_kind,
-    _SCHEMA_KIND_FIELD,
     _SCHEMA_KIND_VALUES,
     _ID_ALPHABET,
     _ID_MAX_COLLISION_ATTEMPTS,
@@ -75,8 +73,6 @@ __all__ = [
     "SchemaUpsert",
     # Helpers
     "_normalize_schema_kind",
-    "_extract_schema_kind",
-    "_SCHEMA_KIND_FIELD",
     "_SCHEMA_KIND_VALUES",
     # ID generation
     "_ID_ALPHABET",

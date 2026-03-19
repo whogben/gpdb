@@ -84,6 +84,7 @@ def create_schema_model(table_name: str) -> type:
             "name": mapped_column(String, primary_key=True),
             "version": mapped_column(String, default="1.0.0"),
             "json_schema": mapped_column(JSONB, default=dict),
+            "kind": mapped_column(String, index=True),
             "created_at": mapped_column(
                 DateTime(timezone=True), server_default=func.now()
             ),

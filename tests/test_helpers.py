@@ -2,5 +2,5 @@
 
 
 def schema_with_kind(schema: dict, kind: str = "node") -> dict:
-    """Add x-gpdb-kind to a schema dict."""
-    return {**schema, "x-gpdb-kind": kind}
+    """No-op helper - schemas are now stored exactly as provided."""
+    return schema

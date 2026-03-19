@@ -52,6 +52,7 @@ def test_graph_schema_registry_across_surfaces(admin_test_env):
         f"/graphs/{graph_id}/schemas",
         data={
             "name": "web_schema",
+            "kind": "node",
             "json_schema": json.dumps(_schema_definition("web schema")),
         },
         follow_redirects=False,
@@ -214,6 +215,7 @@ def test_graph_schema_list_tolerates_toctou_delete(admin_test_env, monkeypatch):
         f"/graphs/{graph_id}/schemas",
         data={
             "name": "web_schema",
+            "kind": "node",
             "json_schema": json.dumps(_schema_definition("web schema")),
         },
         follow_redirects=False,
@@ -223,6 +225,7 @@ def test_graph_schema_list_tolerates_toctou_delete(admin_test_env, monkeypatch):
         f"/graphs/{graph_id}/schemas",
         data={
             "name": "web_unused",
+            "kind": "node",
             "json_schema": json.dumps(_schema_definition("web unused")),
         },
         follow_redirects=False,
@@ -284,6 +287,7 @@ def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
         f"/graphs/{graph_id}/schemas",
         data={
             "name": "web_schema",
+            "kind": "node",
             "json_schema": json.dumps(_schema_definition("web schema")),
         },
         follow_redirects=False,

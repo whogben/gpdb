@@ -18,14 +18,11 @@ from gpdb.models import (
     SchemaBreakingChangeError,
     SchemaUpsert,
     _normalize_schema_kind,
-    _extract_schema_kind,
-    _SCHEMA_KIND_FIELD,
 )
 from gpdb.schema import (
     _bump_semver,
     _detect_semver_change,
     _check_breaking_changes,
-    _inline_refs,
 )
 
 
@@ -34,13 +31,12 @@ class SchemaMixin:
 
     def _schema_kind_from_record(self, schema: Any) -> SchemaKind:
         """Extract the schema kind from a schema record."""
-        try:
-            return _extract_schema_kind(schema.json_schema)
-        except ValueError as exc:
+        if schema.kind is None:
             raise SchemaValidationError(
-                f"Schema '{schema.name}' is missing valid kind metadata. "
+                f"Schema '{schema.name}' is missing kind metadata. "
                 "Re-register it as a node or edge schema."
-            ) from exc
+            )
+        return _normalize_schema_kind(schema.kind)
 
     def _prepare_schema_registration(
         self,
@@ -57,25 +53,13 @@ class SchemaMixin:
 
             json_schema = copy.deepcopy(schema)
 
-        json_schema = _inline_refs(json_schema)
-
-        embedded_kind = _extract_schema_kind(json_schema, required=False)
-        resolved_kind = embedded_kind
         if kind is not None:
-            requested_kind = _normalize_schema_kind(kind)
-            if embedded_kind is not None and embedded_kind != requested_kind:
-                raise ValueError(
-                    "Schema kind does not match the JSON schema metadata field "
-                    f"'{_SCHEMA_KIND_FIELD}'."
-                )
-            resolved_kind = requested_kind
-
-        if resolved_kind is None and existing is not None:
+            resolved_kind = _normalize_schema_kind(kind)
+        elif existing is not None:
             resolved_kind = self._schema_kind_from_record(existing)
-        if resolved_kind is None:
+        else:
             resolved_kind = "node"
 
-        json_schema[_SCHEMA_KIND_FIELD] = resolved_kind
         return json_schema, resolved_kind
 
     async def set_schemas(self, schemas: list[SchemaUpsert]) -> list[Any]:
@@ -135,6 +119,7 @@ class SchemaMixin:
 
                     # Update existing schema
                     existing.json_schema = json_schema
+                    existing.kind = resolved_kind
                     existing.version = new_version
                     self._validators.pop(
                         schema_upsert.name, None
@@ -144,7 +129,10 @@ class SchemaMixin:
                 else:
                     # Create new schema with version 1.0.0
                     new_schema = self._Schema(
-                        name=schema_upsert.name, json_schema=json_schema, version="1.0.0"
+                        name=schema_upsert.name,
+                        json_schema=json_schema,
+                        kind=resolved_kind,
+                        version="1.0.0",
                     )
                     session.add(new_schema)
                     self._schema_kinds.pop(schema_upsert.name, None)
@@ -350,10 +338,14 @@ class SchemaMixin:
                     )
                     new_version = _bump_semver(existing.version, change_type)
                     existing.json_schema = json_schema
+                    existing.kind = resolved_kind
                     existing.version = new_version
                 else:
                     new_schema_record = self._Schema(
-                        name=name, json_schema=json_schema, version="1.0.0"
+                        name=name,
+                        json_schema=json_schema,
+                        kind=resolved_kind,
+                        version="1.0.0",
                     )
                     session.add(new_schema_record)
                 self._validators.pop(name, None)  # invalidate cache for updated schema
