@@ -751,7 +751,7 @@ async def test_node_id_collision_retry_succeeds(db: GPGraph):
     """When generate_id returns an existing id, set_nodes retries with a new id and succeeds."""
     collide_id = "col-xx-xxxx"
     unique_id = "uni-yy-yyyy"
-    with patch("gpdb.graph.generate_id", side_effect=[collide_id, unique_id]):
+    with patch("gpdb.graph_nodes.generate_id", side_effect=[collide_id, unique_id]):
         await db.set_nodes([NodeUpsert(id=collide_id, type="test", data={})])
         created_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 1})])
     created = created_list[0]
@@ -764,7 +764,7 @@ async def test_node_id_collision_retry_succeeds(db: GPGraph):
 async def test_node_id_collision_retry_exhausted(db: GPGraph):
     """When generate_id always returns the same existing id, set_nodes raises after max attempts."""
     same_id = "same-id-always"
-    with patch("gpdb.graph.generate_id", return_value=same_id):
+    with patch("gpdb.graph_nodes.generate_id", return_value=same_id):
         await db.set_nodes([NodeUpsert(id=same_id, type="test", data={})])
         with pytest.raises(
             RuntimeError,

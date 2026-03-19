@@ -12,7 +12,7 @@ from gpdb.admin.tools.base import (
     _api_key_surface_specs,
     _graph_surface_specs,
 )
-from gpdb.admin.tools.graph import _build_graph_content_service
+from gpdb.admin.tools.graph_tools import _build_graph_content_service
 from gpdb.admin.tools.api_keys import _build_api_key_service
 
 __all__ = [
