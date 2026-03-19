@@ -23,6 +23,7 @@ from gpdb.admin.graph_content.models import (
     GraphSchemaUsage,
     InstanceRecord,
 )
+from gpdb.svg_sanitizer import normalize_svg_icon_for_display
 
 
 def serialize_graph(graph: ManagedGraph) -> dict[str, object]:
@@ -119,6 +120,8 @@ def serialize_schema_record(
         "version": str(schema.version),
         "json_schema": schema.json_schema if include_json_schema else None,
         "usage": usage or GraphSchemaUsage(),
+        "alias": getattr(schema, "alias", None),
+        "svg_icon": normalize_svg_icon_for_display(getattr(schema, "svg_icon", None)),
     }
 
 

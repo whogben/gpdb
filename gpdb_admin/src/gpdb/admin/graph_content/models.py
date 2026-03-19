@@ -42,6 +42,8 @@ class GraphSchemaRecord(BaseModel):
     version: str
     json_schema: dict[str, Any] | None = None
     usage: GraphSchemaUsage = Field(default_factory=GraphSchemaUsage)
+    alias: str | None = None
+    svg_icon: str | None = None
 
 
 class GraphSchemaList(BaseModel):
@@ -70,6 +72,8 @@ class GraphSchemaUpdateParam(BaseModel):
         None, description="JSON Schema object."
     )
     kind: str | None = Field(None, description="Schema kind: node or edge.")
+    alias: str | None = Field(None, description="Display alias for the schema.")
+    svg_icon: str | None = Field(None, description="SVG icon for the schema.")
 
 
 class GraphSchemaCreateParam(BaseModel):
@@ -82,6 +86,8 @@ class GraphSchemaCreateParam(BaseModel):
     kind: str = Field(
         default="node", description="Schema kind: node or edge."
     )
+    alias: str | None = Field(None, description="Display alias for the schema.")
+    svg_icon: str | None = Field(None, description="SVG icon for the schema.")
 
 
 class GraphNodeCreateParam(BaseModel):
@@ -384,4 +390,8 @@ class GraphViewerData(BaseModel):
     elements: list[dict[str, object]] = Field(default_factory=list)
     node_count: int = 0
     edge_count: int = 0
+    schemas: dict[str, dict[str, str | None]] = Field(
+        default_factory=dict,
+        description="Display metadata keyed as 'node:<name>' or 'edge:<name>'.",
+    )
     error: str | None = None

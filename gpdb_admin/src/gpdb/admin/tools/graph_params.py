@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from gpdb.admin.graph_content import (
@@ -16,6 +18,8 @@ from gpdb.query_docs import (
     NODE_LIST_SORT_DESCRIPTION,
 )
 
+SchemaKindLiteral = Literal["node", "edge"]
+
 
 class GraphSchemaCreateParams(BaseModel):
     """Parameters for creating one graph schema."""
@@ -23,7 +27,7 @@ class GraphSchemaCreateParams(BaseModel):
     graph_id: str = Field(..., description="Graph ID.")
     name: str = Field(..., description="Schema name.")
     json_schema: dict[str, object] = Field(..., description="JSON Schema object.")
-    kind: str = Field(default="node", description="Schema kind: node or edge.")
+    kind: SchemaKindLiteral = Field(..., description="Schema kind: node or edge.")
 
 
 class GraphSchemasCreateParams(BaseModel):
@@ -46,7 +50,7 @@ class SchemaIdentifierParams(BaseModel):
 
     graph_id: str = Field(..., description="Graph ID.")
     name: str = Field(..., description="Schema name.")
-    kind: str = Field(..., description="Schema kind: node or edge.")
+    kind: SchemaKindLiteral = Field(..., description="Schema kind: node or edge.")
 
 
 class GraphOverviewParams(GraphIdParams):
@@ -56,7 +60,9 @@ class GraphOverviewParams(GraphIdParams):
 class GraphSchemaListParams(GraphIdParams):
     """Parameters for listing graph schemas."""
 
-    kind: str = Field(default="", description="Filter by schema kind (node or edge).")
+    kind: SchemaKindLiteral = Field(
+        ..., description="Schema kind: list only node or only edge schemas."
+    )
 
 
 class GraphSchemaGetParams(SchemaIdentifierParams):
@@ -68,7 +74,7 @@ class GraphSchemasGetParams(BaseModel):
 
     graph_id: str = Field(..., description="Graph ID.")
     names: list[str] = Field(..., description="List of schema names.")
-    kind: str = Field(..., description="Schema kind: node or edge.")
+    kind: SchemaKindLiteral = Field(..., description="Schema kind: node or edge.")
 
 
 class GraphSchemaDeleteParams(SchemaIdentifierParams):
@@ -80,7 +86,7 @@ class GraphSchemasDeleteParams(BaseModel):
 
     graph_id: str = Field(..., description="Graph ID.")
     names: list[str] = Field(..., description="List of schema names to delete.")
-    kind: str = Field(..., description="Schema kind: node or edge.")
+    kind: SchemaKindLiteral = Field(..., description="Schema kind: node or edge.")
 
 
 class InstanceIdParams(BaseModel):
@@ -254,7 +260,9 @@ class EdgeUpdateParams(BaseModel):
     type: str | None = Field(None, description="Edge type.")
     source_id: str | None = Field(None, description="Source node ID.")
     target_id: str | None = Field(None, description="Target node ID.")
-    data: dict[str, object] | None = Field(None, description="Edge data as JSON object.")
+    data: dict[str, object] | None = Field(
+        None, description="Edge data as JSON object."
+    )
     tags: list[str] | None = Field(None, description="Edge tags.")
 
 
@@ -334,7 +342,9 @@ class NodeUpdateParams(BaseModel):
     graph_id: str = Field(..., description="Graph ID.")
     node_id: str = Field(..., description="Node ID.")
     type: str | None = Field(None, description="Node type.")
-    data: dict[str, object] | None = Field(None, description="Node data as JSON object.")
+    data: dict[str, object] | None = Field(
+        None, description="Node data as JSON object."
+    )
     name: str | None = Field(None, description="Node name.")
     owner_id: str | None = Field(None, description="Owner ID.")
     parent_id: str | None = Field(None, description="Parent node ID.")
@@ -359,7 +369,9 @@ class GraphSchemaUpdateParams(BaseModel):
     """Parameters for updating multiple graph schemas. Omitted fields are left unchanged."""
 
     graph_id: str = Field(..., description="Graph ID.")
-    schemas: list[GraphSchemaUpdateParam] = Field(..., description="List of schema update parameters.")
+    schemas: list[GraphSchemaUpdateParam] = Field(
+        ..., description="List of schema update parameters."
+    )
 
 
 class GraphCreateParams(BaseModel):

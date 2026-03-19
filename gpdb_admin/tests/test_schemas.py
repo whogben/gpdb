@@ -132,11 +132,11 @@ def test_graph_schema_registry_across_surfaces(admin_test_env):
 
     response = client.post(
         "/api/graph_schema_list",
-        json={"graph_id": graph_id},
+        json={"graph_id": graph_id, "kind": "node"},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
-    assert response.json()["total"] == 5
+    assert response.json()["total"] == 4
     assert {item["name"] for item in response.json()["items"]} == {
         "__default__",
         "mcp_schema",
@@ -166,9 +166,9 @@ def test_graph_schema_registry_across_surfaces(admin_test_env):
         manager,
         api_key_value,
         "graph_schema_list",
-        {"graph_id": graph_id},
+        {"graph_id": graph_id, "kind": "node"},
     )
-    assert mcp_list.total == 5
+    assert mcp_list.total == 4
 
     mcp_get = _call_persisted_authenticated_mcp_tool(
         manager,

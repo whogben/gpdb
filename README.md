@@ -379,6 +379,71 @@ Schema updates are classified automatically:
 
 Use `migrate_schema()` to atomically transform existing data and update the schema in one transaction.
 
+### Schema Visualization
+
+Schemas support optional visualization options to improve graph readability:
+
+#### Alias
+
+Set a short display name or emoji for your schema that will appear in the graph viewer instead of the full schema name:
+
+```python
+from gpdb import SchemaUpsert
+
+schema = SchemaUpsert(
+    name="user_profile",
+    json_schema={"type": "object", "properties": {"name": {"type": "string"}}},
+    kind="node",
+    alias="👤 User",  # Short display name or emoji
+)
+await graph.set_schemas([schema])
+```
+
+#### SVG Icon
+
+Add a custom SVG icon that will be displayed on nodes/edges in the graph viewer:
+
+```python
+from gpdb import SchemaUpsert
+
+schema = SchemaUpsert(
+    name="user_profile",
+    json_schema={"type": "object", "properties": {"name": {"type": "string"}}},
+    kind="node",
+    svg_icon='<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>',
+)
+await graph.set_schemas([schema])
+```
+
+#### Display Order
+
+The graph viewer displays schema information in this priority order:
+1. **SVG icon** (if set) — on the node body for node schemas; for edge schemas, a small icon sits at the edge midpoint (Cytoscape cannot paint images on the edge line itself)
+2. **Alias** (if set) - displayed as label text
+3. **Schema name** - fallback if neither alias nor icon is set
+
+The `/viewer/data` JSON `schemas` map is keyed as `node:<schema_name>` or `edge:<schema_name>` so a node schema and an edge schema with the same name do not collide.
+
+#### SVG Security & Requirements
+
+- **Size limit**: SVG icons must be 20KB or smaller
+- **Sanitization**: All SVGs are automatically sanitized to remove:
+  - JavaScript code (`<script>` tags)
+  - Event handlers (`onclick`, `onload`, etc.)
+  - Dangerous attributes
+- **Allowed elements**: `svg`, `path`, `circle`, `rect`, `ellipse`, `line`, `polyline`, `polygon`, `text`, `g`, `defs`, `use`, `symbol`, `marker`, `clipPath`, `mask`, `pattern`, `gradient`, `stop`, `linearGradient`, `radialGradient`
+- **Allowed attributes**: Presentation attributes only (fill, stroke, stroke-width, transform, etc.)
+
+#### Best Practices
+
+- Keep SVGs simple and performant
+- Use vector graphics that scale well
+- Consider both light and dark themes
+- Test icons at different sizes (32x32px recommended)
+- Use meaningful aliases or emojis for quick identification
+
+For detailed SVG guidelines, see [SVG Icon Guidelines](docs/svg_guidelines.md).
+
 ### Domain models (ODM)
 
 Subclass `NodeModel` or `EdgeModel` for strongly-typed domain objects that serialize to/from the graph.

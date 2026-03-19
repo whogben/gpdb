@@ -347,3 +347,326 @@ async def test_pydantic_model_schema_preserves_structure(db: GPGraph):
     assert retrieved[0].kind == "node"
     # Verify no x-gpdb-kind in json_schema
     assert "x-gpdb-kind" not in retrieved[0].json_schema
+
+
+# --- Schema Display Metadata Tests (alias and svg_icon) ---
+
+
+@pytest.mark.asyncio
+async def test_create_schema_with_alias_only(db: GPGraph):
+    """Test creating a schema with only an alias."""
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+    
+    result = await db.set_schemas([
+        SchemaUpsert(name="person", json_schema=schema, kind="node", alias="Person")
+    ])
+    
+    assert len(result) == 1
+    assert result[0].alias == "Person"
+    assert result[0].svg_icon is None
+
+
+@pytest.mark.asyncio
+async def test_create_schema_with_svg_icon_only(db: GPGraph):
+    """Test creating a schema with only an svg_icon."""
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+    svg = '<svg xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="40"/></svg>'
+    
+    result = await db.set_schemas([
+        SchemaUpsert(name="person", json_schema=schema, kind="node", svg_icon=svg)
+    ])
+    
+    assert len(result) == 1
+    assert result[0].alias is None
+    # SVG is sanitized, so check for key elements rather than exact match
+    assert "<svg" in result[0].svg_icon
+    assert "<circle" in result[0].svg_icon
+    assert 'cx="50"' in result[0].svg_icon
+    assert 'cy="50"' in result[0].svg_icon
+    assert 'r="40"' in result[0].svg_icon
+
+
+@pytest.mark.asyncio
+async def test_create_schema_with_both_alias_and_svg_icon(db: GPGraph):
+    """Test creating a schema with both alias and svg_icon."""
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+    svg = '<svg xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="40"/></svg>'
+    
+    result = await db.set_schemas([
+        SchemaUpsert(name="person", json_schema=schema, kind="node", alias="Person", svg_icon=svg)
+    ])
+    
+    assert len(result) == 1
+    assert result[0].alias == "Person"
+    # SVG is sanitized, so check for key elements rather than exact match
+    assert "<svg" in result[0].svg_icon
+    assert "<circle" in result[0].svg_icon
+    assert 'cx="50"' in result[0].svg_icon
+    assert 'cy="50"' in result[0].svg_icon
+    assert 'r="40"' in result[0].svg_icon
+
+
+@pytest.mark.asyncio
+async def test_create_schema_with_invalid_svg(db: GPGraph):
+    """Test that creating a schema with invalid SVG raises ValueError."""
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+    invalid_svg = '<script>alert("xss")</script>'
+    
+    with pytest.raises(ValueError) as exc_info:
+        await db.set_schemas([
+            SchemaUpsert(name="person", json_schema=schema, kind="node", svg_icon=invalid_svg)
+        ])
+    
+    assert "not valid XML" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_create_schema_with_svg_over_size_limit(db: GPGraph):
+    """Test that creating a schema with SVG over size limit raises ValueError."""
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+    # Create an SVG that's over 20KB
+    large_svg = '<svg xmlns="http://www.w3.org/2000/svg">' + '<circle/>' * 10000 + '</svg>'
+    
+    with pytest.raises(ValueError) as exc_info:
+        await db.set_schemas([
+            SchemaUpsert(name="person", json_schema=schema, kind="node", svg_icon=large_svg)
+        ])
+    
+    assert "exceeds maximum size" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_update_schema_to_add_alias(db: GPGraph):
+    """Test updating a schema to add an alias."""
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+    
+    # Create schema without alias
+    await db.set_schemas([SchemaUpsert(name="person", json_schema=schema, kind="node")])
+    
+    # Update to add alias
+    result = await db.set_schemas([
+        SchemaUpsert(name="person", json_schema=schema, kind="node", alias="Person")
+    ])
+    
+    assert len(result) == 1
+    assert result[0].alias == "Person"
+
+
+@pytest.mark.asyncio
+async def test_update_schema_to_add_svg_icon(db: GPGraph):
+    """Test updating a schema to add an svg_icon."""
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+    svg = '<svg xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="40"/></svg>'
+    
+    # Create schema without svg_icon
+    await db.set_schemas([SchemaUpsert(name="person", json_schema=schema, kind="node")])
+    
+    # Update to add svg_icon
+    result = await db.set_schemas([
+        SchemaUpsert(name="person", json_schema=schema, kind="node", svg_icon=svg)
+    ])
+    
+    assert len(result) == 1
+    # SVG is sanitized, so check for key elements rather than exact match
+    assert "<svg" in result[0].svg_icon
+    assert "<circle" in result[0].svg_icon
+    assert 'cx="50"' in result[0].svg_icon
+    assert 'cy="50"' in result[0].svg_icon
+    assert 'r="40"' in result[0].svg_icon
+
+
+@pytest.mark.asyncio
+async def test_update_schema_to_change_alias(db: GPGraph):
+    """Test updating a schema to change its alias."""
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+    
+    # Create schema with alias
+    await db.set_schemas([
+        SchemaUpsert(name="person", json_schema=schema, kind="node", alias="Person")
+    ])
+    
+    # Update to change alias
+    result = await db.set_schemas([
+        SchemaUpsert(name="person", json_schema=schema, kind="node", alias="Human")
+    ])
+    
+    assert len(result) == 1
+    assert result[0].alias == "Human"
+
+
+@pytest.mark.asyncio
+async def test_update_schema_to_change_svg_icon(db: GPGraph):
+    """Test updating a schema to change its svg_icon."""
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+    svg1 = '<svg xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="40"/></svg>'
+    svg2 = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100"/></svg>'
+    
+    # Create schema with svg_icon
+    await db.set_schemas([
+        SchemaUpsert(name="person", json_schema=schema, kind="node", svg_icon=svg1)
+    ])
+    
+    # Update to change svg_icon
+    result = await db.set_schemas([
+        SchemaUpsert(name="person", json_schema=schema, kind="node", svg_icon=svg2)
+    ])
+    
+    assert len(result) == 1
+    # SVG is sanitized, so check for key elements rather than exact match
+    assert "<svg" in result[0].svg_icon
+    assert "<rect" in result[0].svg_icon
+    assert 'width="100"' in result[0].svg_icon
+    assert 'height="100"' in result[0].svg_icon
+    # Verify it's not the old circle
+    assert "<circle" not in result[0].svg_icon
+
+
+@pytest.mark.asyncio
+async def test_update_schema_with_none_values_keeps_existing(db: GPGraph):
+    """Test that updating a schema with None values keeps existing values."""
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+    svg = '<svg xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="40"/></svg>'
+    
+    # Create schema with both alias and svg_icon
+    await db.set_schemas([
+        SchemaUpsert(name="person", json_schema=schema, kind="node", alias="Person", svg_icon=svg)
+    ])
+    
+    # Update with None values (should keep existing)
+    result = await db.set_schemas([
+        SchemaUpsert(name="person", json_schema=schema, kind="node", alias=None, svg_icon=None)
+    ])
+    
+    assert len(result) == 1
+    assert result[0].alias == "Person"
+    # SVG is sanitized, so check for key elements rather than exact match
+    assert "<svg" in result[0].svg_icon
+    assert "<circle" in result[0].svg_icon
+    assert 'cx="50"' in result[0].svg_icon
+    assert 'cy="50"' in result[0].svg_icon
+    assert 'r="40"' in result[0].svg_icon
+
+
+@pytest.mark.asyncio
+async def test_svg_sanitization_on_create(db: GPGraph):
+    """Test that SVG is sanitized when creating a schema."""
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+    # SVG with potentially dangerous content
+    svg_with_script = '<svg xmlns="http://www.w3.org/2000/svg"><script>alert("xss")</script><circle cx="50" cy="50" r="40"/></svg>'
+    
+    result = await db.set_schemas([
+        SchemaUpsert(name="person", json_schema=schema, kind="node", svg_icon=svg_with_script)
+    ])
+    
+    # Script should be removed
+    assert "<script>" not in result[0].svg_icon
+    assert "<circle" in result[0].svg_icon
+
+
+@pytest.mark.asyncio
+async def test_svg_sanitization_on_update(db: GPGraph):
+    """Test that SVG is sanitized when updating a schema."""
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+    
+    # Create schema without svg_icon
+    await db.set_schemas([SchemaUpsert(name="person", json_schema=schema, kind="node")])
+    
+    # Update with SVG containing dangerous content
+    svg_with_script = '<svg xmlns="http://www.w3.org/2000/svg"><script>alert("xss")</script><circle cx="50" cy="50" r="40"/></svg>'
+    result = await db.set_schemas([
+        SchemaUpsert(name="person", json_schema=schema, kind="node", svg_icon=svg_with_script)
+    ])
+    
+    # Script should be removed
+    assert "<script>" not in result[0].svg_icon
+    assert "<circle" in result[0].svg_icon
+
+
+@pytest.mark.asyncio
+async def test_schema_display_cache_works_correctly(db: GPGraph):
+    """Test that the schema display cache works correctly."""
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+    svg = '<svg xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="40"/></svg>'
+    
+    # Create schema with alias and svg_icon
+    await db.set_schemas([
+        SchemaUpsert(name="person", json_schema=schema, kind="node", alias="Person", svg_icon=svg)
+    ])
+    
+    # Get display info (should cache it)
+    ref = SchemaRef(name="person", kind="node")
+    display_info1 = await db._get_schema_display_info(ref)
+    
+    assert display_info1["alias"] == "Person"
+    # SVG is sanitized, so check for key elements rather than exact match
+    assert "<svg" in display_info1["svg_icon"]
+    assert "<circle" in display_info1["svg_icon"]
+    assert 'cx="50"' in display_info1["svg_icon"]
+    assert 'cy="50"' in display_info1["svg_icon"]
+    assert 'r="40"' in display_info1["svg_icon"]
+    
+    # Get again (should use cache)
+    display_info2 = await db._get_schema_display_info(ref)
+    
+    assert display_info2["alias"] == "Person"
+    assert display_info2["svg_icon"] == display_info1["svg_icon"]
+    assert display_info1 is display_info2  # Same object from cache
+
+
+@pytest.mark.asyncio
+async def test_cache_invalidated_on_schema_update(db: GPGraph):
+    """Test that the cache is invalidated when a schema is updated."""
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+    svg1 = '<svg xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="40"/></svg>'
+    svg2 = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100"/></svg>'
+    
+    # Create schema with alias and svg_icon
+    await db.set_schemas([
+        SchemaUpsert(name="person", json_schema=schema, kind="node", alias="Person", svg_icon=svg1)
+    ])
+    
+    # Get display info (should cache it)
+    ref = SchemaRef(name="person", kind="node")
+    display_info1 = await db._get_schema_display_info(ref)
+    
+    # Check for circle in first SVG
+    assert "<circle" in display_info1["svg_icon"]
+    assert 'cx="50"' in display_info1["svg_icon"]
+    
+    # Update schema with new svg_icon
+    await db.set_schemas([
+        SchemaUpsert(name="person", json_schema=schema, kind="node", svg_icon=svg2)
+    ])
+    
+    # Get display info again (should fetch fresh data)
+    display_info2 = await db._get_schema_display_info(ref)
+    
+    # Check for rect in second SVG
+    assert "<rect" in display_info2["svg_icon"]
+    assert 'width="100"' in display_info2["svg_icon"]
+    assert display_info1 is not display_info2  # Different objects (cache was invalidated)
+
+
+@pytest.mark.asyncio
+async def test_cache_invalidated_on_schema_delete(db: GPGraph):
+    """Test that the cache is invalidated when a schema is deleted."""
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+    svg = '<svg xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="40"/></svg>'
+    
+    # Create schema with alias and svg_icon
+    await db.set_schemas([
+        SchemaUpsert(name="person", json_schema=schema, kind="node", alias="Person", svg_icon=svg)
+    ])
+    
+    # Get display info (should cache it)
+    ref = SchemaRef(name="person", kind="node")
+    display_info1 = await db._get_schema_display_info(ref)
+    
+    assert display_info1["alias"] == "Person"
+    
+    # Delete schema
+    await db.delete_schemas([ref])
+    
+    # Cache should be cleared
+    cache_key = ("person", "node")
+    assert cache_key not in db._schema_display_cache

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from 'macros/svg_icon_slot.html' import svg_icon_slot %}
 
 {% block content %}
 <section class="dashboard-section">
@@ -9,7 +10,7 @@
     </div>
     <div class="button-row">
       <a class="button button-secondary"
-        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_list_page', graph_id=current_graph.id) }}">Back
+        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_list_page', graph_id=current_graph.id) }}?kind={{ schema_detail.schema.kind }}">Back
         to schemas</a>
       <a class="button button-secondary"
         href="{{ mount_prefix }}{{ web_app.url_path_for('graph_overview_page', graph_id=current_graph.id) }}">Graph
@@ -32,11 +33,16 @@
           <p class="resource-subtitle">Kind: {{ schema_detail.schema.kind }}. Version {{ schema_detail.schema.version }} on
             <strong>{{ current_graph.display_name }}</strong></p>
         </div>
+        {{ svg_icon_slot(schema_detail.schema.svg_icon, 'lg') }}
       </div>
       <dl class="resource-meta">
         <div>
           <dt>Kind</dt>
           <dd>{{ schema_detail.schema.kind }}</dd>
+        </div>
+        <div>
+          <dt>Alias</dt>
+          <dd>{{ schema_detail.schema.alias or 'Not set' }}</dd>
         </div>
         <div>
           <dt>Nodes</dt>
@@ -73,7 +79,7 @@
     </div>
   </div>
 
-  <div class="card-grid">
+  <div class="card-grid schema-detail-registry-grid">
     <article class="resource-card">
       <div class="resource-header">
         <div>
@@ -131,11 +137,35 @@
     <article class="resource-card">
       <div class="resource-header">
         <div>
+          <h3>Visualization</h3>
+          <p class="resource-subtitle">Display options for graph viewer</p>
+        </div>
+      </div>
+      <dl class="resource-meta">
+        <div>
+          <dt>Alias</dt>
+          <dd>{{ schema_detail.schema.alias or 'Not set' }}</dd>
+        </div>
+        <div>
+          <dt>SVG Icon</dt>
+          <dd>
+            {% if schema_detail.schema.svg_icon %}
+            {{ svg_icon_slot(schema_detail.schema.svg_icon, 'lg') }}
+            {% else %}
+            Not set
+            {% endif %}
+          </dd>
+        </div>
+      </dl>
+    </article>
+
+    <article class="resource-card schema-detail-json-card">
+      <div class="resource-header">
+        <div>
           <h3>JSON Schema</h3>
           <p class="resource-subtitle">Stored schema body</p>
         </div>
       </div>
-      <!-- Read-only JSONJoy Editor -->
       <section class="schema-editor-card" data-jsonjoy-root data-mode="readonly">
         <div class="schema-editor-card__body" id="jsonjoy-viewer-mount"></div>
         <p class="schema-editor-card__status" data-jsonjoy-status></p>

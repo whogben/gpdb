@@ -27,6 +27,7 @@ from gpdb.schema import (
     _detect_semver_change,
     _check_breaking_changes,
 )
+from gpdb.svg_sanitizer import normalize_svg_icon_for_display, sanitize_svg
 
 
 class SchemaMixin:
@@ -112,6 +113,12 @@ class SchemaMixin:
                     kind=schema_upsert.kind,
                     existing=existing,
                 )
+                
+                # Sanitize svg_icon if provided
+                sanitized_svg_icon = None
+                if schema_upsert.svg_icon is not None:
+                    sanitized_svg_icon = sanitize_svg(schema_upsert.svg_icon)
+                
                 if existing:
                     existing_kind = self._schema_kind_from_record(existing)
                     if resolved_kind != existing_kind:
@@ -137,9 +144,14 @@ class SchemaMixin:
                     existing.json_schema = json_schema
                     existing.kind = resolved_kind
                     existing.version = new_version
+                    if schema_upsert.alias is not None:
+                        existing.alias = schema_upsert.alias
+                    if schema_upsert.svg_icon is not None:
+                        existing.svg_icon = sanitized_svg_icon
                     cache_key = (schema_upsert.name, resolved_kind)
                     self._validators.pop(cache_key, None)  # invalidate cache for updated schema
                     self._schema_kinds.pop(cache_key, None)
+                    self._schema_display_cache.pop(cache_key, None)
                     results.append(existing)
                 else:
                     # Create new schema with version 1.0.0
@@ -148,6 +160,8 @@ class SchemaMixin:
                         json_schema=json_schema,
                         kind=resolved_kind,
                         version="1.0.0",
+                        alias=schema_upsert.alias,
+                        svg_icon=sanitized_svg_icon,
                     )
                     session.add(new_schema)
                     cache_key = (schema_upsert.name, resolved_kind)
@@ -283,6 +297,7 @@ class SchemaMixin:
                     cache_key = (ref.name, _normalize_schema_kind(ref.kind))
                     self._validators.pop(cache_key, None)
                     self._schema_kinds.pop(cache_key, None)
+                    self._schema_display_cache.pop(cache_key, None)
 
     async def list_schemas(self, kind: str | None = None) -> List[SchemaRef]:
         """
@@ -415,11 +430,34 @@ class SchemaMixin:
                 cache_key = (name, resolved_kind)
                 self._validators.pop(cache_key, None)  # invalidate cache for updated schema
                 self._schema_kinds.pop(cache_key, None)
+                self._schema_display_cache.pop(cache_key, None)
 
     async def _get_schema_by_ref(self, ref: SchemaRef) -> Any:
         """Get a single schema by name and kind."""
         schemas = await self.get_schemas([ref])
         return schemas[0]
+
+    async def _get_schema_display_info(self, ref: SchemaRef) -> Dict[str, str | None]:
+        """
+        Get cached display info (alias, svg_icon) for a schema.
+
+        Args:
+            ref: SchemaRef containing name and kind
+
+        Returns:
+            Dict with 'alias' and 'svg_icon' keys (values may be None)
+        """
+        cache_key = (ref.name, _normalize_schema_kind(ref.kind))
+        if cache_key in self._schema_display_cache:
+            return self._schema_display_cache[cache_key]
+
+        schema = await self._get_schema_by_ref(ref)
+        display_info = {
+            "alias": schema.alias,
+            "svg_icon": normalize_svg_icon_for_display(schema.svg_icon),
+        }
+        self._schema_display_cache[cache_key] = display_info
+        return display_info
 
     async def _get_registered_schema_kind(self, ref: SchemaRef) -> SchemaKind:
         """Return the registered kind for one schema."""

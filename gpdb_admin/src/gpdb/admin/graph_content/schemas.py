@@ -12,6 +12,7 @@ from gpdb import (
     SchemaProtectedError,
     SchemaUpsert,
     SchemaValidationError,
+    sanitize_svg,
 )
 from gpdb.admin.store import AdminUser
 
@@ -235,10 +236,16 @@ async def create_graph_schemas(
         clean_name = validate_schema_name(schema_param.name)
         clean_kind = validate_schema_kind(schema_param.kind)
         validate_json_schema(schema_param.json_schema)
+        
+        # Sanitize SVG icon if provided
+        sanitized_svg_icon = None
+        if schema_param.svg_icon is not None:
+            sanitized_svg_icon = sanitize_svg(schema_param.svg_icon)
+        
         validated_schemas.append(
-            (clean_name, schema_param.json_schema, clean_kind)
+            (clean_name, schema_param.json_schema, clean_kind, schema_param.alias, sanitized_svg_icon)
         )
-    clean_names = [clean_name for clean_name, _, _ in validated_schemas]
+    clean_names = [clean_name for clean_name, _, _, _, _ in validated_schemas]
 
     graph, instance, db = await open_graph(
         graph_id=graph_id,
@@ -254,7 +261,7 @@ async def create_graph_schemas(
             from gpdb import SchemaRef
             refs = [
                 SchemaRef(name=clean_name, kind=clean_kind)
-                for clean_name, _, clean_kind in validated_schemas
+                for clean_name, _, clean_kind, _, _ in validated_schemas
             ]
             existing = await db.get_schemas(refs)
             existing_names = [s.name for s in existing]
@@ -270,8 +277,10 @@ async def create_graph_schemas(
                     name=name,
                     json_schema=json_schema,
                     kind=kind,
+                    alias=alias,
+                    svg_icon=svg_icon,
                 )
-                for name, json_schema, kind in validated_schemas
+                for name, json_schema, kind, alias, svg_icon in validated_schemas
             ]
             created_schemas = await db.set_schemas(schema_upserts)
         except SchemaProtectedError as exc:
@@ -328,10 +337,16 @@ async def update_graph_schemas(
         )
         if schema_param.json_schema is not None:
             validate_json_schema(schema_param.json_schema)
+        
+        # Sanitize SVG icon if provided
+        sanitized_svg_icon = None
+        if schema_param.svg_icon is not None:
+            sanitized_svg_icon = sanitize_svg(schema_param.svg_icon)
+        
         validated_schemas.append(
-            (clean_name, schema_param.json_schema, clean_kind)
+            (clean_name, schema_param.json_schema, clean_kind, schema_param.alias, sanitized_svg_icon)
         )
-    clean_names = [clean_name for clean_name, _, _ in validated_schemas]
+    clean_names = [clean_name for clean_name, _, _, _, _ in validated_schemas]
 
     graph, instance, db = await open_graph(
         graph_id=graph_id,
@@ -352,7 +367,7 @@ async def update_graph_schemas(
             # First, handle schemas with explicit kind
             refs_with_kind = [
                 SchemaRef(name=clean_name, kind=clean_kind)
-                for clean_name, _, clean_kind in validated_schemas
+                for clean_name, _, clean_kind, _, _ in validated_schemas
                 if clean_kind is not None
             ]
             
@@ -364,7 +379,7 @@ async def update_graph_schemas(
             # Now handle schemas without explicit kind - need to look up existing kind
             refs_without_kind = [
                 clean_name
-                for clean_name, _, clean_kind in validated_schemas
+                for clean_name, _, clean_kind, _, _ in validated_schemas
                 if clean_kind is None and clean_name not in existing_by_name
             ]
             
@@ -395,7 +410,11 @@ async def update_graph_schemas(
                             pass
             
             # Verify all schemas exist
-            missing = [name for name, _, _ in validated_schemas if name not in existing_by_name]
+            missing = [
+                name
+                for name, _, _, _, _ in validated_schemas
+                if name not in existing_by_name
+            ]
             if missing:
                 raise SchemaNotFoundError(f"Schemas not found: {missing}")
         except SchemaNotFoundError as exc:
@@ -405,7 +424,7 @@ async def update_graph_schemas(
 
         # Build upserts with preserved values for omitted fields
         schema_upserts = []
-        for clean_name, json_schema, clean_kind in validated_schemas:
+        for clean_name, json_schema, clean_kind, alias, svg_icon in validated_schemas:
             existing = existing_by_name[clean_name]
             json_schema_ = (
                 json_schema if json_schema is not None else existing.json_schema
@@ -415,11 +434,15 @@ async def update_graph_schemas(
                 if clean_kind is not None
                 else schema_kind_from_record(existing)
             )
+            alias_ = alias if alias is not None else getattr(existing, "alias", None)
+            svg_icon_ = svg_icon if svg_icon is not None else getattr(existing, "svg_icon", None)
             schema_upserts.append(
                 SchemaUpsert(
                     name=clean_name,
                     json_schema=json_schema_,
                     kind=kind_,
+                    alias=alias_,
+                    svg_icon=svg_icon_,
                 )
             )
 

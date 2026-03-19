@@ -35,7 +35,7 @@ a {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  height: 3rem;
+  height: var(--titlebar-height);
   padding: 0 0.75rem;
   border-bottom: 1px solid var(--border-color);
   background: var(--surface-bg);
@@ -83,7 +83,7 @@ a {
 /* Navigation Menu */
 .nav-menu {
   position: fixed;
-  top: 3rem;
+  top: var(--titlebar-height);
   left: 0;
   bottom: 0;
   width: 280px;
@@ -110,7 +110,7 @@ a {
 
 .nav-overlay {
   position: fixed;
-  top: 3rem;
+  top: var(--titlebar-height);
   left: 0;
   right: 0;
   bottom: 0;
@@ -207,7 +207,7 @@ a {
 /* Profile Menu */
 .profile-menu {
   position: fixed;
-  top: 3rem;
+  top: var(--titlebar-height);
   right: 0;
   bottom: 0;
   width: 280px;
@@ -232,7 +232,7 @@ a {
 
 .profile-overlay {
   position: fixed;
-  top: 3rem;
+  top: var(--titlebar-height);
   left: 0;
   right: 0;
   bottom: 0;
@@ -378,9 +378,9 @@ a {
 @media (min-width: 801px) {
   .nav-menu.nav-menu--persistent {
     position: sticky;
-    top: 3rem;
+    top: var(--titlebar-height);
     transform: translateX(0);
-    height: calc(100vh - 3rem);
+    height: calc(100vh - var(--titlebar-height));
   }
 
   .nav-menu.nav-menu--persistent .nav-overlay {
@@ -394,8 +394,11 @@ a {
 
 /* Responsive: Mobile */
 @media (max-width: 800px) {
+  :root {
+    --titlebar-height: 2.75rem;
+  }
+
   .titlebar {
-    height: 2.75rem;
     padding: 0 0.5rem;
   }
 
@@ -411,12 +414,12 @@ a {
 
   .nav-menu,
   .profile-menu {
-    top: 2.75rem;
+    top: var(--titlebar-height);
   }
 
   .nav-overlay,
   .profile-overlay {
-    top: 2.75rem;
+    top: var(--titlebar-height);
   }
 
   .main-content {
@@ -664,6 +667,22 @@ a {
   gap: 1rem;
 }
 
+/* Schema detail: metadata + visualization share a row; JSON editor spans full width below. */
+.schema-detail-registry-grid .schema-detail-json-card {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.schema-detail-json-card .schema-editor-card,
+.schema-detail-json-card .schema-editor-card__body {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.schema-detail-json-card .schema-editor-card__body {
+  overflow-x: auto;
+}
+
 .resource-card {
   display: grid;
   gap: 1rem;
@@ -687,6 +706,11 @@ a {
   align-items: start;
   justify-content: space-between;
   gap: 1rem;
+}
+
+/* Let the title column shrink; icon column is fixed — avoids flex min-width:auto blowouts. */
+.resource-header > div:first-child {
+  min-width: 0;
 }
 
 .resource-header h3 {
@@ -898,26 +922,27 @@ a {
 
 .viewer-container.expanded {
   position: fixed;
-  top: 0;
+  top: var(--titlebar-height);
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 9999;
+  /* Above titlebar (100) / drawers (200) so expand control stays usable */
+  z-index: 250;
   border-radius: 0;
   border: none;
   background: var(--page-bg);
 }
 
 .viewer-container.expanded #viewer-cy {
-  height: 100vh;
-  min-height: 100vh;
+  height: calc(100vh - var(--titlebar-height));
+  min-height: calc(100vh - var(--titlebar-height));
 }
 
 .viewer-expand-btn {
   position: absolute;
   top: 0.75rem;
   right: 0.75rem;
-  z-index: 10;
+  z-index: 20;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -981,5 +1006,109 @@ a {
   50% {
     opacity: 0.7;
     box-shadow: 0 0 0 6px rgba(34, 197, 94, 0);
+  }
+}
+
+/* SVG icon slot: fixed outer box; inner SVG scaled via viewBox + svg-icon-slot.js (getBBox) */
+.svg-preview {
+  margin-top: 0.5rem;
+}
+
+.svg-icon-slot {
+  box-sizing: border-box;
+  min-width: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.svg-icon-slot svg {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+/* Schema list cards */
+.svg-icon-slot--sm {
+  flex: 0 0 2rem;
+  width: 2rem;
+  height: 2rem;
+  max-width: 2rem;
+  max-height: 2rem;
+  padding: 0;
+}
+
+/* Form live preview (#svg-preview-container) */
+.svg-icon-slot--md {
+  width: 64px;
+  height: 64px;
+  max-width: 64px;
+  max-height: 64px;
+  padding: 0.25rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  background: var(--page-bg);
+}
+
+/* Detail / visualization */
+.svg-icon-slot--lg {
+  flex: 0 0 4rem;
+  width: 4rem;
+  height: 4rem;
+  max-width: 4rem;
+  max-height: 4rem;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+}
+
+/* Schema registry list: node vs edge (above name filter panel) */
+.schema-kind-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+}
+
+.schema-kind-switch__opt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.5rem;
+  padding: 0.375rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border-color);
+  background: var(--surface-bg);
+  color: var(--text-color);
+  text-decoration: none;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.schema-kind-switch__opt:hover {
+  background: var(--border-color);
+}
+
+.schema-kind-switch__opt--active {
+  border-color: var(--text-color);
+  background: var(--page-bg);
+  box-shadow: inset 0 0 0 1px var(--text-color);
+}
+
+cytoscape-node-label {
+  text-shadow: 0 0 3px rgba(255, 255, 255, 0.8);
+}
+
+/* Dark theme support */
+@media (prefers-color-scheme: dark) {
+  cytoscape-node-label {
+    text-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
   }
 }

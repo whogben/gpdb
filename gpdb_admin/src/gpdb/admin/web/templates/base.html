@@ -5,14 +5,21 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ page_title or "GPDB Admin" }}{% endblock %}</title>
-  <link rel="stylesheet" href="{{ mount_prefix }}{{ web_app.url_path_for('static', path='css/tokens.css') }}">
-  <link rel="stylesheet" href="{{ mount_prefix }}{{ web_app.url_path_for('static', path='css/app.css') }}">
-  <link rel="stylesheet" href="{{ mount_prefix }}{{ web_app.url_path_for('static', path='css/jsonjoy-builder.css') }}">
   <link rel="stylesheet"
-    href="{{ mount_prefix }}{{ web_app.url_path_for('static', path='css/jsonjoy-theme-fix.css') }}">
+    href="{{ mount_prefix }}{{ web_app.url_path_for('static', path='css/tokens.css') }}?v={{ admin_version or 'dev' }}">
+  <link rel="stylesheet"
+    href="{{ mount_prefix }}{{ web_app.url_path_for('static', path='css/app.css') }}?v={{ admin_version or 'dev' }}">
+  <link rel="stylesheet"
+    href="{{ mount_prefix }}{{ web_app.url_path_for('static', path='css/jsonjoy-builder.css') }}?v={{ admin_version or 'dev' }}">
+  <link rel="stylesheet"
+    href="{{ mount_prefix }}{{ web_app.url_path_for('static', path='css/jsonjoy-theme-fix.css') }}?v={{ admin_version or 'dev' }}">
   {% block head_extra %}{% endblock %}
-  <script src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/theme.js') }}"></script>
-  <script src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/ui.js') }}"></script>
+  <script
+    src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/theme.js') }}?v={{ admin_version or 'dev' }}"></script>
+  <script
+    src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/ui.js') }}?v={{ admin_version or 'dev' }}"></script>
+  <script
+    src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/svg-icon-slot.js') }}?v={{ admin_version or 'dev' }}"></script>
 </head>
 
 <body>

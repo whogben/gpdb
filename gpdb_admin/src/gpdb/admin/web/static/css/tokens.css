@@ -1,6 +1,9 @@
 :root {
   color-scheme: light dark;
 
+  /* App shell: titlebar height (overridden on narrow viewports in app.css). */
+  --titlebar-height: 3rem;
+
   --font-sans: "SF Pro Text", "Segoe UI", sans-serif;
   --font-mono: "SFMono-Regular", "Cascadia Mono", monospace;
 

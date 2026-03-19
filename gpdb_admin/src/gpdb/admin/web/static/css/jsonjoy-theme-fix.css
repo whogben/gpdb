@@ -55,3 +55,13 @@
 .auth-card:has(.jsonjoy) {
     backdrop-filter: none !important;
 }
+
+/*
+ * JSONJoy uses fixed full-viewport layers at z-50 (see jsonjoy-builder.css), which
+ * stacks below the app titlebar (z-index 100). Offset top to --titlebar-height and
+ * raise z-index so expand/collapse and dialogs stay usable.
+ */
+.jsonjoy.fixed.inset-0 {
+    top: var(--titlebar-height, 3rem) !important;
+    z-index: 250 !important;
+}

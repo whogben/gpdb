@@ -29,6 +29,7 @@ from gpdb.query_docs import (
     FILTER_DSL_DESCRIPTION,
     NODE_LIST_SORT_DESCRIPTION,
 )
+from gpdb.svg_sanitizer import normalize_svg_icon_for_display, sanitize_svg
 
 __version__ = "0.1.0"
 
@@ -60,4 +61,6 @@ __all__ = [
     "FILTER_DSL_DESCRIPTION",
     "NODE_LIST_SORT_DESCRIPTION",
     "EDGE_LIST_SORT_DESCRIPTION",
+    "normalize_svg_icon_for_display",
+    "sanitize_svg",
 ]

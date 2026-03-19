@@ -80,6 +80,7 @@ class GPGraph(SchemaMixin, NodeMixin, EdgeMixin):
         # Caches for validators and schema kinds, keyed by (name, kind) tuple
         self._validators: Dict[tuple[str, str], Any] = {}
         self._schema_kinds: Dict[tuple[str, str], SchemaKind] = {}
+        self._schema_display_cache: Dict[tuple[str, str], Dict[str, str | None]] = {}
 
         # Create dynamic models if prefix specified, else use defaults
         if table_prefix:

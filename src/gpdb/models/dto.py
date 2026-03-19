@@ -90,6 +90,8 @@ class SchemaUpsert(BaseModel):
     name: str
     json_schema: Union[Dict[str, Any], type[BaseModel]]
     kind: str
+    alias: str | None = None
+    svg_icon: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

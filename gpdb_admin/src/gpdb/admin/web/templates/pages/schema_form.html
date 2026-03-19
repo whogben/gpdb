@@ -51,6 +51,22 @@
       </label>
       {% endif %}
 
+      <label class="field">
+        <span>Alias (optional)</span>
+        <input name="alias" value="{{ (form_data or {}).get('alias', '') }}" placeholder="Short display name for visualization">
+        <small class="field-hint">A short name or emoji to display in the graph viewer instead of the schema name</small>
+      </label>
+
+      <label class="field">
+        <span>SVG Icon (optional)</span>
+        <textarea name="svg_icon" rows="5" placeholder="<svg>...</svg>">{{ (form_data or {}).get('svg_icon', '') }}</textarea>
+        <div class="svg-preview">
+          <span class="field-hint">Preview:</span>
+          <div id="svg-preview-container" class="svg-icon-slot svg-icon-slot--md" data-svg-icon-slot></div>
+        </div>
+        <small class="field-hint">Custom SVG icon to display in the graph viewer (max 20KB)</small>
+      </label>
+
       <!-- JSONJoy Builder Editor Container -->
       <section class="schema-editor-card" data-jsonjoy-root>
         <div class="schema-editor-card__header">
@@ -70,7 +86,7 @@
       <div class="button-row">
         <button class="button" type="submit">{% if is_edit %}Save changes{% else %}Create schema{% endif %}</button>
         <a class="button button-secondary"
-          href="{% if is_edit %}{{ web_app.url_path_for('graph_schema_detail_page', graph_id=overview.graph.id, schema_name=schema_detail.schema.name, kind=schema_detail.schema.kind) }}{% else %}{{ web_app.url_path_for('graph_schema_list_page', graph_id=overview.graph.id) }}{% endif %}">Back</a>
+          href="{% if is_edit %}{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_detail_page', graph_id=overview.graph.id, schema_name=schema_detail.schema.name, kind=schema_detail.schema.kind) }}{% else %}{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_list_page', graph_id=overview.graph.id) }}{% endif %}">Back</a>
       </div>
     </form>
   </div>
@@ -139,6 +155,27 @@
     window.addEventListener('beforeunload', function () {
       window.JsonJoyEditor.destroy(EDITOR_ID);
     });
+
+    const svgIconInput = document.querySelector('textarea[name="svg_icon"]');
+    const svgPreviewContainer = document.getElementById('svg-preview-container');
+
+    function refreshSvgPreview() {
+      if (!svgIconInput || !svgPreviewContainer) return;
+      var raw = svgIconInput.value.trim();
+      if (!raw) {
+        svgPreviewContainer.innerHTML = '';
+        return;
+      }
+      svgPreviewContainer.innerHTML = raw;
+      if (window.gpdbSvgIconSlot && typeof window.gpdbSvgIconSlot.upgrade === 'function') {
+        window.gpdbSvgIconSlot.upgrade(svgPreviewContainer);
+      }
+    }
+
+    if (svgIconInput && svgPreviewContainer) {
+      svgIconInput.addEventListener('input', refreshSvgPreview);
+      refreshSvgPreview();
+    }
   })();
 </script>
 {% endblock %}

@@ -96,6 +96,7 @@
     </label>
   </div>
   <div id="viewer-status" class="resource-note" aria-live="polite">Loading…</div>
+
   <div id="viewer-container" class="viewer-container">
     <button id="viewer-expand-btn" class="viewer-expand-btn" type="button" aria-label="Expand graph view"
       title="Expand graph view">
@@ -113,9 +114,10 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/cytoscape.min.js') }}"></script>
+<script
+  src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/cytoscape.min.js') }}?v={{ admin_version or 'dev' }}"></script>
 <script data-viewer-base="{{ mount_prefix or '' }}"
-  src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/graph-viewer.js') }}"></script>
+  src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/graph-viewer.js') }}?v={{ admin_version or 'dev' }}"></script>
 {% include 'partials/filters_toggle_script.html' %}
 <script>
   // Show info strap on page load if error/success query params exist

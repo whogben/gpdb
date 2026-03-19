@@ -127,6 +127,8 @@ class _GPSchema(_Base):
     kind: Mapped[str] = mapped_column(String, primary_key=True)
     version: Mapped[str] = mapped_column(String, default="1.0.0")
     json_schema: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict)
+    alias: Mapped[str | None] = mapped_column(String, nullable=True)
+    svg_icon: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

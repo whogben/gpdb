@@ -8,10 +8,12 @@ from gpdb import (
     FilterGroup,
     GPGraph,
     SchemaNotFoundError,
+    SchemaRef,
     SchemaValidationError,
     SearchQuery,
 )
 from gpdb.admin.store import AdminUser
+from gpdb.svg_sanitizer import svg_markup_to_cytoscape_data_uri
 from sqlalchemy.exc import IntegrityError
 
 from gpdb.admin.graph_content.exceptions import (
@@ -44,6 +46,7 @@ from gpdb.admin.graph_content._helpers import (
     validate_page_offset,
     validate_related_node_id,
 )
+from gpdb.admin.graph_content.nodes import list_graph_nodes
 
 
 async def list_graph_edges(
@@ -126,8 +129,6 @@ async def get_graph_viewer_data(
     edge_limit: int = 200,
 ) -> GraphViewerData:
     """Return combined filtered nodes and edges for the graph viewer (Cytoscape elements)."""
-    from gpdb.admin.graph_content.nodes import list_graph_nodes
-    
     try:
         node_list = await list_graph_nodes(
             self,
@@ -162,36 +163,77 @@ async def get_graph_viewer_data(
             error=str(exc),
         )
 
+    # Collect unique schema types from nodes and edges
+    schema_types = set()
+    for node in node_list.items:
+        schema_types.add((node.type, "node"))
+    for edge in edge_list.items:
+        schema_types.add((edge.type, "edge"))
+
+    # Fetch schema display metadata for all unique schemas (keyed by kind:name so node/edge
+    # schemas with the same name do not collide).
+    schemas_metadata: dict[str, dict[str, str | None]] = {}
+    if schema_types:
+        graph, instance, db = await open_graph(
+            graph_id=graph_id,
+            current_user=current_user,
+            allow_local_system=allow_local_system,
+            permission_kind="view",
+            admin_store=require_admin_store(self._admin_store),
+            captive_url_factory=self._captive_url_factory,
+        )
+        try:
+            for schema_name, schema_kind in schema_types:
+                try:
+                    ref = SchemaRef(name=schema_name, kind=schema_kind)
+                    display_info = await db._get_schema_display_info(ref)
+                    meta_key = f"{schema_kind}:{schema_name}"
+                    schemas_metadata[meta_key] = {
+                        "alias": display_info["alias"],
+                        "svg_icon": display_info["svg_icon"],
+                        "svg_icon_data_uri": svg_markup_to_cytoscape_data_uri(
+                            display_info["svg_icon"]
+                        ),
+                    }
+                except SchemaNotFoundError:
+                    # Schema might not exist, skip it
+                    pass
+        finally:
+            await db.sqla_engine.dispose()
+
     elements: list[dict[str, object]] = []
 
     for node in node_list.items:
-        elements.append(
-            {
-                "group": "nodes",
-                "data": {
-                    "id": node.id,
-                    "label": node.name or node.id,
-                    "type": node.type,
-                },
-            }
-        )
+        display_info = schemas_metadata.get(f"node:{node.type}", {})
+        node_data: dict[str, object] = {
+            "id": node.id,
+            "label": node.name or node.id,
+            "type": node.type,
+            "display_label": display_info.get("alias") or node.type,
+        }
+        svg_uri = display_info.get("svg_icon_data_uri")
+        if svg_uri:
+            node_data["iconUri"] = svg_uri
+        elements.append({"group": "nodes", "data": node_data})
     for edge in edge_list.items:
-        elements.append(
-            {
-                "group": "edges",
-                "data": {
-                    "id": edge.id,
-                    "source": edge.source_id,
-                    "target": edge.target_id,
-                    "label": edge.type,
-                },
-            }
-        )
+        display_info = schemas_metadata.get(f"edge:{edge.type}", {})
+        edge_data: dict[str, object] = {
+            "id": edge.id,
+            "source": edge.source_id,
+            "target": edge.target_id,
+            "label": edge.type,
+            "display_label": display_info.get("alias") or edge.type,
+        }
+        svg_uri = display_info.get("svg_icon_data_uri")
+        if svg_uri:
+            edge_data["iconUri"] = svg_uri
+        elements.append({"group": "edges", "data": edge_data})
 
     return GraphViewerData(
         elements=elements,
         node_count=len(node_list.items),
         edge_count=len(edge_list.items),
+        schemas=schemas_metadata,
     )
 
 

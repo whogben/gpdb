@@ -1,0 +1,9 @@
+{# Reusable fixed-size slot for schema (or other) SVG icons. Outer dimensions come from
+   .svg-icon-slot--{sm,md,lg}; inner SVG is scaled/centered via JS (svg-icon-slot.js). #}
+{% macro svg_icon_slot(svg_markup, variant='md', extra_class='') -%}
+{% if svg_markup %}
+<span
+  class="svg-icon-slot svg-icon-slot--{{ variant }}{% if extra_class %} {{ extra_class }}{% endif %}"
+  data-svg-icon-slot role="img" aria-hidden="true">{{ svg_markup|safe }}</span>
+{% endif %}
+{%- endmacro %}

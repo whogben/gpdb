@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import json
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from gpdb.admin.graph_content import (
     GraphContentError,
     GraphSchemaCreateParam,
+    GraphSchemaList,
     GraphSchemaUpdateParam,
 )
 from gpdb.admin.web.routes.common import (
@@ -41,11 +43,21 @@ DEFAULT_SCHEMA_JSON = json.dumps(
     response_class=HTMLResponse,
     name="graph_schema_list_page",
 )
-async def graph_schema_list_page(request: Request, graph_id: str) -> HTMLResponse:
+async def graph_schema_list_page(
+    request: Request,
+    graph_id: str,
+    kind: str = Query("node", description="List node schemas or edge schemas."),
+    q: str = Query("", description="Optional substring filter on schema name."),
+) -> HTMLResponse:
     """Render the schema registry page for one managed graph."""
     current_user = await require_authenticated_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
+
+    list_kind = kind.strip().lower()
+    if list_kind not in ("node", "edge"):
+        list_kind = "node"
+    name_query = q.strip()
 
     try:
         overview = await require_graph_content_service(request).get_graph_overview(
@@ -59,9 +71,21 @@ async def graph_schema_list_page(request: Request, graph_id: str) -> HTMLRespons
         schema_list = await require_graph_content_service(request).list_graph_schemas(
             graph_id=graph_id,
             current_user=current_user,
+            kind=list_kind,
         )
     except GraphContentError as exc:
         return redirect_with_message(request, "home", error=str(exc))
+
+    if name_query:
+        needle = name_query.lower()
+        kept = [it for it in schema_list.items if needle in it.name.lower()]
+        schema_list = GraphSchemaList(items=kept, total=len(kept))
+
+    def _listing_qs(k: str) -> str:
+        params: dict[str, str] = {"kind": k}
+        if name_query:
+            params["q"] = name_query
+        return urlencode(params)
 
     overview_payload = overview.model_dump(mode="json")
     return render(
@@ -74,6 +98,14 @@ async def graph_schema_list_page(request: Request, graph_id: str) -> HTMLRespons
         graphs=await get_admin_store(request).list_graphs(),
         error_message=request.query_params.get("error"),
         success_message=request.query_params.get("success"),
+        schema_kind=list_kind,
+        schema_q=name_query,
+        schema_qs_node=_listing_qs("node"),
+        schema_qs_edge=_listing_qs("edge"),
+        schema_list_clear_qs=urlencode({"kind": list_kind}),
+        filter_summary=(
+            f'Name contains "{name_query}".' if name_query else ""
+        ),
     )
 
 
@@ -103,6 +135,8 @@ async def graph_schemas_create(
     name: str = Form(...),
     kind: str = Form("node"),
     json_schema: str = Form(...),
+    alias: str = Form(""),
+    svg_icon: str = Form(""),
 ):
     """Create one schema in a managed graph (wraps into a one-item batch)."""
     current_user = await require_authenticated_user(request)
@@ -113,6 +147,8 @@ async def graph_schemas_create(
         "name": name.strip(),
         "kind": kind.strip().lower(),
         "json_schema": json_schema.strip(),
+        "alias": alias.strip() or None,
+        "svg_icon": svg_icon.strip() or None,
     }
     try:
         parsed_schema = _parse_schema_json_text(form_data["json_schema"])
@@ -133,6 +169,8 @@ async def graph_schemas_create(
                     name=form_data["name"],
                     kind=form_data["kind"],
                     json_schema=parsed_schema,
+                    alias=form_data["alias"],
+                    svg_icon=form_data["svg_icon"],
                 )
             ],
             current_user=current_user,
@@ -212,6 +250,8 @@ async def graph_schema_edit_page(
                 indent=2,
                 sort_keys=True,
             ),
+            "alias": detail.schema.alias or "",
+            "svg_icon": detail.schema.svg_icon or "",
         },
         schema_name=detail.schema.name,
         schema_kind=detail.schema.kind,
@@ -226,6 +266,8 @@ async def graph_schemas_update(
     schema_name: str,
     kind: str,
     json_schema: str = Form(...),
+    alias: str = Form(""),
+    svg_icon: str = Form(""),
 ):
     """Update one schema in a managed graph."""
     current_user = await require_authenticated_user(request)
@@ -247,6 +289,8 @@ async def graph_schemas_update(
         "name": schema_name,
         "kind": kind.strip().lower(),
         "json_schema": json_schema.strip(),
+        "alias": alias.strip() or None,
+        "svg_icon": svg_icon.strip() or None,
     }
     try:
         parsed_schema = _parse_schema_json_text(form_data["json_schema"])
@@ -269,6 +313,8 @@ async def graph_schemas_update(
                     name=schema_name,
                     kind=form_data["kind"],
                     json_schema=parsed_schema,
+                    alias=form_data["alias"],
+                    svg_icon=form_data["svg_icon"],
                 )
             ],
             current_user=current_user,
