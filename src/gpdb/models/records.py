@@ -127,9 +127,9 @@ class _GPSchema(_Base):
     __tablename__ = "schemas"
 
     name: Mapped[str] = mapped_column(String, primary_key=True)
+    kind: Mapped[str] = mapped_column(String, primary_key=True)
     version: Mapped[str] = mapped_column(String, default="1.0.0")
     json_schema: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict)
-    kind: Mapped[str] = mapped_column(String, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

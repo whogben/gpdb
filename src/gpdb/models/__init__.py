@@ -41,6 +41,7 @@ from gpdb.models.dto import (
     EdgeUpsert,
     EdgeRead,
     SchemaUpsert,
+    SchemaRef,
 )
 
 __all__ = [
@@ -71,6 +72,7 @@ __all__ = [
     "EdgeUpsert",
     "EdgeRead",
     "SchemaUpsert",
+    "SchemaRef",
     # Helpers
     "_normalize_schema_kind",
     "_SCHEMA_KIND_VALUES",
@@ -81,4 +83,4 @@ __all__ = [
     "_is_primary_key_violation",
     "ID_GENERATOR",
     "generate_id",
-]
+]   

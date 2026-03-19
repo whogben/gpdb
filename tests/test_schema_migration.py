@@ -1,6 +1,6 @@
 import pytest
 import pytest_asyncio
-from gpdb import GPGraph, NodeUpsert, EdgeUpsert, SchemaValidationError, SchemaUpsert
+from gpdb import GPGraph, NodeUpsert, EdgeUpsert, SchemaValidationError, SchemaUpsert, SchemaRef
 
 
 # --- Tests ---
@@ -22,7 +22,7 @@ async def test_migrate_schema_success(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.set_schemas([SchemaUpsert(name="person", json_schema=person_schema_v1)])
+    await db.set_schemas([SchemaUpsert(name="person", json_schema=person_schema_v1, kind="node")])
 
     # Create nodes with v1 schema
     node1 = NodeUpsert(
@@ -58,6 +58,7 @@ async def test_migrate_schema_success(db: GPGraph):
         name="person",
         migration_func=migrate_age_to_age_years,
         new_schema=person_schema_v2,
+        kind="node",
     )
 
     # Verify nodes were migrated
@@ -74,7 +75,7 @@ async def test_migrate_schema_success(db: GPGraph):
     assert migrated_node2.data["age_years"] == 25
 
     # Verify schema was updated
-    schemas = await db.get_schemas(["person"])
+    schemas = await db.get_schemas([SchemaRef(name="person", kind="node")])
     assert schemas[0].version == "2.0.0"
     assert "age_years" in schemas[0].json_schema["properties"]
 
@@ -104,7 +105,7 @@ async def test_migrate_schema_validates_data(db: GPGraph):
         "required": ["name"],
     }
     await db.set_schemas(
-        [SchemaUpsert(name="person_validate", json_schema=person_schema_v1)]
+        [SchemaUpsert(name="person_validate", json_schema=person_schema_v1, kind="node")]
     )
 
     # Create a node with v1 schema
@@ -150,6 +151,7 @@ async def test_migrate_schema_validates_data(db: GPGraph):
             name="person_validate",
             migration_func=bad_migration,
             new_schema=person_schema_v2,
+            kind="node",
         )
 
 
@@ -168,7 +170,7 @@ async def test_migrate_schema_transaction(db: GPGraph):
         "required": ["name"],
     }
     await db.set_schemas(
-        [SchemaUpsert(name="person_transaction", json_schema=person_schema_v1)]
+        [SchemaUpsert(name="person_transaction", json_schema=person_schema_v1, kind="node")]
     )
 
     # Create nodes with v1 schema
@@ -216,6 +218,7 @@ async def test_migrate_schema_transaction(db: GPGraph):
             name="person_transaction",
             migration_func=failing_migration,
             new_schema=person_schema_v2,
+            kind="node",
         )
 
     # Verify no changes were persisted (transaction rolled back)
@@ -229,7 +232,7 @@ async def test_migrate_schema_transaction(db: GPGraph):
     assert "age_years" not in node2_after.data
 
     # Schema should still be v1
-    schemas = await db.get_schemas(["person_transaction"])
+    schemas = await db.get_schemas([SchemaRef(name="person_transaction", kind="node")])
     assert schemas[0].version == "1.0.0"
     assert "age" in schemas[0].json_schema["properties"]
     assert "age_years" not in schemas[0].json_schema["properties"]

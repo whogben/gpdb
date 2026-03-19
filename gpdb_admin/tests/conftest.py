@@ -44,6 +44,12 @@ def _reset_admin_test_env(admin_test_env):
 
 
 async def _reset_captive_database(url: str, session_secret: str) -> None:
+    # Clear model cache BEFORE creating GPGraph instance
+    from gpdb.models.factories import _model_cache
+    from gpdb.models.base import _Base
+    _model_cache.clear()
+    _Base.metadata.clear()
+    
     db = GPGraph(url)
     store = AdminStore(url, instance_secret=session_secret)
     try:

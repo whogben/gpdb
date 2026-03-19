@@ -1,6 +1,6 @@
 import pytest
 import pytest_asyncio
-from gpdb import GPGraph, NodeUpsert, EdgeUpsert, SchemaUpsert
+from gpdb import GPGraph, NodeUpsert, EdgeUpsert, SchemaUpsert, SchemaRef
 
 
 # --- Tests ---
@@ -21,7 +21,7 @@ async def test_delete_schemas_blocked_when_referenced(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.set_schemas([SchemaUpsert(name="person_delete", json_schema=person_schema)])
+    await db.set_schemas([SchemaUpsert(name="person_delete", json_schema=person_schema, kind="node")])
 
     unused_schema = {
         "type": "object",
@@ -29,7 +29,7 @@ async def test_delete_schemas_blocked_when_referenced(db: GPGraph):
             "value": {"type": "string"},
         },
     }
-    await db.set_schemas([SchemaUpsert(name="unused_delete", json_schema=unused_schema)])
+    await db.set_schemas([SchemaUpsert(name="unused_delete", json_schema=unused_schema, kind="node")])
 
     # Create a node that references the first schema
     node = NodeUpsert(
@@ -39,10 +39,10 @@ async def test_delete_schemas_blocked_when_referenced(db: GPGraph):
 
     # Try to delete both schemas (should fail because person_delete is in use)
     with pytest.raises(SchemaInUseError):
-        await db.delete_schemas(["person_delete", "unused_delete"])
+        await db.delete_schemas([SchemaRef(name="person_delete", kind="node"), SchemaRef(name="unused_delete", kind="node")])
 
     # Verify unused_delete still exists (atomic all-or-nothing)
-    schemas = await db.get_schemas(["unused_delete"])
+    schemas = await db.get_schemas([SchemaRef(name="unused_delete", kind="node")])
     assert len(schemas) == 1
 
 
@@ -73,7 +73,7 @@ async def test_delete_schemas_blocked_when_referenced_by_edge(db: GPGraph):
             "value": {"type": "string"},
         },
     }
-    await db.set_schemas([SchemaUpsert(name="unused_edge_delete", json_schema=unused_schema)])
+    await db.set_schemas([SchemaUpsert(name="unused_edge_delete", json_schema=unused_schema, kind="edge")])
 
     # Create two nodes
     node1 = NodeUpsert(type="test", data={"label": "A"})
@@ -95,10 +95,10 @@ async def test_delete_schemas_blocked_when_referenced_by_edge(db: GPGraph):
 
     # Try to delete both schemas (should fail because relationship_delete is in use)
     with pytest.raises(SchemaInUseError):
-        await db.delete_schemas(["relationship_delete", "unused_edge_delete"])
+        await db.delete_schemas([SchemaRef(name="relationship_delete", kind="edge"), SchemaRef(name="unused_edge_delete", kind="edge")])
 
     # Verify unused_edge_delete still exists (atomic all-or-nothing)
-    schemas = await db.get_schemas(["unused_edge_delete"])
+    schemas = await db.get_schemas([SchemaRef(name="unused_edge_delete", kind="edge")])
     assert len(schemas) == 1
 
 
@@ -114,7 +114,7 @@ async def test_delete_schemas_success_when_unused(db: GPGraph):
             "value": {"type": "string"},
         },
     }
-    await db.set_schemas([SchemaUpsert(name="unused1", json_schema=unused_schema1)])
+    await db.set_schemas([SchemaUpsert(name="unused1", json_schema=unused_schema1, kind="node")])
 
     unused_schema2 = {
         "type": "object",
@@ -122,19 +122,19 @@ async def test_delete_schemas_success_when_unused(db: GPGraph):
             "count": {"type": "integer"},
         },
     }
-    await db.set_schemas([SchemaUpsert(name="unused2", json_schema=unused_schema2)])
+    await db.set_schemas([SchemaUpsert(name="unused2", json_schema=unused_schema2, kind="node")])
 
     # Verify schemas exist
-    schemas = await db.get_schemas(["unused1", "unused2"])
+    schemas = await db.get_schemas([SchemaRef(name="unused1", kind="node"), SchemaRef(name="unused2", kind="node")])
     assert len(schemas) == 2
 
     # Delete the schemas (should succeed)
-    await db.delete_schemas(["unused1", "unused2"])
+    await db.delete_schemas([SchemaRef(name="unused1", kind="node"), SchemaRef(name="unused2", kind="node")])
 
     # Verify schemas no longer exist
     from gpdb import SchemaNotFoundError
     with pytest.raises(SchemaNotFoundError):
-        await db.get_schemas(["unused1", "unused2"])
+        await db.get_schemas([SchemaRef(name="unused1", kind="node"), SchemaRef(name="unused2", kind="node")])
 
 
 @pytest.mark.asyncio
@@ -150,13 +150,13 @@ async def test_delete_schemas_missing_name_fails_atomic(db: GPGraph):
             "value": {"type": "string"},
         },
     }
-    await db.set_schemas([SchemaUpsert(name="unused_missing_check", json_schema=unused_schema)])
+    await db.set_schemas([SchemaUpsert(name="unused_missing_check", json_schema=unused_schema, kind="node")])
 
     with pytest.raises(SchemaNotFoundError):
-        await db.delete_schemas(["unused_missing_check", "does_not_exist"])
+        await db.delete_schemas([SchemaRef(name="unused_missing_check", kind="node"), SchemaRef(name="does_not_exist", kind="node")])
 
     # Verify the existing schema was not deleted.
-    schemas = await db.get_schemas(["unused_missing_check"])
+    schemas = await db.get_schemas([SchemaRef(name="unused_missing_check", kind="node")])
     assert len(schemas) == 1
 
 
@@ -172,14 +172,14 @@ async def test_delete_schemas_rejects_duplicates(db: GPGraph):
             "value": {"type": "string"},
         },
     }
-    await db.set_schemas([SchemaUpsert(name="unused", json_schema=unused_schema)])
+    await db.set_schemas([SchemaUpsert(name="unused", json_schema=unused_schema, kind="node")])
 
     # Try to delete with duplicate names (should fail)
-    with pytest.raises(ValueError, match="Duplicate schema names provided"):
-        await db.delete_schemas(["unused", "unused"])
+    with pytest.raises(ValueError, match="Duplicate schema refs provided"):
+        await db.delete_schemas([SchemaRef(name="unused", kind="node"), SchemaRef(name="unused", kind="node")])
 
     # Verify schema still exists
-    schemas = await db.get_schemas(["unused"])
+    schemas = await db.get_schemas([SchemaRef(name="unused", kind="node")])
     assert len(schemas) == 1
 
 
@@ -195,19 +195,19 @@ async def test_delete_schemas_single_item(db: GPGraph):
             "value": {"type": "string"},
         },
     }
-    await db.set_schemas([SchemaUpsert(name="unused_single", json_schema=unused_schema)])
+    await db.set_schemas([SchemaUpsert(name="unused_single", json_schema=unused_schema, kind="node")])
 
     # Verify schema exists
-    schemas = await db.get_schemas(["unused_single"])
+    schemas = await db.get_schemas([SchemaRef(name="unused_single", kind="node")])
     assert len(schemas) == 1
 
     # Delete the schema (should succeed)
-    await db.delete_schemas(["unused_single"])
+    await db.delete_schemas([SchemaRef(name="unused_single", kind="node")])
 
     # Verify schema no longer exists
     from gpdb import SchemaNotFoundError
     with pytest.raises(SchemaNotFoundError):
-        await db.get_schemas(["unused_single"])
+        await db.get_schemas([SchemaRef(name="unused_single", kind="node")])
 
 
 @pytest.mark.asyncio
@@ -228,7 +228,7 @@ async def test_update_node_preserves_schema(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.set_schemas([SchemaUpsert(name="person_preserve", json_schema=person_schema)])
+    await db.set_schemas([SchemaUpsert(name="person_preserve", json_schema=person_schema, kind="node")])
 
     # Create a node with schema_name
     node = NodeUpsert(

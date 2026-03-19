@@ -37,6 +37,7 @@ from gpdb.models import (
     NodeReadWithPayload,
     EdgeUpsert,
     EdgeRead,
+    SchemaRef,
     SchemaUpsert,
     generate_id,
 )
@@ -75,8 +76,9 @@ class GPGraph(SchemaMixin, NodeMixin, EdgeMixin):
             self.sqla_engine, expire_on_commit=False
         )
         self._session_ctx = ContextVar(f"session_{id(self)}", default=None)
-        self._validators: Dict[str, Any] = {}
-        self._schema_kinds: Dict[str, SchemaKind] = {}
+        # Caches for validators and schema kinds, keyed by (name, kind) tuple
+        self._validators: Dict[tuple[str, str], Any] = {}
+        self._schema_kinds: Dict[tuple[str, str], SchemaKind] = {}
 
         # Create dynamic models if prefix specified, else use defaults
         if table_prefix:
@@ -250,6 +252,8 @@ __all__ = [
     "NodeReadWithPayload",
     "EdgeUpsert",
     "EdgeRead",
+    "SchemaRef",
+    "SchemaUpsert",
     # ODM Base Classes
     "NodeModel",
     "EdgeModel",

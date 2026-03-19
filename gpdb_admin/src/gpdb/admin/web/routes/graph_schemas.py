@@ -152,12 +152,13 @@ async def graph_schemas_create(
         "graph_schema_detail_page",
         graph_id=graph_id,
         schema_name=created.schema.name,
+        kind=created.schema.kind,
         success=f"Schema '{created.schema.name}' created.",
     )
 
 
 @router.get(
-    "/graphs/{graph_id}/schemas/{schema_name}/edit",
+    "/graphs/{graph_id}/schemas/{schema_name}/{kind}/edit",
     response_class=HTMLResponse,
     name="graph_schema_edit_page",
 )
@@ -165,6 +166,7 @@ async def graph_schema_edit_page(
     request: Request,
     graph_id: str,
     schema_name: str,
+    kind: str,
 ) -> HTMLResponse:
     """Render the edit-schema form for one managed graph."""
     current_user = await require_authenticated_user(request)
@@ -175,6 +177,7 @@ async def graph_schema_edit_page(
         details = await require_graph_content_service(request).get_graph_schemas(
             graph_id=graph_id,
             names=[schema_name],
+            kind=kind,
             current_user=current_user,
         )
         detail = details[0]
@@ -200,16 +203,17 @@ async def graph_schema_edit_page(
             ),
         },
         schema_name=detail.schema.name,
+        schema_kind=detail.schema.kind,
         schema_detail=detail.model_dump(mode="json", by_alias=True),
     )
 
 
-@router.post("/graphs/{graph_id}/schemas/{schema_name}", name="graph_schemas_update")
+@router.post("/graphs/{graph_id}/schemas/{schema_name}/{kind}", name="graph_schemas_update")
 async def graph_schemas_update(
     request: Request,
     graph_id: str,
     schema_name: str,
-    kind: str = Form("node"),
+    kind: str,
     json_schema: str = Form(...),
 ):
     """Update one schema in a managed graph."""
@@ -231,6 +235,7 @@ async def graph_schemas_update(
             current_user=current_user,
             form_data=form_data,
             schema_name=schema_name,
+            schema_kind=form_data["kind"],
             error_message=str(exc),
         )
 
@@ -254,6 +259,7 @@ async def graph_schemas_update(
             current_user=current_user,
             form_data=form_data,
             schema_name=schema_name,
+            schema_kind=form_data["kind"],
             error_message=str(exc),
         )
 
@@ -262,12 +268,13 @@ async def graph_schemas_update(
         "graph_schema_detail_page",
         graph_id=graph_id,
         schema_name=updated.schema.name,
+        kind=updated.schema.kind,
         success=f"Schema '{updated.schema.name}' updated to version {updated.schema.version}.",
     )
 
 
 @router.get(
-    "/graphs/{graph_id}/schemas/{schema_name}",
+    "/graphs/{graph_id}/schemas/{schema_name}/{kind}",
     response_class=HTMLResponse,
     name="graph_schema_detail_page",
 )
@@ -275,6 +282,7 @@ async def graph_schema_detail_page(
     request: Request,
     graph_id: str,
     schema_name: str,
+    kind: str,
 ) -> HTMLResponse:
     """Render one schema detail page."""
     current_user = await require_authenticated_user(request)
@@ -298,6 +306,7 @@ async def graph_schema_detail_page(
         details = await require_graph_content_service(request).get_graph_schemas(
             graph_id=graph_id,
             names=[schema_name],
+            kind=kind,
             current_user=current_user,
         )
         detail = details[0]
@@ -329,13 +338,14 @@ async def graph_schema_detail_page(
 
 
 @router.post(
-    "/graphs/{graph_id}/schemas/{schema_name}/delete",
+    "/graphs/{graph_id}/schemas/{schema_name}/{kind}/delete",
     name="graph_schemas_delete",
 )
 async def graph_schemas_delete(
     request: Request,
     graph_id: str,
     schema_name: str,
+    kind: str,
 ):
     """Delete one schema when it is no longer referenced."""
     current_user = await require_authenticated_user(request)
@@ -346,6 +356,7 @@ async def graph_schemas_delete(
         deleted = await require_graph_content_service(request).delete_graph_schemas(
             graph_id=graph_id,
             names=[schema_name],
+            kind=kind,
             current_user=current_user,
         )
         # Unwrap the single result from the batch response
@@ -358,6 +369,7 @@ async def graph_schemas_delete(
             "graph_schema_detail_page",
             graph_id=graph_id,
             schema_name=schema_name,
+            kind=kind,
             error=str(exc),
         )
 
@@ -376,6 +388,7 @@ async def _render_graph_schema_form(
     current_user,
     form_data: dict[str, str],
     schema_name: str | None = None,
+    schema_kind: str | None = None,
     schema_detail: dict[str, object] | None = None,
     error_message: str | None = None,
 ) -> HTMLResponse | RedirectResponse:
@@ -389,11 +402,12 @@ async def _render_graph_schema_form(
     except GraphContentError as exc:
         return redirect_with_message(request, "home", error=str(exc))
 
-    if schema_name is not None:
+    if schema_name is not None and schema_kind is not None:
         try:
             details = await require_graph_content_service(request).get_graph_schemas(
                 graph_id=graph_id,
                 names=[schema_name],
+                kind=schema_kind,
                 current_user=current_user,
             )
             detail = details[0]
@@ -417,6 +431,7 @@ async def _render_graph_schema_form(
                 "graph_schemas_update",
                 graph_id=graph_id,
                 schema_name=schema_name,
+                kind=schema_kind,
             )
             if is_edit
             else request.app.url_path_for("graph_schemas_create", graph_id=graph_id)

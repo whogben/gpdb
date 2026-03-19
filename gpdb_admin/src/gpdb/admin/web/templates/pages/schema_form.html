@@ -70,7 +70,7 @@
       <div class="button-row">
         <button class="button" type="submit">{% if is_edit %}Save changes{% else %}Create schema{% endif %}</button>
         <a class="button button-secondary"
-          href="{% if is_edit %}{{ web_app.url_path_for('graph_schema_detail_page', graph_id=overview.graph.id, schema_name=schema_detail.schema.name) }}{% else %}{{ web_app.url_path_for('graph_schema_list_page', graph_id=overview.graph.id) }}{% endif %}">Back</a>
+          href="{% if is_edit %}{{ web_app.url_path_for('graph_schema_detail_page', graph_id=overview.graph.id, schema_name=schema_detail.schema.name, kind=schema_detail.schema.kind) }}{% else %}{{ web_app.url_path_for('graph_schema_list_page', graph_id=overview.graph.id) }}{% endif %}">Back</a>
       </div>
     </form>
   </div>

@@ -93,6 +93,15 @@ class SchemaUpsert(BaseModel):
 
     name: str
     json_schema: Union[Dict[str, Any], type[BaseModel]]
-    kind: str = "node"
+    kind: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SchemaRef(BaseModel):
+    """Reference to a schema by name and kind."""
+
+    name: str
+    kind: str
 
     model_config = ConfigDict(from_attributes=True)

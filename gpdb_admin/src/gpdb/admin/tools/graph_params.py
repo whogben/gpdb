@@ -42,10 +42,11 @@ class GraphIdParams(BaseModel):
 
 
 class SchemaIdentifierParams(BaseModel):
-    """Base parameters for operations that require a graph ID and schema name."""
+    """Base parameters for operations that require a graph ID and schema name + kind."""
 
     graph_id: str = Field(..., description="Graph ID.")
     name: str = Field(..., description="Schema name.")
+    kind: str = Field(..., description="Schema kind: node or edge.")
 
 
 class GraphOverviewParams(GraphIdParams):
@@ -67,6 +68,7 @@ class GraphSchemasGetParams(BaseModel):
 
     graph_id: str = Field(..., description="Graph ID.")
     names: list[str] = Field(..., description="List of schema names.")
+    kind: str = Field(..., description="Schema kind: node or edge.")
 
 
 class GraphSchemaDeleteParams(SchemaIdentifierParams):
@@ -78,6 +80,7 @@ class GraphSchemasDeleteParams(BaseModel):
 
     graph_id: str = Field(..., description="Graph ID.")
     names: list[str] = Field(..., description="List of schema names to delete.")
+    kind: str = Field(..., description="Schema kind: node or edge.")
 
 
 class InstanceIdParams(BaseModel):

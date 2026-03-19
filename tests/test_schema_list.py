@@ -1,6 +1,6 @@
 import pytest
 import pytest_asyncio
-from gpdb import GPGraph, NodeUpsert, EdgeUpsert, SchemaUpsert
+from gpdb import GPGraph, NodeUpsert, EdgeUpsert, SchemaUpsert, SchemaRef
 
 
 # --- Tests ---
@@ -17,9 +17,9 @@ async def test_list_schemas(db: GPGraph):
     schema3 = {"type": "object", "properties": {"flag": {"type": "boolean"}}}
 
     await db.set_schemas([
-        SchemaUpsert(name="schema1", json_schema=schema1),
-        SchemaUpsert(name="schema2", json_schema=schema2),
-        SchemaUpsert(name="schema3", json_schema=schema3),
+        SchemaUpsert(name="schema1", json_schema=schema1, kind="node"),
+        SchemaUpsert(name="schema2", json_schema=schema2, kind="node"),
+        SchemaUpsert(name="schema3", json_schema=schema3, kind="node"),
     ])
 
     # List all schemas
@@ -50,11 +50,11 @@ async def test_schema_version_tracking(db: GPGraph):
         "required": ["name"],
     }
     await db.set_schemas(
-        [SchemaUpsert(name="person_version", json_schema=person_schema_v1)]
+        [SchemaUpsert(name="person_version", json_schema=person_schema_v1, kind="node")]
     )
 
     # Verify version is 1
-    schemas = await db.get_schemas(["person_version"])
+    schemas = await db.get_schemas([SchemaRef(name="person_version", kind="node")])
     assert schemas[0].version == "1.0.0"
 
     # Update schema with optional field (minor change)
@@ -67,11 +67,11 @@ async def test_schema_version_tracking(db: GPGraph):
         "required": ["name"],
     }
     await db.set_schemas(
-        [SchemaUpsert(name="person_version", json_schema=person_schema_v2)]
+        [SchemaUpsert(name="person_version", json_schema=person_schema_v2, kind="node")]
     )
 
     # Verify version is now 1.1.0 (minor bump)
-    schemas = await db.get_schemas(["person_version"])
+    schemas = await db.get_schemas([SchemaRef(name="person_version", kind="node")])
     assert schemas[0].version == "1.1.0"
 
     # Update schema with another optional field (minor change)
@@ -85,11 +85,11 @@ async def test_schema_version_tracking(db: GPGraph):
         "required": ["name"],
     }
     await db.set_schemas(
-        [SchemaUpsert(name="person_version", json_schema=person_schema_v3)]
+        [SchemaUpsert(name="person_version", json_schema=person_schema_v3, kind="node")]
     )
 
     # Verify version is now 1.2.0 (minor bump)
-    schemas = await db.get_schemas(["person_version"])
+    schemas = await db.get_schemas([SchemaRef(name="person_version", kind="node")])
     assert schemas[0].version == "1.2.0"
 
 

@@ -193,6 +193,7 @@ def _seed_graph_content(manager, *, table_prefix: str) -> None:
                 [
                     SchemaUpsert(
                         name="task_schema",
+                        kind="node",
                         json_schema={
                             "type": "object",
                             "properties": {

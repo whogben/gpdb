@@ -426,6 +426,7 @@ async def graph_node_detail_page(
             schema_details = await graph_content.get_graph_schemas(
                 graph_id=graph_id,
                 names=[detail.node.schema_name],
+                kind="node",
                 current_user=current_user,
             )
             schema_detail = schema_details[0]

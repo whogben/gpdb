@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Union
 
 import jsonschema
 from pydantic import BaseModel
+import sqlalchemy as sa
 from sqlalchemy import select
 
 from gpdb.models import (
@@ -17,6 +18,7 @@ from gpdb.models import (
     SchemaKindMismatchError,
     SchemaBreakingChangeError,
     SchemaUpsert,
+    SchemaRef,
     _normalize_schema_kind,
 )
 from gpdb.schema import (
@@ -89,8 +91,13 @@ class SchemaMixin:
         async with self._get_session() as session:
             results = []
             for schema_upsert in schemas:
-                # Check if schema already exists
-                existing = await session.get(self._Schema, schema_upsert.name)
+                # Check if schema already exists using composite key (name, kind)
+                stmt = select(self._Schema).where(
+                    self._Schema.name == schema_upsert.name,
+                    self._Schema.kind == _normalize_schema_kind(schema_upsert.kind),
+                )
+                result = await session.execute(stmt)
+                existing = result.scalars().first()
                 json_schema, resolved_kind = self._prepare_schema_registration(
                     schema_upsert.json_schema,
                     kind=schema_upsert.kind,
@@ -121,10 +128,9 @@ class SchemaMixin:
                     existing.json_schema = json_schema
                     existing.kind = resolved_kind
                     existing.version = new_version
-                    self._validators.pop(
-                        schema_upsert.name, None
-                    )  # invalidate cache for updated schema
-                    self._schema_kinds.pop(schema_upsert.name, None)
+                    cache_key = (schema_upsert.name, resolved_kind)
+                    self._validators.pop(cache_key, None)  # invalidate cache for updated schema
+                    self._schema_kinds.pop(cache_key, None)
                     results.append(existing)
                 else:
                     # Create new schema with version 1.0.0
@@ -135,7 +141,8 @@ class SchemaMixin:
                         version="1.0.0",
                     )
                     session.add(new_schema)
-                    self._schema_kinds.pop(schema_upsert.name, None)
+                    cache_key = (schema_upsert.name, resolved_kind)
+                    self._schema_kinds.pop(cache_key, None)
                     results.append(new_schema)
 
             await session.flush()
@@ -143,93 +150,122 @@ class SchemaMixin:
                 await session.refresh(result)
             return results
 
-    async def get_schemas(self, names: list[str]) -> list[Any]:
+    async def get_schemas(self, refs: list[SchemaRef]) -> list[Any]:
         """
-        Retrieve registered schemas by names.
+        Retrieve registered schemas by name and kind.
 
         Args:
-            names: List of schema names to retrieve
+            refs: List of SchemaRef objects containing name and kind
 
         Returns:
-            List of schema ORM objects in the same order as input names
+            List of schema ORM objects in the same order as input refs
 
         Raises:
-            ValueError: If duplicate names are provided
+            ValueError: If duplicate refs are provided
             SchemaNotFoundError: If any requested schema is not found
         """
-        # Reject duplicate names before doing any work
-        if len(names) != len(set(names)):
-            duplicates = [name for name in names if names.count(name) > 1]
-            raise ValueError(f"Duplicate schema names provided: {set(duplicates)}")
+        # Reject duplicate refs before doing any work
+        ref_keys = [(r.name, _normalize_schema_kind(r.kind)) for r in refs]
+        if len(ref_keys) != len(set(ref_keys)):
+            duplicates = [
+                ref for ref in ref_keys if ref_keys.count(ref) > 1
+            ]
+            raise ValueError(f"Duplicate schema refs provided: {set(duplicates)}")
 
         async with self._get_session() as session:
-            # Query all requested schemas in a single query
-            stmt = select(self._Schema).where(self._Schema.name.in_(names))
+            # Build composite key conditions for the query
+            conditions = [
+                (self._Schema.name == r.name) & (self._Schema.kind == _normalize_schema_kind(r.kind))
+                for r in refs
+            ]
+            stmt = select(self._Schema).where(
+                conditions[0] if len(conditions) == 1 else sa.or_(*conditions)
+            )
             result = await session.execute(stmt)
-            found_schemas = {schema.name: schema for schema in result.scalars().all()}
+            found_schemas = {
+                (schema.name, schema.kind): schema
+                for schema in result.scalars().all()
+            }
 
             # Check if any requested schema is missing
-            missing = [name for name in names if name not in found_schemas]
+            missing = [
+                ref for ref in ref_keys if ref not in found_schemas
+            ]
             if missing:
                 raise SchemaNotFoundError(f"Schemas not found: {missing}")
 
-            # Return schemas in the same order as input names
-            return [found_schemas[name] for name in names]
+            # Return schemas in the same order as input refs
+            return [found_schemas[ref] for ref in ref_keys]
 
-    async def delete_schemas(self, names: list[str]) -> None:
+    async def delete_schemas(self, refs: list[SchemaRef]) -> None:
         """
         Delete multiple schemas from the registry.
 
         Args:
-            names: List of schema names to delete
+            refs: List of SchemaRef objects containing name and kind
 
         Raises:
-            ValueError: If duplicate names are provided
+            ValueError: If duplicate refs are provided
             SchemaInUseError: If any nodes or edges reference any of the schemas
         """
         from gpdb.models import SchemaInUseError
 
-        # Reject duplicate names before doing any work
-        if len(names) != len(set(names)):
-            duplicates = [name for name in names if names.count(name) > 1]
-            raise ValueError(f"Duplicate schema names provided: {set(duplicates)}")
+        # Reject duplicate refs before doing any work
+        ref_keys = [(r.name, _normalize_schema_kind(r.kind)) for r in refs]
+        if len(ref_keys) != len(set(ref_keys)):
+            duplicates = [
+                ref for ref in ref_keys if ref_keys.count(ref) > 1
+            ]
+            raise ValueError(f"Duplicate schema refs provided: {set(duplicates)}")
 
         async with self._get_session() as session:
             # Verify all requested schemas exist before checking usage or deleting.
             # This keeps bulk deletes strictly all-or-nothing even when
-            # the caller includes a missing name.
-            stmt = select(self._Schema).where(self._Schema.name.in_(names))
+            # the caller includes a missing ref.
+            conditions = [
+                (self._Schema.name == r.name) & (self._Schema.kind == _normalize_schema_kind(r.kind))
+                for r in refs
+            ]
+            stmt = select(self._Schema).where(
+                conditions[0] if len(conditions) == 1 else sa.or_(*conditions)
+            )
             result = await session.execute(stmt)
-            found_schemas = {schema.name for schema in result.scalars().all()}
-            missing = [name for name in names if name not in found_schemas]
+            found_schemas = {
+                (schema.name, schema.kind): schema
+                for schema in result.scalars().all()
+            }
+            missing = [ref for ref in ref_keys if ref not in found_schemas]
             if missing:
                 raise SchemaNotFoundError(f"Schemas not found: {missing}")
 
             # Check all schemas for usage before deleting any
-            for name in names:
+            for ref in refs:
                 # Check if any nodes use this schema
-                node_stmt = select(self._Node).where(self._Node.schema_name == name)
+                node_stmt = select(self._Node).where(self._Node.schema_name == ref.name)
                 node_result = await session.execute(node_stmt)
                 if node_result.scalars().first() is not None:
                     raise SchemaInUseError(
-                        f"Cannot delete schema '{name}': it is referenced by one or more nodes"
+                        f"Cannot delete schema '{ref.name}': it is referenced by one or more nodes"
                     )
 
                 # Check if any edges use this schema
-                edge_stmt = select(self._Edge).where(self._Edge.schema_name == name)
+                edge_stmt = select(self._Edge).where(self._Edge.schema_name == ref.name)
                 edge_result = await session.execute(edge_stmt)
                 if edge_result.scalars().first() is not None:
                     raise SchemaInUseError(
-                        f"Cannot delete schema '{name}': it is referenced by one or more edges"
+                        f"Cannot delete schema '{ref.name}': it is referenced by one or more edges"
                     )
 
             # Delete all schema records
-            for name in names:
-                schema = await session.get(self._Schema, name)
+            for ref in refs:
+                schema = await session.get(
+                    self._Schema, {"name": ref.name, "kind": _normalize_schema_kind(ref.kind)}
+                )
                 if schema is not None:
                     await session.delete(schema)
-                    self._validators.pop(name, None)
-                    self._schema_kinds.pop(name, None)
+                    cache_key = (ref.name, _normalize_schema_kind(ref.kind))
+                    self._validators.pop(cache_key, None)
+                    self._schema_kinds.pop(cache_key, None)
 
     async def list_schemas(self, kind: str | None = None) -> List[str]:
         """
@@ -257,7 +293,7 @@ class SchemaMixin:
         name: str,
         migration_func: callable,
         new_schema: Union[Dict[str, Any], type],
-        kind: str | None = None,
+        kind: str,
     ):
         """
         Migrate all nodes/edges using a schema to a new schema version.
@@ -271,16 +307,18 @@ class SchemaMixin:
             name: Schema name to migrate
             migration_func: Function that transforms old data to new data: (old_data) -> new_data
             new_schema: New JSON schema or Pydantic model class
-            kind: Optional schema kind override. Must match the existing kind.
+            kind: Schema kind ("node" or "edge")
         """
         async with self.sqla_sessionmaker() as session:
             async with session.begin():
-                existing = await session.get(self._Schema, name)
+                existing = await session.get(
+                    self._Schema, {"name": name, "kind": _normalize_schema_kind(kind)}
+                )
                 # Build SchemaUpsert for the new schema
                 schema_upsert = SchemaUpsert(
                     name=name,
                     json_schema=new_schema,
-                    kind=kind if kind is not None else "node",
+                    kind=kind,
                 )
                 json_schema, resolved_kind = self._prepare_schema_registration(
                     schema_upsert.json_schema,
@@ -348,27 +386,32 @@ class SchemaMixin:
                         version="1.0.0",
                     )
                     session.add(new_schema_record)
-                self._validators.pop(name, None)  # invalidate cache for updated schema
-                self._schema_kinds.pop(name, None)
+                cache_key = (name, resolved_kind)
+                self._validators.pop(cache_key, None)  # invalidate cache for updated schema
+                self._schema_kinds.pop(cache_key, None)
 
-    async def _get_registered_schema_kind(self, schema_name: str) -> SchemaKind:
+    async def _get_schema_by_ref(self, ref: SchemaRef) -> Any:
+        """Get a single schema by name and kind."""
+        schemas = await self.get_schemas([ref])
+        return schemas[0]
+
+    async def _get_registered_schema_kind(self, ref: SchemaRef) -> SchemaKind:
         """Return the registered kind for one schema."""
-        if schema_name in self._schema_kinds:
-            return self._schema_kinds[schema_name]
+        cache_key = (ref.name, _normalize_schema_kind(ref.kind))
+        if cache_key in self._schema_kinds:
+            return self._schema_kinds[cache_key]
 
-        schemas = await self.get_schemas([schema_name])
-        schema = schemas[0]
-
+        schema = await self._get_schema_by_ref(ref)
         kind = self._schema_kind_from_record(schema)
-        self._schema_kinds[schema_name] = kind
+        self._schema_kinds[cache_key] = kind
         return kind
 
-    async def _get_validator(self, schema_name: str) -> Any:
+    async def _get_validator(self, ref: SchemaRef) -> Any:
         """
-        Get a cached jsonschema validator for the given schema name.
+        Get a cached jsonschema validator for the given schema reference.
 
         Args:
-            schema_name: Name of the schema to get validator for
+            ref: SchemaRef containing name and kind
 
         Returns:
             Compiled jsonschema validator
@@ -376,14 +419,13 @@ class SchemaMixin:
         Raises:
             SchemaNotFoundError: If schema is not found
         """
-        if schema_name in self._validators:
-            return self._validators[schema_name]
+        cache_key = (ref.name, _normalize_schema_kind(ref.kind))
+        if cache_key in self._validators:
+            return self._validators[cache_key]
 
-        schemas = await self.get_schemas([schema_name])
-        schema = schemas[0]
-
+        schema = await self._get_schema_by_ref(ref)
         validator = jsonschema.Draft7Validator(schema.json_schema)
-        self._validators[schema_name] = validator
+        self._validators[cache_key] = validator
         return validator
 
     async def _validate_data(
@@ -405,13 +447,14 @@ class SchemaMixin:
             SchemaNotFoundError: If schema is not found
             SchemaValidationError: If validation fails
         """
-        actual_kind = await self._get_registered_schema_kind(schema_name)
+        ref = SchemaRef(name=schema_name, kind=expected_kind)
+        actual_kind = await self._get_registered_schema_kind(ref)
         if actual_kind != expected_kind:
             raise SchemaKindMismatchError(
                 f"Schema '{schema_name}' is a {actual_kind} schema and cannot be "
                 f"attached to a {expected_kind}."
             )
-        validator = await self._get_validator(schema_name)
+        validator = await self._get_validator(ref)
         errors = list(validator.iter_errors(data))
         if errors:
             error_details = [e.message for e in errors]

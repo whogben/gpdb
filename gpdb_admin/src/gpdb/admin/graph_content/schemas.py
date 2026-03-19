@@ -112,33 +112,57 @@ async def list_graph_schemas(
         clean_kind = normalize_optional_schema_kind(kind)
         schema_names = sorted(await db.list_schemas(kind=clean_kind))
         if schema_names:
-            try:
-                schemas = await db.get_schemas(schema_names)
-                for schema in schemas:
-                    items.append(
-                        serialize_schema_record(
-                            schema,
-                            include_json_schema=include_json_schema,
-                            usage=GraphSchemaUsage(),
-                        )
-                    )
-            except SchemaNotFoundError:
-                # TOCTOU protection: `list_schemas()` may become stale
-                # if another user deletes a schema between list+get.
-                # Best-effort: skip missing schemas and return the rest.
+            from gpdb import SchemaRef
+            # If no kind filter, we need to get all schemas and filter by name
+            if clean_kind is None:
+                # Get all schemas with both kinds - but get them separately to handle missing ones
+                name_set = set(schema_names)
                 for schema_name in schema_names:
-                    try:
-                        schemas = await db.get_schemas([schema_name])
-                        schema = schemas[0]
-                    except SchemaNotFoundError:
-                        continue
-                    items.append(
-                        serialize_schema_record(
-                            schema,
-                            include_json_schema=include_json_schema,
-                            usage=GraphSchemaUsage(),
+                    for kind in ("node", "edge"):
+                        try:
+                            schemas = await db.get_schemas(
+                                [SchemaRef(name=schema_name, kind=kind)]
+                            )
+                            for schema in schemas:
+                                items.append(
+                                    serialize_schema_record(
+                                        schema,
+                                        include_json_schema=include_json_schema,
+                                        usage=GraphSchemaUsage(),
+                                    )
+                                )
+                        except SchemaNotFoundError:
+                            # Schema with this name/kind doesn't exist, skip
+                            pass
+            else:
+                try:
+                    refs = [SchemaRef(name=name, kind=clean_kind) for name in schema_names]
+                    schemas = await db.get_schemas(refs)
+                    for schema in schemas:
+                        items.append(
+                            serialize_schema_record(
+                                schema,
+                                include_json_schema=include_json_schema,
+                                usage=GraphSchemaUsage(),
+                            )
                         )
-                    )
+                except SchemaNotFoundError:
+                    # TOCTOU protection: `list_schemas()` may become stale
+                    # if another user deletes a schema between list+get.
+                    # Best-effort: skip missing schemas and return the rest.
+                    for schema_name in schema_names:
+                        try:
+                            schemas = await db.get_schemas([SchemaRef(name=schema_name, kind=clean_kind)])
+                            schema = schemas[0]
+                        except SchemaNotFoundError:
+                            continue
+                        items.append(
+                            serialize_schema_record(
+                                schema,
+                                include_json_schema=include_json_schema,
+                                usage=GraphSchemaUsage(),
+                            )
+                        )
         return GraphSchemaList(
             items=[GraphSchemaRecord(**item) for item in items],
             total=len(items),
@@ -152,6 +176,7 @@ async def get_graph_schemas(
     *,
     graph_id: str,
     names: list[str],
+    kind: str,
     current_user: AdminUser | None,
     allow_local_system: bool = False,
 ) -> list[GraphSchemaDetail]:
@@ -170,6 +195,8 @@ async def get_graph_schemas(
     if not all(clean_names):
         raise GraphContentValidationError("Schema names cannot be empty.")
 
+    clean_kind = validate_schema_kind(kind)
+
     graph, instance, db = await open_graph(
         graph_id=graph_id,
         current_user=current_user,
@@ -179,8 +206,10 @@ async def get_graph_schemas(
         captive_url_factory=self._captive_url_factory,
     )
     try:
+        from gpdb import SchemaRef
+        refs = [SchemaRef(name=name, kind=clean_kind) for name in clean_names]
         try:
-            schemas = await db.get_schemas(clean_names)
+            schemas = await db.get_schemas(refs)
         except SchemaNotFoundError as exc:
             raise GraphContentNotFoundError(
                 f"One or more schemas were not found."
@@ -245,7 +274,12 @@ async def create_graph_schemas(
     try:
         # Check for existing schemas
         try:
-            existing = await db.get_schemas(clean_names)
+            from gpdb import SchemaRef
+            refs = [
+                SchemaRef(name=clean_name, kind=clean_kind)
+                for clean_name, _, clean_kind in validated_schemas
+            ]
+            existing = await db.get_schemas(refs)
             existing_names = [s.name for s in existing]
             raise GraphContentConflictError(
                 f"Schemas already exist: {existing_names}"
@@ -331,8 +365,60 @@ async def update_graph_schemas(
     try:
         # Check existing schemas
         try:
-            existing_schemas = await db.get_schemas(clean_names)
-            existing_by_name = {s.name: s for s in existing_schemas}
+            from gpdb import SchemaRef
+            # For schemas where kind is not specified, we need to find the existing kind
+            # For schemas where kind is specified, we use that kind
+            existing_by_name = {}
+            
+            # First, handle schemas with explicit kind
+            refs_with_kind = [
+                SchemaRef(name=clean_name, kind=clean_kind)
+                for clean_name, _, clean_kind in validated_schemas
+                if clean_kind is not None
+            ]
+            
+            if refs_with_kind:
+                schemas_with_kind = await db.get_schemas(refs_with_kind)
+                for schema in schemas_with_kind:
+                    existing_by_name[schema.name] = schema
+            
+            # Now handle schemas without explicit kind - need to look up existing kind
+            refs_without_kind = [
+                clean_name
+                for clean_name, _, clean_kind in validated_schemas
+                if clean_kind is None and clean_name not in existing_by_name
+            ]
+            
+            if refs_without_kind:
+                # Get all schemas from the database by listing them all
+                all_schema_names = await db.list_schemas()
+                
+                # Filter to only the names we need
+                needed_names = [n for n in all_schema_names if n in refs_without_kind]
+                
+                if needed_names:
+                    # Try to get each schema by name, handling missing kinds
+                    for name in needed_names:
+                        # Try node first, then edge
+                        try:
+                            schemas = await db.get_schemas([SchemaRef(name=name, kind="node")])
+                            if schemas:
+                                existing_by_name[name] = schemas[0]
+                                continue
+                        except SchemaNotFoundError:
+                            pass
+                        try:
+                            schemas = await db.get_schemas([SchemaRef(name=name, kind="edge")])
+                            if schemas:
+                                existing_by_name[name] = schemas[0]
+                                continue
+                        except SchemaNotFoundError:
+                            pass
+            
+            # Verify all schemas exist
+            missing = [name for name, _, _ in validated_schemas if name not in existing_by_name]
+            if missing:
+                raise SchemaNotFoundError(f"Schemas not found: {missing}")
         except SchemaNotFoundError as exc:
             raise GraphContentNotFoundError(
                 f"One or more schemas not found: {exc}"
@@ -390,11 +476,13 @@ async def delete_graph_schemas(
     *,
     graph_id: str,
     names: list[str],
+    kind: str,
     current_user: AdminUser | None,
     allow_local_system: bool = False,
 ) -> list[GraphSchemaDeleteResult]:
     """Delete multiple unused schemas from a managed graph."""
     clean_names = [validate_schema_name(name) for name in names]
+    clean_kind = validate_schema_kind(kind)
 
     graph, instance, db = await open_graph(
         graph_id=graph_id,
@@ -405,15 +493,17 @@ async def delete_graph_schemas(
         captive_url_factory=self._captive_url_factory,
     )
     try:
+        from gpdb import SchemaRef
+        refs = [SchemaRef(name=name, kind=clean_kind) for name in clean_names]
         try:
-            schemas = await db.get_schemas(clean_names)
+            schemas = await db.get_schemas(refs)
         except SchemaNotFoundError as exc:
             # Translate missing schema names into admin-facing not-found errors
             # (web routes and REST tool handlers catch GraphContentError).
             missing: list[str] = []
             for clean_name in clean_names:
                 try:
-                    await db.get_schemas([clean_name])
+                    await db.get_schemas([SchemaRef(name=clean_name, kind=clean_kind)])
                 except SchemaNotFoundError:
                     missing.append(clean_name)
 
@@ -438,7 +528,7 @@ async def delete_graph_schemas(
             # from computed usage counts (matches UI tests).
             raise GraphContentConflictError("; ".join(in_use_messages))
         try:
-            await db.delete_schemas(clean_names)
+            await db.delete_schemas(refs)
         except SchemaInUseError as exc:
             raise GraphContentConflictError(str(exc)) from exc
         return [GraphSchemaDeleteResult(name=name) for name in clean_names]

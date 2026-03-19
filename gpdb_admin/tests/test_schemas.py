@@ -59,7 +59,7 @@ def test_graph_schema_registry_across_surfaces(admin_test_env):
     )
     assert response.status_code == 303
     assert response.headers["location"].startswith(
-        f"/graphs/{graph_id}/schemas/web_schema"
+        f"/graphs/{graph_id}/schemas/web_schema/node"
     )
 
     _seed_schema_usage(manager, table_prefix="schema_slice", schema_name="web_schema")
@@ -122,7 +122,7 @@ def test_graph_schema_registry_across_surfaces(admin_test_env):
     assert "rest_schema" in response.text
     assert "mcp_schema" in response.text
 
-    response = client.get(f"/graphs/{graph_id}/schemas/web_schema")
+    response = client.get(f"/graphs/{graph_id}/schemas/web_schema/node")
     assert response.status_code == 200
     assert "Version 1.0.0" in response.text
     assert "Kind: node." in response.text
@@ -145,7 +145,7 @@ def test_graph_schema_registry_across_surfaces(admin_test_env):
 
     response = client.post(
         "/api/graph_schemas_get",
-        json={"graph_id": graph_id, "names": ["web_schema"]},
+        json={"graph_id": graph_id, "names": ["web_schema"], "kind": "node"},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -173,7 +173,7 @@ def test_graph_schema_registry_across_surfaces(admin_test_env):
         manager,
         api_key_value,
         "graph_schemas_get",
-        {"graph_id": graph_id, "names": ["web_schema"]},
+        {"graph_id": graph_id, "names": ["web_schema"], "kind": "node"},
     )
     mcp_get = mcp_get[0]
     assert mcp_get.schema.usage.node_count == 1
@@ -233,16 +233,18 @@ def test_graph_schema_list_tolerates_toctou_delete(admin_test_env, monkeypatch):
     assert response.status_code == 303
 
     missing_name = "web_unused"
+    missing_kind = "node"
     original_get_schemas = GPGraph.get_schemas
 
-    async def patched_get_schemas(self, names):
+    async def patched_get_schemas(self, refs):
         # Simulate a concurrent delete: bulk get fails, but per-name fallback
         # should ignore the missing entry and still return the rest.
-        if len(names) > 1 and missing_name in names:
-            raise SchemaNotFoundError(f"Schemas not found: {[missing_name]}")
-        if len(names) == 1 and names[0] == missing_name:
-            raise SchemaNotFoundError(f"Schemas not found: {[missing_name]}")
-        return await original_get_schemas(self, names)
+        from gpdb.models import SchemaRef
+        if len(refs) > 1 and any(r.name == missing_name and r.kind == missing_kind for r in refs):
+            raise SchemaNotFoundError(f"Schemas not found: [{(missing_name, missing_kind)}]")
+        if len(refs) == 1 and refs[0].name == missing_name and refs[0].kind == missing_kind:
+            raise SchemaNotFoundError(f"Schemas not found: [{(missing_name, missing_kind)}]")
+        return await original_get_schemas(self, refs)
 
     monkeypatch.setattr(GPGraph, "get_schemas", patched_get_schemas, raising=True)
 
@@ -357,7 +359,7 @@ def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
 
     _login(client)
 
-    response = client.get(f"/graphs/{graph_id}/schemas/web_schema")
+    response = client.get(f"/graphs/{graph_id}/schemas/web_schema/node")
     assert response.status_code == 200
     assert (
         "Delete is blocked until all node and edge references are removed."
@@ -366,19 +368,19 @@ def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
     assert "Delete schema</button>" in response.text
     assert "disabled" in response.text
 
-    response = client.get(f"/graphs/{graph_id}/schemas/web_unused")
+    response = client.get(f"/graphs/{graph_id}/schemas/web_unused/node")
     assert response.status_code == 200
     assert (
         "Delete is available because this schema is currently unused." in response.text
     )
 
-    response = client.get(f"/graphs/{graph_id}/schemas/web_schema/edit")
+    response = client.get(f"/graphs/{graph_id}/schemas/web_schema/node/edit")
     assert response.status_code == 200
     assert "Update schema" in response.text
     assert "non-breaking updates are allowed here" in response.text
 
     response = client.post(
-        f"/graphs/{graph_id}/schemas/web_schema",
+        f"/graphs/{graph_id}/schemas/web_schema/node",
         data={
             "kind": "node",
             "json_schema": json.dumps(
@@ -392,15 +394,15 @@ def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
     )
     assert response.status_code == 303
     assert response.headers["location"].startswith(
-        f"/graphs/{graph_id}/schemas/web_schema"
+        f"/graphs/{graph_id}/schemas/web_schema/node"
     )
 
-    response = client.get(f"/graphs/{graph_id}/schemas/web_schema")
+    response = client.get(f"/graphs/{graph_id}/schemas/web_schema/node")
     assert response.status_code == 200
     assert "Version 1.1.0" in response.text
 
     response = client.post(
-        f"/graphs/{graph_id}/schemas/web_schema",
+        f"/graphs/{graph_id}/schemas/web_schema/node",
         data={
             "kind": "node",
             "json_schema": json.dumps(
@@ -417,7 +419,7 @@ def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
     assert "Use a migration workflow." in response.text
 
     response = client.post(
-        f"/graphs/{graph_id}/schemas/web_schema/delete",
+        f"/graphs/{graph_id}/schemas/web_schema/node/delete",
         follow_redirects=True,
     )
     assert response.status_code == 200
@@ -427,7 +429,7 @@ def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
     )
 
     response = client.post(
-        f"/graphs/{graph_id}/schemas/web_unused/delete",
+        f"/graphs/{graph_id}/schemas/web_unused/node/delete",
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -460,7 +462,7 @@ def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
 
     response = client.post(
         "/api/graph_schemas_delete",
-        json={"graph_id": graph_id, "names": ["rest_schema"]},
+        json={"graph_id": graph_id, "names": ["rest_schema"], "kind": "node"},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -492,7 +494,7 @@ def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
         manager,
         api_key_value,
         "graph_schemas_delete",
-        {"graph_id": graph_id, "names": ["mcp_schema"]},
+        {"graph_id": graph_id, "names": ["mcp_schema"], "kind": "node"},
     )
     mcp_deleted = mcp_deleted[0]
     assert mcp_deleted.name == "mcp_schema"
@@ -538,7 +540,7 @@ def test_graph_schema_delete_missing_translates_to_not_found(admin_test_env):
     graph_id = graph.id
 
     response = client.post(
-        f"/graphs/{graph_id}/schemas/missing_schema/delete",
+        f"/graphs/{graph_id}/schemas/missing_schema/node/delete",
         follow_redirects=True,
     )
     assert response.status_code == 200

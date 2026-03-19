@@ -1,6 +1,6 @@
 import pytest
 import pytest_asyncio
-from gpdb import GPGraph, NodeUpsert, EdgeUpsert, SchemaUpsert
+from gpdb import GPGraph, NodeUpsert, EdgeUpsert, SchemaUpsert, SchemaRef
 from pydantic import BaseModel
 
 
@@ -23,7 +23,7 @@ async def test_node_validation_success(db: GPGraph):
         "required": ["name"],
     }
     await db.set_schemas(
-        [SchemaUpsert(name="person_validation", json_schema=person_schema)]
+        [SchemaUpsert(name="person_validation", json_schema=person_schema, kind="node")]
     )
 
     # Create a node with schema_name and valid data
@@ -55,7 +55,7 @@ async def test_node_validation_failure(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.set_schemas([SchemaUpsert(name="person", json_schema=person_schema)])
+    await db.set_schemas([SchemaUpsert(name="person", json_schema=person_schema, kind="node")])
 
     # Try to create a node with missing required field
     node = NodeUpsert(
@@ -83,7 +83,7 @@ async def test_validator_caching(db: GPGraph):
         },
         "required": ["name"],
     }
-    await db.set_schemas([SchemaUpsert(name="person_cache", json_schema=person_schema)])
+    await db.set_schemas([SchemaUpsert(name="person_cache", json_schema=person_schema, kind="node")])
 
     # Create multiple nodes with the same schema
     node1 = NodeUpsert(
@@ -96,7 +96,7 @@ async def test_validator_caching(db: GPGraph):
 
     # Check that validators are cached
     assert hasattr(db, "_validators")
-    assert "person_cache" in db._validators
+    assert ("person_cache", "node") in db._validators
 
 
 @pytest.mark.asyncio
@@ -111,10 +111,10 @@ async def test_pydantic_to_json_schema(db: GPGraph):
         age: int
 
     # Register the Pydantic model as a schema
-    await db.set_schemas([SchemaUpsert(name="person_pydantic", json_schema=PersonModel)])
+    await db.set_schemas([SchemaUpsert(name="person_pydantic", json_schema=PersonModel, kind="node")])
 
     # Retrieve the schema and verify it's a dict (JSON Schema format)
-    retrieved = await db.get_schemas(["person_pydantic"])
+    retrieved = await db.get_schemas([SchemaRef(name="person_pydantic", kind="node")])
     assert len(retrieved) == 1
     assert isinstance(retrieved[0].json_schema, dict)
     assert "properties" in retrieved[0].json_schema
@@ -142,7 +142,7 @@ async def test_nested_pydantic_model(db: GPGraph):
 
     # Register the nested Pydantic model as a schema
     await db.set_schemas(
-        [SchemaUpsert(name="person_with_address", json_schema=PersonWithAddressModel)]
+        [SchemaUpsert(name="person_with_address", json_schema=PersonWithAddressModel, kind="node")]
     )
 
     # Create a node with nested data
@@ -226,7 +226,7 @@ async def test_edge_validation(db: GPGraph):
 
 @pytest.mark.asyncio
 async def test_node_cannot_use_edge_schema(db: GPGraph):
-    from gpdb import SchemaKindMismatchError
+    from gpdb import SchemaNotFoundError
 
     relationship_schema = {
         "type": "object",
@@ -241,7 +241,7 @@ async def test_node_cannot_use_edge_schema(db: GPGraph):
         )]
     )
 
-    with pytest.raises(SchemaKindMismatchError):
+    with pytest.raises(SchemaNotFoundError):
         await db.set_nodes([
             NodeUpsert(
                 type="test",
@@ -253,7 +253,7 @@ async def test_node_cannot_use_edge_schema(db: GPGraph):
 
 @pytest.mark.asyncio
 async def test_edge_cannot_use_node_schema(db: GPGraph):
-    from gpdb import SchemaKindMismatchError
+    from gpdb import SchemaNotFoundError
 
     person_schema = {
         "type": "object",
@@ -271,7 +271,7 @@ async def test_edge_cannot_use_node_schema(db: GPGraph):
     node1 = node1_list[0]
     node2 = node2_list[0]
 
-    with pytest.raises(SchemaKindMismatchError):
+    with pytest.raises(SchemaNotFoundError):
         await db.set_edges(
             [EdgeUpsert(
                 source_id=node1.id,

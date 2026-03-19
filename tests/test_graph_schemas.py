@@ -1,7 +1,7 @@
 import pytest
 import pytest_asyncio
 from sqlalchemy import inspect, select, text
-from gpdb import GPGraph, NodeUpsert, SchemaUpsert
+from gpdb import GPGraph, NodeUpsert, SchemaUpsert, SchemaRef
 from test_helpers import schema_with_kind
 
 
@@ -25,7 +25,7 @@ async def test_basic_schema_registration(db: GPGraph):
     }
 
     # Register the schema
-    result = await db.set_schemas([SchemaUpsert(name="person", json_schema=person_schema)])
+    result = await db.set_schemas([SchemaUpsert(name="person", json_schema=person_schema, kind="node")])
 
     # Verify schema was stored in database
     async with db.sqla_sessionmaker() as session:
@@ -82,10 +82,10 @@ async def test_retrieve_registered_schema(db: GPGraph):
         },
     }
 
-    await db.set_schemas([SchemaUpsert(name="address", json_schema=address_schema)])
+    await db.set_schemas([SchemaUpsert(name="address", json_schema=address_schema, kind="node")])
 
     # Retrieve the schema
-    retrieved = await db.get_schemas(["address"])
+    retrieved = await db.get_schemas([SchemaRef(name="address", kind="node")])
 
     assert len(retrieved) == 1
     assert retrieved[0].name == "address"
@@ -116,12 +116,12 @@ async def test_retrieve_multiple_schemas(db: GPGraph):
     }
 
     await db.set_schemas([
-        SchemaUpsert(name="person", json_schema=person_schema),
-        SchemaUpsert(name="address", json_schema=address_schema),
+        SchemaUpsert(name="person", json_schema=person_schema, kind="node"),
+        SchemaUpsert(name="address", json_schema=address_schema, kind="node"),
     ])
 
     # Retrieve multiple schemas
-    retrieved = await db.get_schemas(["person", "address"])
+    retrieved = await db.get_schemas([SchemaRef(name="person", kind="node"), SchemaRef(name="address", kind="node")])
 
     assert len(retrieved) == 2
     assert retrieved[0].name == "person"
@@ -141,13 +141,13 @@ async def test_retrieve_schemas_preserves_order(db: GPGraph):
     schema_c = {"type": "object", "properties": {"c": {"type": "string"}}}
 
     await db.set_schemas([
-        SchemaUpsert(name="schema_a", json_schema=schema_a),
-        SchemaUpsert(name="schema_b", json_schema=schema_b),
-        SchemaUpsert(name="schema_c", json_schema=schema_c),
+        SchemaUpsert(name="schema_a", json_schema=schema_a, kind="node"),
+        SchemaUpsert(name="schema_b", json_schema=schema_b, kind="node"),
+        SchemaUpsert(name="schema_c", json_schema=schema_c, kind="node"),
     ])
 
     # Retrieve in a different order
-    retrieved = await db.get_schemas(["schema_c", "schema_a", "schema_b"])
+    retrieved = await db.get_schemas([SchemaRef(name="schema_c", kind="node"), SchemaRef(name="schema_a", kind="node"), SchemaRef(name="schema_b", kind="node")])
 
     assert len(retrieved) == 3
     assert retrieved[0].name == "schema_c"
@@ -162,13 +162,13 @@ async def test_retrieve_schemas_duplicate_names(db: GPGraph):
     """
     # Define and register a schema
     schema = {"type": "object", "properties": {"x": {"type": "string"}}}
-    await db.set_schemas([SchemaUpsert(name="test_schema", json_schema=schema)])
+    await db.set_schemas([SchemaUpsert(name="test_schema", json_schema=schema, kind="node")])
 
     # Try to retrieve with duplicate names
     with pytest.raises(ValueError) as exc_info:
-        await db.get_schemas(["test_schema", "test_schema"])
+        await db.get_schemas([SchemaRef(name="test_schema", kind="node"), SchemaRef(name="test_schema", kind="node")])
 
-    assert "Duplicate schema names provided" in str(exc_info.value)
+    assert "Duplicate schema refs provided" in str(exc_info.value)
 
 
 @pytest.mark.asyncio
@@ -180,11 +180,11 @@ async def test_retrieve_schemas_missing_schema(db: GPGraph):
 
     # Define and register one schema
     schema = {"type": "object", "properties": {"x": {"type": "string"}}}
-    await db.set_schemas([SchemaUpsert(name="existing_schema", json_schema=schema)])
+    await db.set_schemas([SchemaUpsert(name="existing_schema", json_schema=schema, kind="node")])
 
     # Try to retrieve with a missing schema
     with pytest.raises(SchemaNotFoundError) as exc_info:
-        await db.get_schemas(["existing_schema", "missing_schema"])
+        await db.get_schemas([SchemaRef(name="existing_schema", kind="node"), SchemaRef(name="missing_schema", kind="node")])
 
     assert "missing_schema" in str(exc_info.value)
 
@@ -215,9 +215,9 @@ async def test_set_schemas_bulk_success(db: GPGraph):
 
     # Register all schemas in bulk
     results = await db.set_schemas([
-        SchemaUpsert(name="schema1", json_schema=schema1),
-        SchemaUpsert(name="schema2", json_schema=schema2),
-        SchemaUpsert(name="schema3", json_schema=schema3),
+        SchemaUpsert(name="schema1", json_schema=schema1, kind="node"),
+        SchemaUpsert(name="schema2", json_schema=schema2, kind="node"),
+        SchemaUpsert(name="schema3", json_schema=schema3, kind="node"),
     ])
 
     # Verify all schemas were registered
@@ -240,8 +240,8 @@ async def test_set_schemas_duplicate_names(db: GPGraph):
     # Try to register schemas with duplicate names
     with pytest.raises(ValueError) as exc_info:
         await db.set_schemas([
-            SchemaUpsert(name="duplicate", json_schema=schema),
-            SchemaUpsert(name="duplicate", json_schema=schema),
+            SchemaUpsert(name="duplicate", json_schema=schema, kind="node"),
+            SchemaUpsert(name="duplicate", json_schema=schema, kind="node"),
         ])
 
     assert "Duplicate schema names are not allowed" in str(exc_info.value)
@@ -254,33 +254,33 @@ async def test_set_schemas_atomic_failure(db: GPGraph):
     """
     from gpdb import SchemaBreakingChangeError, SchemaNotFoundError
 
-    # First register a schema
-    schema1 = {"type": "object", "properties": {"x": {"type": "string"}}}
-    await db.set_schemas([SchemaUpsert(name="atomic_test", json_schema=schema1)])
+    # First register a schema with a required field
+    schema1 = {"type": "object", "required": ["x"], "properties": {"x": {"type": "string"}}}
+    await db.set_schemas([SchemaUpsert(name="atomic_test", json_schema=schema1, kind="node")])
 
-    # Try to bulk update with a breaking change
+    # Try to bulk update with a breaking change (removing required field)
     schema2 = {"type": "object", "properties": {"y": {"type": "integer"}}}
     schema3 = {"type": "object", "properties": {"z": {"type": "boolean"}}}
 
-    # This should fail because we're trying to change the kind of atomic_test
+    # This should fail because we're removing a required field from atomic_test
     with pytest.raises(SchemaBreakingChangeError):
         await db.set_schemas([
-            SchemaUpsert(name="atomic_test", json_schema=schema1, kind="edge"),
-            SchemaUpsert(name="new_schema1", json_schema=schema2),
-            SchemaUpsert(name="new_schema2", json_schema=schema3),
+            SchemaUpsert(name="atomic_test", json_schema=schema2, kind="node"),
+            SchemaUpsert(name="new_schema1", json_schema=schema2, kind="node"),
+            SchemaUpsert(name="new_schema2", json_schema=schema3, kind="node"),
         ])
 
     # Verify that no new schemas were created (atomic failure)
     # Only atomic_test should exist, new_schema1 and new_schema2 should not
-    retrieved = await db.get_schemas(["atomic_test"])
+    retrieved = await db.get_schemas([SchemaRef(name="atomic_test", kind="node")])
     assert len(retrieved) == 1
     assert retrieved[0].name == "atomic_test"
 
     # Verify new schemas don't exist
     with pytest.raises(SchemaNotFoundError):
-        await db.get_schemas(["new_schema1"])
+        await db.get_schemas([SchemaRef(name="new_schema1", kind="node")])
     with pytest.raises(SchemaNotFoundError):
-        await db.get_schemas(["new_schema2"])
+        await db.get_schemas([SchemaRef(name="new_schema2", kind="node")])
 
 
 @pytest.mark.asyncio
@@ -307,10 +307,10 @@ async def test_schema_preserves_json_structure(db: GPGraph):
     }
 
     # Register the schema
-    await db.set_schemas([SchemaUpsert(name="address_schema", json_schema=schema_with_refs)])
+    await db.set_schemas([SchemaUpsert(name="address_schema", json_schema=schema_with_refs, kind="node")])
 
     # Retrieve and verify the schema is unchanged
-    retrieved = await db.get_schemas(["address_schema"])
+    retrieved = await db.get_schemas([SchemaRef(name="address_schema", kind="node")])
     assert len(retrieved) == 1
     assert retrieved[0].json_schema == schema_with_refs
     assert "$defs" in retrieved[0].json_schema
@@ -334,7 +334,7 @@ async def test_schema_kind_stored_separately(db: GPGraph):
     await db.set_schemas([SchemaUpsert(name="person_edge", json_schema=person_schema, kind="edge")])
 
     # Retrieve and verify
-    retrieved = await db.get_schemas(["person_edge"])
+    retrieved = await db.get_schemas([SchemaRef(name="person_edge", kind="edge")])
     assert len(retrieved) == 1
     assert retrieved[0].kind == "edge"
     # Verify json_schema doesn't contain x-gpdb-kind
@@ -360,10 +360,10 @@ async def test_pydantic_model_schema_preserves_structure(db: GPGraph):
         address: Address
 
     # Register the Pydantic model
-    await db.set_schemas([SchemaUpsert(name="person_model", json_schema=Person)])
+    await db.set_schemas([SchemaUpsert(name="person_model", json_schema=Person, kind="node")])
 
     # Retrieve and verify $defs are preserved
-    retrieved = await db.get_schemas(["person_model"])
+    retrieved = await db.get_schemas([SchemaRef(name="person_model", kind="node")])
     assert len(retrieved) == 1
     # Pydantic generates $defs for nested models
     assert "$defs" in retrieved[0].json_schema

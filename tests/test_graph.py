@@ -475,8 +475,8 @@ async def test_set_edges_atomic_failure(db: GPGraph):
     # Create a schema that will fail validation
     await db.set_schemas([SchemaUpsert(
         name="strict_edge",
-        kind="edge",
-        json_schema={"type": "object", "required": ["weight"], "properties": {"weight": {"type": "number"}}}
+        json_schema={"type": "object", "required": ["weight"], "properties": {"weight": {"type": "number"}}},
+        kind="edge"
     )])
 
     # Try to create edges where one will fail validation

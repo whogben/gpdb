@@ -16,7 +16,7 @@
         overview</a>
       {% if current_user.is_owner %}
       <a class="button"
-        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_edit_page', graph_id=current_graph.id, schema_name=schema_detail.schema.name) }}">Edit
+        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_edit_page', graph_id=current_graph.id, schema_name=schema_detail.schema.name, kind=schema_detail.schema.kind) }}">Edit
         schema</a>
       {% endif %}
     </div>
@@ -103,10 +103,10 @@
       {% if current_user.is_owner %}
       <div class="button-row">
         <a class="button button-secondary"
-          href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_edit_page', graph_id=current_graph.id, schema_name=schema_detail.schema.name) }}">Edit
+          href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_edit_page', graph_id=current_graph.id, schema_name=schema_detail.schema.name, kind=schema_detail.schema.kind) }}">Edit
           schema</a>
         <form class="inline-form"
-          action="{{ mount_prefix }}{{ web_app.url_path_for('graph_schemas_delete', graph_id=current_graph.id, schema_name=schema_detail.schema.name) }}"
+          action="{{ mount_prefix }}{{ web_app.url_path_for('graph_schemas_delete', graph_id=current_graph.id, schema_name=schema_detail.schema.name, kind=schema_detail.schema.kind) }}"
           method="post">
           <button class="button button-danger" type="submit" {% if schema_detail.schema.usage.node_count or
             schema_detail.schema.usage.edge_count %}disabled{% endif %}>Delete schema</button>

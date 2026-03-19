@@ -374,6 +374,7 @@ async def graph_edge_detail_page(
             schema_details = await graph_content.get_graph_schemas(
                 graph_id=graph_id,
                 names=[detail.edge.schema_name],
+                kind="edge",
                 current_user=current_user,
             )
             schema_detail = schema_details[0]

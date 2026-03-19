@@ -131,6 +131,7 @@ def _build_graph_content_service(services: AdminServices) -> ToolService:
             ctx,
             graph_id=params.graph_id,
             names=params.names,
+            kind=params.kind,
         )
 
     @service.tool(
@@ -185,6 +186,7 @@ def _build_graph_content_service(services: AdminServices) -> ToolService:
             ctx,
             graph_id=params.graph_id,
             names=params.names,
+            kind=params.kind,
         )
         return deleted
 
