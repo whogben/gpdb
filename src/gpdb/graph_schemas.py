@@ -17,6 +17,7 @@ from gpdb.models import (
     SchemaValidationError,
     SchemaKindMismatchError,
     SchemaBreakingChangeError,
+    SchemaProtectedError,
     SchemaUpsert,
     SchemaRef,
     _normalize_schema_kind,
@@ -78,6 +79,7 @@ class SchemaMixin:
 
         Raises:
             SchemaBreakingChangeError: If breaking changes are detected
+            SchemaProtectedError: If attempting to modify a protected schema
             ValueError: If duplicate schema names are provided
 
         Returns:
@@ -87,6 +89,13 @@ class SchemaMixin:
         names = [s.name for s in schemas]
         if len(names) != len(set(names)):
             raise ValueError("Duplicate schema names are not allowed")
+
+        # Reject operations on protected schemas
+        for schema_upsert in schemas:
+            if schema_upsert.name == "__default__":
+                raise SchemaProtectedError(
+                    f"Cannot modify protected schema '{schema_upsert.name}'"
+                )
 
         async with self._get_session() as session:
             results = []
@@ -207,6 +216,7 @@ class SchemaMixin:
         Raises:
             ValueError: If duplicate refs are provided
             SchemaInUseError: If any nodes or edges reference any of the schemas
+            SchemaProtectedError: If attempting to delete a protected schema
         """
         from gpdb.models import SchemaInUseError
 
@@ -217,6 +227,13 @@ class SchemaMixin:
                 ref for ref in ref_keys if ref_keys.count(ref) > 1
             ]
             raise ValueError(f"Duplicate schema refs provided: {set(duplicates)}")
+
+        # Reject operations on protected schemas
+        for ref in refs:
+            if ref.name == "__default__":
+                raise SchemaProtectedError(
+                    f"Cannot delete protected schema '{ref.name}'"
+                )
 
         async with self._get_session() as session:
             # Verify all requested schemas exist before checking usage or deleting.
@@ -308,7 +325,16 @@ class SchemaMixin:
             migration_func: Function that transforms old data to new data: (old_data) -> new_data
             new_schema: New JSON schema or Pydantic model class
             kind: Schema kind ("node" or "edge")
+
+        Raises:
+            SchemaProtectedError: If attempting to migrate a protected schema
         """
+        # Reject operations on protected schemas
+        if name == "__default__":
+            raise SchemaProtectedError(
+                f"Cannot migrate protected schema '{name}'"
+            )
+
         async with self.sqla_sessionmaker() as session:
             async with session.begin():
                 existing = await session.get(

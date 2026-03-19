@@ -15,9 +15,11 @@
         href="{{ mount_prefix }}{{ web_app.url_path_for('graph_overview_page', graph_id=current_graph.id) }}">Graph
         overview</a>
       {% if current_user.is_owner %}
+      {% if schema_detail.schema.name != "__default__" %}
       <a class="button"
         href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_edit_page', graph_id=current_graph.id, schema_name=schema_detail.schema.name, kind=schema_detail.schema.kind) }}">Edit
         schema</a>
+      {% endif %}
       {% endif %}
     </div>
   </div>
@@ -102,18 +104,22 @@
       {% endif %}
       {% if current_user.is_owner %}
       <div class="button-row">
+        {% if schema_detail.schema.name != "__default__" %}
         <a class="button button-secondary"
           href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_edit_page', graph_id=current_graph.id, schema_name=schema_detail.schema.name, kind=schema_detail.schema.kind) }}">Edit
           schema</a>
+        {% endif %}
         <form class="inline-form"
           action="{{ mount_prefix }}{{ web_app.url_path_for('graph_schemas_delete', graph_id=current_graph.id, schema_name=schema_detail.schema.name, kind=schema_detail.schema.kind) }}"
           method="post">
           <button class="button button-danger" type="submit" {% if schema_detail.schema.usage.node_count or
-            schema_detail.schema.usage.edge_count %}disabled{% endif %}>Delete schema</button>
+            schema_detail.schema.usage.edge_count or schema_detail.schema.name == "__default__" %}disabled{% endif %}>Delete schema</button>
         </form>
       </div>
       <p class="resource-note">
-        {% if schema_detail.schema.usage.node_count or schema_detail.schema.usage.edge_count %}
+        {% if schema_detail.schema.name == "__default__" %}
+        This is a protected default schema and cannot be modified or deleted.
+        {% elif schema_detail.schema.usage.node_count or schema_detail.schema.usage.edge_count %}
         Delete is blocked until all node and edge references are removed.
         {% else %}
         Delete is available because this schema is currently unused.

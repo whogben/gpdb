@@ -11,6 +11,7 @@ from gpdb.models.base import (
     SchemaKindMismatchError,
     SchemaBreakingChangeError,
     SchemaInUseError,
+    SchemaProtectedError,
     _Base,
     _normalize_schema_kind,
     _SCHEMA_KIND_VALUES,
@@ -52,6 +53,7 @@ __all__ = [
     "SchemaKindMismatchError",
     "SchemaBreakingChangeError",
     "SchemaInUseError",
+    "SchemaProtectedError",
     # Base classes
     "_Base",
     "_GPRecord",

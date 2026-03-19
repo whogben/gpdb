@@ -41,6 +41,12 @@ class SchemaInUseError(Exception):
     pass
 
 
+class SchemaProtectedError(Exception):
+    """Raised when attempting to modify or delete a protected schema."""
+
+    pass
+
+
 SchemaKind = Literal["node", "edge"]
 _SCHEMA_KIND_FIELD = "x-gpdb-kind"
 _SCHEMA_KIND_VALUES = {"node", "edge"}

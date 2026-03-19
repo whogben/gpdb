@@ -9,6 +9,7 @@ from gpdb import (
     SchemaBreakingChangeError,
     SchemaInUseError,
     SchemaNotFoundError,
+    SchemaProtectedError,
     SchemaUpsert,
     SchemaValidationError,
 )
@@ -297,6 +298,8 @@ async def create_graph_schemas(
                 for name, json_schema, kind in validated_schemas
             ]
             created_schemas = await db.set_schemas(schema_upserts)
+        except SchemaProtectedError as exc:
+            raise GraphContentConflictError(str(exc)) from exc
         except (SchemaBreakingChangeError, ValueError) as exc:
             raise GraphContentValidationError(str(exc)) from exc
 
@@ -446,6 +449,8 @@ async def update_graph_schemas(
 
         try:
             updated_schemas = await db.set_schemas(schema_upserts)
+        except SchemaProtectedError as exc:
+            raise GraphContentConflictError(str(exc)) from exc
         except SchemaBreakingChangeError as exc:
             raise GraphContentValidationError(
                 f"Breaking schema changes are not supported yet. Use a migration workflow."
@@ -529,6 +534,8 @@ async def delete_graph_schemas(
             raise GraphContentConflictError("; ".join(in_use_messages))
         try:
             await db.delete_schemas(refs)
+        except SchemaProtectedError as exc:
+            raise GraphContentConflictError(str(exc)) from exc
         except SchemaInUseError as exc:
             raise GraphContentConflictError(str(exc)) from exc
         return [GraphSchemaDeleteResult(name=name) for name in clean_names]

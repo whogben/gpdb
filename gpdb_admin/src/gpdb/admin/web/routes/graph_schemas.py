@@ -173,6 +173,17 @@ async def graph_schema_edit_page(
     if isinstance(current_user, RedirectResponse):
         return current_user
 
+    # Prevent editing protected default schemas
+    if schema_name == "__default__":
+        return redirect_with_message(
+            request,
+            "graph_schema_detail_page",
+            graph_id=graph_id,
+            schema_name=schema_name,
+            kind=kind,
+            error="Cannot edit the protected default schema.",
+        )
+
     try:
         details = await require_graph_content_service(request).get_graph_schemas(
             graph_id=graph_id,
@@ -220,6 +231,17 @@ async def graph_schemas_update(
     current_user = await require_authenticated_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
+
+    # Prevent updating protected default schemas
+    if schema_name == "__default__":
+        return redirect_with_message(
+            request,
+            "graph_schema_detail_page",
+            graph_id=graph_id,
+            schema_name=schema_name,
+            kind=kind,
+            error="Cannot update the protected default schema.",
+        )
 
     form_data = {
         "name": schema_name,
@@ -351,6 +373,17 @@ async def graph_schemas_delete(
     current_user = await require_authenticated_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
+
+    # Prevent deleting protected default schemas
+    if schema_name == "__default__":
+        return redirect_with_message(
+            request,
+            "graph_schema_detail_page",
+            graph_id=graph_id,
+            schema_name=schema_name,
+            kind=kind,
+            error="Cannot delete the protected default schema.",
+        )
 
     try:
         deleted = await require_graph_content_service(request).delete_graph_schemas(

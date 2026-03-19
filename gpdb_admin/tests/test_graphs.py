@@ -50,7 +50,7 @@ def test_graph_overview_across_surfaces(admin_test_env):
     response = client.get(f"/graphs/{graph_id}")
     assert response.status_code == 200
     assert "Slice One" in response.text
-    assert "1 registered schema." in response.text
+    assert "3 registered schemas." in response.text
     assert "2 nodes." in response.text
     assert "1 edge." in response.text
 
@@ -71,7 +71,7 @@ def test_graph_overview_across_surfaces(admin_test_env):
     )
     assert response.status_code == 200
     assert response.json()["summary"] == {
-        "schema_count": 1,
+        "schema_count": 3,
         "node_count": 2,
         "edge_count": 1,
     }
@@ -84,7 +84,7 @@ def test_graph_overview_across_surfaces(admin_test_env):
     )
     mcp_result_dict = mcp_result.model_dump()
     assert mcp_result_dict["summary"] == {
-        "schema_count": 1,
+        "schema_count": 3,
         "node_count": 2,
         "edge_count": 1,
     }

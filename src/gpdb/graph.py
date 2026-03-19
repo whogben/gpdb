@@ -22,6 +22,7 @@ from gpdb.models import (
     SchemaKindMismatchError,
     SchemaBreakingChangeError,
     SchemaInUseError,
+    SchemaProtectedError,
     _Base,
     _GPRecord,
     _GPNodeBase,
@@ -132,12 +133,29 @@ class GPGraph(SchemaMixin, NodeMixin, EdgeMixin):
         Create tables for this GPGraph instance's models.
         Idempotent: does nothing if tables already exist.
         """
+        from sqlalchemy.dialects.postgresql import insert
+
         async with self.sqla_engine.begin() as conn:
             # Only create this instance's specific tables
             await conn.run_sync(
                 lambda sync_conn: self._Schema.__table__.create(
                     sync_conn, checkfirst=True
                 )
+            )
+            # Insert default schemas for node and edge kinds
+            await conn.execute(
+                insert(self._Schema).values(
+                    name="__default__",
+                    kind="node",
+                    json_schema={"type": "object"}
+                ).on_conflict_do_nothing()
+            )
+            await conn.execute(
+                insert(self._Schema).values(
+                    name="__default__",
+                    kind="edge",
+                    json_schema={"type": "object"}
+                ).on_conflict_do_nothing()
             )
             await conn.run_sync(
                 lambda sync_conn: self._Node.__table__.create(
@@ -239,6 +257,7 @@ __all__ = [
     "SchemaKindMismatchError",
     "SchemaBreakingChangeError",
     "SchemaInUseError",
+    "SchemaProtectedError",
     # Pydantic models
     "Op",
     "Logic",

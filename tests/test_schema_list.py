@@ -32,8 +32,8 @@ async def test_list_schemas(db: GPGraph):
     assert "schema1" in schemas
     assert "schema2" in schemas
     assert "schema3" in schemas
-    assert set(node_schemas) == {"schema1", "schema2", "schema3"}
-    assert edge_schemas == []
+    assert set(node_schemas) == {"schema1", "schema2", "schema3", "__default__"}
+    assert edge_schemas == ["__default__"]
 
 
 @pytest.mark.asyncio
