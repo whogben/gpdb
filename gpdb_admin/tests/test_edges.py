@@ -275,20 +275,25 @@ def test_graph_edge_browse_and_create_across_surfaces(admin_test_env):
     api_key_value = _extract_revealed_api_key(response.text)
 
     response = client.post(
-        "/api/graph_edge_create",
+        "/api/graph_edges_create",
         json={
             "graph_id": graph_id,
-            "type": "depends_on",
-            "source_id": rest_source_id,
-            "target_id": rest_target_id,
-            "schema_name": "edge_schema",
-            "tags": ["rest"],
-            "data": {"name": "Rest edge"},
+            "edges": [
+                {
+                    "type": "depends_on",
+                    "source_id": rest_source_id,
+                    "target_id": rest_target_id,
+                    "schema_name": "edge_schema",
+                    "tags": ["rest"],
+                    "data": {"name": "Rest edge"},
+                }
+            ],
         },
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
-    rest_created = response.json()
+    rest_created_list = response.json()
+    rest_created = rest_created_list[0]
     assert rest_created["edge"]["type"] == "depends_on"
     assert rest_created["edge"]["schema_name"] == "edge_schema"
     assert rest_created["edge"]["tags"] == ["rest"]
@@ -308,40 +313,48 @@ def test_graph_edge_browse_and_create_across_surfaces(admin_test_env):
     }
 
     response = client.post(
-        "/api/graph_edge_get",
-        json={"graph_id": graph_id, "edge_id": web_edge_id},
+        "/api/graph_edges_get",
+        json={"graph_id": graph_id, "edge_ids": [web_edge_id]},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
-    assert response.json()["edge"]["source_id"] == web_source_id
-    assert response.json()["edge"]["target_id"] == web_target_id
+    web_detail_list = response.json()
+    web_detail = web_detail_list[0]
+    assert web_detail["edge"]["source_id"] == web_source_id
+    assert web_detail["edge"]["target_id"] == web_target_id
 
     mcp_created = _call_persisted_authenticated_mcp_tool(
         manager,
         api_key_value,
-        "graph_edge_create",
+        "graph_edges_create",
         {
             "graph_id": graph_id,
-            "type": "depends_on",
-            "source_id": mcp_source_id,
-            "target_id": mcp_target_id,
-            "schema_name": "edge_schema",
-            "tags": ["mcp", "final"],
-            "data": {"name": "MCP edge"},
+            "edges": [
+                {
+                    "type": "depends_on",
+                    "source_id": mcp_source_id,
+                    "target_id": mcp_target_id,
+                    "schema_name": "edge_schema",
+                    "tags": ["mcp", "final"],
+                    "data": {"name": "MCP edge"},
+                }
+            ],
         },
     )
+    mcp_created = mcp_created[0]
     assert mcp_created.edge.schema_name == "edge_schema"
     assert mcp_created.edge.tags == ["mcp", "final"]
 
     mcp_get = _call_persisted_authenticated_mcp_tool(
         manager,
         api_key_value,
-        "graph_edge_get",
+        "graph_edges_get",
         {
             "graph_id": graph_id,
-            "edge_id": mcp_created.edge.id,
+            "edge_ids": [mcp_created.edge.id],
         },
     )
+    mcp_get = mcp_get[0]
     assert mcp_get.edge.source_id == mcp_source_id
 
     mcp_list = _call_persisted_authenticated_mcp_tool(
@@ -706,48 +719,64 @@ def test_graph_edge_update_and_delete_across_surfaces(admin_test_env):
     api_key_value = _extract_revealed_api_key(response.text)
 
     response = client.post(
-        "/api/graph_edge_update",
+        "/api/graph_edges_update",
         json={
             "graph_id": graph_id,
-            "edge_id": rest_edge_id,
-            "type": "blocks",
-            "source_id": rest_new_source_id,
-            "target_id": rest_new_target_id,
-            "schema_name": "edge_schema",
-            "tags": ["rest", "updated"],
-            "data": {"name": "Rest edge updated", "status": "active"},
+            "updates": [
+                {
+                    "edge_id": rest_edge_id,
+                    "type": "blocks",
+                    "source_id": rest_new_source_id,
+                    "target_id": rest_new_target_id,
+                    "schema_name": "edge_schema",
+                    "tags": ["rest", "updated"],
+                    "data": {"name": "Rest edge updated", "status": "active"},
+                }
+            ],
         },
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
-    assert response.json()["edge"]["type"] == "blocks"
-    assert response.json()["edge"]["source_id"] == rest_new_source_id
-    assert response.json()["edge"]["target_id"] == rest_new_target_id
-    assert response.json()["edge"]["tags"] == ["rest", "updated"]
+    updated_list = response.json()
+    updated = updated_list[0]
+    assert updated["edge"]["type"] == "blocks"
+    assert updated["edge"]["source_id"] == rest_new_source_id
+    assert updated["edge"]["target_id"] == rest_new_target_id
+    assert updated["edge"]["tags"] == ["rest", "updated"]
 
     response = client.post(
-        "/api/graph_edge_delete",
-        json={"graph_id": graph_id, "edge_id": rest_edge_id},
+        "/api/graph_edges_delete",
+        json={"graph_id": graph_id, "edge_ids": [rest_edge_id]},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
-    assert response.json()["edge"]["id"] == rest_edge_id
+    deleted_list = response.json()
+    deleted = deleted_list[0]
+    assert deleted["edge"]["id"] == rest_edge_id
 
     mcp_updated = _call_persisted_authenticated_mcp_tool(
         manager,
         api_key_value,
-        "graph_edge_update",
+        "graph_edges_update",
         {
             "graph_id": graph_id,
-            "edge_id": mcp_edge_id,
-            "type": "blocks",
-            "source_id": mcp_new_source_id,
-            "target_id": mcp_new_target_id,
-            "schema_name": "edge_schema",
-            "tags": ["mcp", "updated"],
-            "data": {"name": "MCP edge updated", "status": "active"},
+            "updates": [
+                {
+                    "edge_id": mcp_edge_id,
+                    "type": "blocks",
+                    "source_id": mcp_new_source_id,
+                    "target_id": mcp_new_target_id,
+                    "schema_name": "edge_schema",
+                    "tags": ["mcp", "updated"],
+                    "data": {
+                        "name": "MCP edge updated",
+                        "status": "active",
+                    },
+                }
+            ],
         },
     )
+    mcp_updated = mcp_updated[0]
     assert mcp_updated.edge.type == "blocks"
     assert mcp_updated.edge.source_id == mcp_new_source_id
     assert mcp_updated.edge.target_id == mcp_new_target_id
@@ -756,9 +785,10 @@ def test_graph_edge_update_and_delete_across_surfaces(admin_test_env):
     mcp_deleted = _call_persisted_authenticated_mcp_tool(
         manager,
         api_key_value,
-        "graph_edge_delete",
-        {"graph_id": graph_id, "edge_id": mcp_edge_id},
+        "graph_edges_delete",
+        {"graph_id": graph_id, "edge_ids": [mcp_edge_id]},
     )
+    mcp_deleted = mcp_deleted[0]
     assert mcp_deleted.edge.id == mcp_edge_id
 
     _login(client)
@@ -834,16 +864,21 @@ def test_edge_partial_update_preserves_omitted_fields(admin_test_env):
 
     # Update only data; omit type, source_id, target_id, tags
     response = client.post(
-        "/api/graph_edge_update",
+        "/api/graph_edges_update",
         json={
             "graph_id": graph_id,
-            "edge_id": edge_id,
-            "data": {"new": True, "updated": True},
+            "updates": [
+                {
+                    "edge_id": edge_id,
+                    "data": {"new": True, "updated": True},
+                }
+            ],
         },
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
-    data = response.json()
+    data_list = response.json()
+    data = data_list[0]
     assert data["edge"]["type"] == "depends_on"
     assert data["edge"]["source_id"] == src_id
     assert data["edge"]["target_id"] == tgt_id

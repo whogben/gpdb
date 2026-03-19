@@ -75,29 +75,40 @@ def test_graph_schema_registry_across_surfaces(admin_test_env):
     api_key_value = _extract_revealed_api_key(response.text)
 
     response = client.post(
-        "/api/graph_schema_create",
+        "/api/graph_schemas_create",
         json={
             "graph_id": graph_id,
-            "name": "rest_schema",
-            "json_schema": _schema_definition("rest schema"),
-            "kind": "node",
+            "schemas": [
+                {
+                    "name": "rest_schema",
+                    "json_schema": _schema_definition("rest schema"),
+                    "kind": "node",
+                }
+            ],
         },
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
-    assert response.json()["schema"]["name"] == "rest_schema"
+    rest_created_list = response.json()
+    rest_created = rest_created_list[0]
+    assert rest_created["schema"]["name"] == "rest_schema"
 
     mcp_created = _call_persisted_authenticated_mcp_tool(
         manager,
         api_key_value,
-        "graph_schema_create",
+        "graph_schemas_create",
         {
             "graph_id": graph_id,
-            "name": "mcp_schema",
-            "json_schema": _schema_definition("mcp schema"),
-            "kind": "node",
+            "schemas": [
+                {
+                    "name": "mcp_schema",
+                    "json_schema": _schema_definition("mcp schema"),
+                    "kind": "node",
+                }
+            ],
         },
     )
+    mcp_created = mcp_created[0]
     assert mcp_created.schema.name == "mcp_schema"
     assert mcp_created.schema.version == "1.0.0"
 
@@ -132,16 +143,20 @@ def test_graph_schema_registry_across_surfaces(admin_test_env):
     }
 
     response = client.post(
-        "/api/graph_schema_get",
-        json={"graph_id": graph_id, "name": "web_schema"},
+        "/api/graph_schemas_get",
+        json={"graph_id": graph_id, "names": ["web_schema"]},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
-    assert response.json()["schema"]["kind"] == "node"
-    assert response.json()["schema"]["usage"] == {
+    web_detail_list = response.json()
+    web_detail = web_detail_list[0]
+    assert web_detail["schema"]["kind"] == "node"
+    assert web_detail["schema"]["usage"] == {
         "node_count": 1,
         "edge_count": 0,
-        "sample_node_ids": [response.json()["schema"]["usage"]["sample_node_ids"][0]],
+        "sample_node_ids": [
+            web_detail["schema"]["usage"]["sample_node_ids"][0]
+        ],
         "sample_edge_ids": [],
     }
 
@@ -156,9 +171,10 @@ def test_graph_schema_registry_across_surfaces(admin_test_env):
     mcp_get = _call_persisted_authenticated_mcp_tool(
         manager,
         api_key_value,
-        "graph_schema_get",
-        {"graph_id": graph_id, "name": "web_schema"},
+        "graph_schemas_get",
+        {"graph_id": graph_id, "names": ["web_schema"]},
     )
+    mcp_get = mcp_get[0]
     assert mcp_get.schema.usage.node_count == 1
     assert mcp_get.schema.usage.edge_count == 0
 
@@ -302,12 +318,16 @@ def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
     api_key_value = _extract_revealed_api_key(response.text)
 
     response = client.post(
-        "/api/graph_schema_create",
+        "/api/graph_schemas_create",
         json={
             "graph_id": graph_id,
-            "name": "rest_schema",
-            "json_schema": _schema_definition("rest schema"),
-            "kind": "node",
+            "schemas": [
+                {
+                    "name": "rest_schema",
+                    "json_schema": _schema_definition("rest schema"),
+                    "kind": "node",
+                }
+            ],
         },
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
@@ -316,14 +336,19 @@ def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
     mcp_created = _call_persisted_authenticated_mcp_tool(
         manager,
         api_key_value,
-        "graph_schema_create",
+        "graph_schemas_create",
         {
             "graph_id": graph_id,
-            "name": "mcp_schema",
-            "json_schema": _schema_definition("mcp schema"),
-            "kind": "node",
+            "schemas": [
+                {
+                    "name": "mcp_schema",
+                    "json_schema": _schema_definition("mcp schema"),
+                    "kind": "node",
+                }
+            ],
         },
     )
+    mcp_created = mcp_created[0]
     assert mcp_created.schema.name == "mcp_schema"
 
     _login(client)
@@ -384,8 +409,8 @@ def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
         },
     )
     assert response.status_code == 200
-    assert "Breaking schema changes are not supported here yet." in response.text
-    assert "Use a migration workflow for schema &#39;web_schema&#39;." in response.text
+    assert "Breaking schema changes are not supported yet." in response.text
+    assert "Use a migration workflow." in response.text
 
     response = client.post(
         f"/graphs/{graph_id}/schemas/web_schema/delete",
@@ -407,54 +432,65 @@ def test_graph_schema_update_and_delete_across_surfaces(admin_test_env):
     )
 
     response = client.post(
-        "/api/graph_schema_update",
+        "/api/graph_schemas_update",
         json={
             "graph_id": graph_id,
-            "name": "rest_schema",
-            "json_schema": _schema_definition(
-                "rest schema updated",
-                include_optional_status=True,
-            ),
-            "kind": "node",
+            "schemas": [
+                {
+                    "name": "rest_schema",
+                    "json_schema": _schema_definition(
+                        "rest schema updated",
+                        include_optional_status=True,
+                    ),
+                    "kind": "node",
+                }
+            ],
         },
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
-    assert response.json()["schema"]["version"] == "1.1.0"
-    assert (
-        response.json()["schema"]["json_schema"]["properties"]["status"]["type"]
-        == "string"
-    )
+    updated_list = response.json()
+    updated = updated_list[0]
+    assert updated["schema"]["version"] == "1.1.0"
+    assert updated["schema"]["json_schema"]["properties"]["status"]["type"] == "string"
 
     response = client.post(
-        "/api/graph_schema_delete",
-        json={"graph_id": graph_id, "name": "rest_schema"},
+        "/api/graph_schemas_delete",
+        json={"graph_id": graph_id, "names": ["rest_schema"]},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
-    assert response.json()["schema"]["name"] == "rest_schema"
+    deleted_list = response.json()
+    deleted = deleted_list[0]
+    assert deleted["schema"]["name"] == "rest_schema"
 
     mcp_updated = _call_persisted_authenticated_mcp_tool(
         manager,
         api_key_value,
-        "graph_schema_update",
+        "graph_schemas_update",
         {
             "graph_id": graph_id,
-            "name": "mcp_schema",
-            "json_schema": _schema_definition(
-                "mcp schema updated",
-                include_optional_status=True,
-            ),
+            "schemas": [
+                {
+                    "name": "mcp_schema",
+                    "json_schema": _schema_definition(
+                        "mcp schema updated",
+                        include_optional_status=True,
+                    ),
+                }
+            ],
         },
     )
+    mcp_updated = mcp_updated[0]
     assert mcp_updated.schema.version == "1.1.0"
 
     mcp_deleted = _call_persisted_authenticated_mcp_tool(
         manager,
         api_key_value,
-        "graph_schema_delete",
-        {"graph_id": graph_id, "name": "mcp_schema"},
+        "graph_schemas_delete",
+        {"graph_id": graph_id, "names": ["mcp_schema"]},
     )
+    mcp_deleted = mcp_deleted[0]
     assert mcp_deleted.schema.name == "mcp_schema"
 
     _login(client)
@@ -502,7 +538,7 @@ def test_graph_schema_delete_missing_translates_to_not_found(admin_test_env):
         follow_redirects=True,
     )
     assert response.status_code == 200
-    assert "was not found" in response.text
+    assert "not found" in response.text
 
 
 def test_schema_partial_update_preserves_omitted_fields(admin_test_env):
@@ -544,36 +580,49 @@ def test_schema_partial_update_preserves_omitted_fields(admin_test_env):
     api_key_value = _extract_revealed_api_key(response.text)
 
     response = client.post(
-        "/api/graph_schema_create",
+        "/api/graph_schemas_create",
         json={
             "graph_id": graph_id,
-            "name": "partial_kind_schema",
-            "json_schema": _schema_definition("original"),
-            "kind": "node",
+            "schemas": [
+                {
+                    "name": "partial_kind_schema",
+                    "json_schema": _schema_definition("original"),
+                    "kind": "node",
+                }
+            ],
         },
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
-    assert response.json()["schema"]["kind"] == "node"
+    created_list = response.json()
+    created = created_list[0]
+    assert created["schema"]["kind"] == "node"
 
     # Update only json_schema; omit kind so it is preserved
     response = client.post(
-        "/api/graph_schema_update",
+        "/api/graph_schemas_update",
         json={
             "graph_id": graph_id,
-            "name": "partial_kind_schema",
-            "json_schema": _schema_definition(
-                "updated description",
-                include_optional_status=True,
-            ),
+            "schemas": [
+                {
+                    "name": "partial_kind_schema",
+                    "json_schema": _schema_definition(
+                        "updated description",
+                        include_optional_status=True,
+                    ),
+                }
+            ],
         },
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
-    data = response.json()
-    assert data["schema"]["kind"] == "node"
-    assert data["schema"]["json_schema"]["description"] == "updated description"
-    assert "status" in data["schema"]["json_schema"]["properties"]
+    updated_list = response.json()
+    updated = updated_list[0]
+    assert updated["schema"]["kind"] == "node"
+    assert (
+        updated["schema"]["json_schema"]["description"] == "updated description"
+    )
+    assert "status" in updated["schema"]["json_schema"]["properties"]
 
 
 def _bootstrap_owner(client: TestClient) -> None:

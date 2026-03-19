@@ -14,13 +14,20 @@ from gpdb.admin.graph_content import (
     GraphDetail,
     GraphEdgeDetail,
     GraphEdgeList,
+    GraphEdgeCreateParam,
     GraphList,
+    GraphNodeCreateParam,
     GraphNodeDetail,
     GraphNodeList,
     GraphNodePayload,
+    GraphNodePayloadSetParam,
     GraphOverview,
+    GraphNodeUpdateParam,
+    GraphEdgeUpdateParam,
     GraphSchemaDetail,
     GraphSchemaList,
+    GraphSchemaCreateParam,
+    GraphSchemaUpdateParam,
     InstanceDetail,
     InstanceList,
 )
@@ -28,6 +35,11 @@ from gpdb.admin.tools.base import (
     CLI_ALIAS_JSON_RENDERER,
     GRAPH_TOOL_ACCESS,
     _graph_surface_specs,
+)
+from gpdb.query_docs import (
+    EDGE_LIST_SORT_DESCRIPTION,
+    FILTER_DSL_DESCRIPTION,
+    NODE_LIST_SORT_DESCRIPTION,
 )
 
 
@@ -38,6 +50,15 @@ class GraphSchemaCreateParams(BaseModel):
     name: str = Field(..., description="Schema name.")
     json_schema: dict[str, object] = Field(..., description="JSON Schema object.")
     kind: str = Field(default="node", description="Schema kind: node or edge.")
+
+
+class GraphSchemasCreateParams(BaseModel):
+    """Parameters for creating multiple graph schemas."""
+
+    graph_id: str = Field(..., description="Graph ID.")
+    schemas: list[GraphSchemaCreateParam] = Field(
+        ..., description="List of schema create parameters."
+    )
 
 
 class GraphIdParams(BaseModel):
@@ -67,8 +88,21 @@ class GraphSchemaGetParams(SchemaIdentifierParams):
     """Parameters for getting a graph schema."""
 
 
+class GraphSchemasGetParams(BaseModel):
+    """Parameters for getting multiple graph schemas."""
+
+    graph_id: str = Field(..., description="Graph ID.")
+    names: list[str] = Field(..., description="List of schema names.")
+
+
 class GraphSchemaDeleteParams(SchemaIdentifierParams):
     """Parameters for deleting a graph schema."""
+
+class GraphSchemasDeleteParams(BaseModel):
+    """Parameters for deleting multiple graph schemas."""
+
+    graph_id: str = Field(..., description="Graph ID.")
+    names: list[str] = Field(..., description="List of schema names to delete.")
 
 
 class InstanceIdParams(BaseModel):
@@ -130,24 +164,66 @@ class EdgeIdParams(BaseModel):
     edge_id: str = Field(..., description="Edge ID.")
 
 
-class NodeGetParams(NodeIdParams):
-    """Parameters for getting a graph node."""
+
+class GraphNodesGetParams(BaseModel):
+    """Parameters for getting multiple graph nodes."""
+
+    graph_id: str = Field(..., description="Graph ID.")
+    node_ids: list[str] = Field(..., description="List of node IDs.")
+
+
+class GraphNodesCreateParams(BaseModel):
+    """Parameters for creating multiple graph nodes."""
+
+    graph_id: str = Field(..., description="Graph ID.")
+    nodes: list[GraphNodeCreateParam] = Field(
+        ..., description="List of node create parameters."
+    )
+
+
+class GraphNodesUpdateParams(BaseModel):
+    """Parameters for updating multiple graph nodes."""
+
+    graph_id: str = Field(..., description="Graph ID.")
+    nodes: list[GraphNodeUpdateParam] = Field(
+        ..., description="List of node update parameters."
+    )
+
+
+class GraphNodesDeleteParams(BaseModel):
+    """Parameters for deleting multiple graph nodes."""
+
+    graph_id: str = Field(..., description="Graph ID.")
+    node_ids: list[str] = Field(..., description="List of node ids to delete.")
 
 
 class NodeDeleteParams(NodeIdParams):
     """Parameters for deleting a graph node."""
 
 
-class NodePayloadGetParams(NodeIdParams):
-    """Parameters for getting a graph node payload."""
+class GraphNodePayloadsGetParams(BaseModel):
+    """Parameters for getting multiple graph node payloads."""
+
+    graph_id: str = Field(..., description="Graph ID.")
+    node_ids: list[str] = Field(..., description="List of node IDs.")
 
 
-class NodePayloadSetParams(NodeIdParams):
-    """Parameters for setting a graph node payload."""
+class GraphNodePayloadSetItemParams(BaseModel):
+    """Parameters for setting one node payload within a bulk request."""
 
+    node_id: str = Field(..., description="Node ID.")
     payload_base64: str = Field(..., description="Base64-encoded payload data.")
     payload_mime: str = Field(default="", description="MIME type of the payload.")
     payload_filename: str = Field(default="", description="Filename for the payload.")
+
+
+class GraphNodePayloadsSetParams(BaseModel):
+    """Parameters for setting multiple graph node payloads."""
+
+    graph_id: str = Field(..., description="Graph ID.")
+    payloads: list[GraphNodePayloadSetItemParams] = Field(
+        ..., description="List of node payload set operations."
+    )
 
 
 class EdgeGetParams(EdgeIdParams):
@@ -166,10 +242,21 @@ class EdgeListParams(BaseModel):
     schema_name: str = Field(default="", description="Filter by schema name.")
     source_id: str = Field(default="", description="Filter by source node ID.")
     target_id: str = Field(default="", description="Filter by target node ID.")
-    filter: str = Field(default="", description="Filter DSL string.")
+    filter: str = Field(
+        default="",
+        description=(
+            "gpdb filter DSL string. If non-empty, this overrides the structured "
+            "filters (`type`, `schema_name`, `source_id`, `target_id`). When empty, "
+            "those structured filters are used instead.\n\n"
+            f"{FILTER_DSL_DESCRIPTION}"
+        ),
+    )
     limit: int = Field(default=50, description="Maximum number of results to return.")
     offset: int = Field(default=0, description="Number of results to skip.")
-    sort: str = Field(default="created_at_desc", description="Sort order.")
+    sort: str = Field(
+        default="created_at_desc",
+        description=EDGE_LIST_SORT_DESCRIPTION,
+    )
 
 
 class EdgeCreateParams(BaseModel):
@@ -197,6 +284,38 @@ class EdgeUpdateParams(BaseModel):
     tags: list[str] | None = Field(None, description="Edge tags.")
 
 
+class GraphEdgesGetParams(BaseModel):
+    """Parameters for getting multiple graph edges."""
+
+    graph_id: str = Field(..., description="Graph ID.")
+    edge_ids: list[str] = Field(..., description="List of edge IDs.")
+
+
+class GraphEdgesCreateParams(BaseModel):
+    """Parameters for creating multiple graph edges."""
+
+    graph_id: str = Field(..., description="Graph ID.")
+    edges: list[GraphEdgeCreateParam] = Field(
+        ..., description="List of edge create parameters."
+    )
+
+
+class GraphEdgesUpdateParams(BaseModel):
+    """Parameters for updating multiple graph edges."""
+
+    graph_id: str = Field(..., description="Graph ID.")
+    updates: list[GraphEdgeUpdateParam] = Field(
+        ..., description="List of edge update parameters."
+    )
+
+
+class GraphEdgesDeleteParams(BaseModel):
+    """Parameters for deleting multiple graph edges."""
+
+    graph_id: str = Field(..., description="Graph ID.")
+    edge_ids: list[str] = Field(..., description="List of edge ids to delete.")
+
+
 class NodeListParams(BaseModel):
     """Parameters for listing graph nodes."""
 
@@ -204,10 +323,21 @@ class NodeListParams(BaseModel):
     type: str = Field(default="", description="Filter by node type.")
     schema_name: str = Field(default="", description="Filter by schema name.")
     parent_id: str = Field(default="", description="Filter by parent node ID.")
-    filter: str = Field(default="", description="Filter DSL string.")
+    filter: str = Field(
+        default="",
+        description=(
+            "gpdb filter DSL string. If non-empty, this overrides the structured "
+            "filters (`type`, `schema_name`, `parent_id`). When empty, those "
+            "structured filters are used instead.\n\n"
+            f"{FILTER_DSL_DESCRIPTION}"
+        ),
+    )
     limit: int = Field(default=50, description="Maximum number of results to return.")
     offset: int = Field(default=0, description="Number of results to skip.")
-    sort: str = Field(default="created_at_desc", description="Sort order.")
+    sort: str = Field(
+        default="created_at_desc",
+        description=NODE_LIST_SORT_DESCRIPTION,
+    )
 
 
 class NodeCreateParams(BaseModel):
@@ -255,12 +385,10 @@ class GraphListParams(BaseModel):
 
 
 class GraphSchemaUpdateParams(BaseModel):
-    """Parameters for updating one graph schema. Omitted fields are left unchanged."""
+    """Parameters for updating multiple graph schemas. Omitted fields are left unchanged."""
 
     graph_id: str = Field(..., description="Graph ID.")
-    name: str = Field(..., description="Schema name.")
-    json_schema: dict[str, object] | None = Field(None, description="JSON Schema object.")
-    kind: str | None = Field(None, description="Schema kind: node or edge.")
+    schemas: list[GraphSchemaUpdateParam] = Field(..., description="List of schema update parameters.")
 
 
 class GraphCreateParams(BaseModel):
@@ -326,83 +454,77 @@ def _build_graph_content_service(services: AdminServices) -> ToolService:
         )
 
     @service.tool(
-        name="graph_schema_get",
+        name="graph_schemas_get",
         surfaces=_graph_surface_specs(cli_renderer=CLI_ALIAS_JSON_RENDERER),
         access=GRAPH_TOOL_ACCESS,
     )
-    async def graph_schema_get(
-        params: GraphSchemaGetParams,
+    async def graph_schemas_get(
+        params: GraphSchemasGetParams,
         ctx: InvocationContext = inject_context(),
-    ) -> GraphSchemaDetail:
-        """Return one graph schema for the authenticated caller."""
+    ) -> list[GraphSchemaDetail]:
+        """Return multiple graph schemas for the authenticated caller."""
         return await _call_graph_content_from_context(
             services,
-            "get_graph_schema",
+            "get_graph_schemas",
             ctx,
             graph_id=params.graph_id,
-            name=params.name,
+            names=params.names,
         )
 
     @service.tool(
-        name="graph_schema_create",
+        name="graph_schemas_create",
         surfaces=_graph_surface_specs(cli_renderer=CLI_ALIAS_JSON_RENDERER),
         access=GRAPH_TOOL_ACCESS,
     )
-    async def graph_schema_create(
-        params: GraphSchemaCreateParams,
+    async def graph_schemas_create(
+        params: GraphSchemasCreateParams,
         ctx: InvocationContext = inject_context(),
-    ) -> GraphSchemaDetail:
-        """Create one graph schema for the authenticated caller."""
+    ) -> list[GraphSchemaDetail]:
+        """Create multiple graph schemas for the authenticated caller."""
         return await _call_graph_content_from_context(
             services,
-            "create_graph_schema",
+            "create_graph_schemas",
             ctx,
             graph_id=params.graph_id,
-            name=params.name,
-            json_schema=params.json_schema,
-            kind=params.kind,
+            schemas=params.schemas,
         )
 
     @service.tool(
-        name="graph_schema_update",
+        name="graph_schemas_update",
         surfaces=_graph_surface_specs(cli_renderer=CLI_ALIAS_JSON_RENDERER),
         access=GRAPH_TOOL_ACCESS,
     )
-    async def graph_schema_update(
+    async def graph_schemas_update(
         params: GraphSchemaUpdateParams,
         ctx: InvocationContext = inject_context(),
-    ) -> GraphSchemaDetail:
-        """Update one graph schema for the authenticated caller."""
+    ) -> list[GraphSchemaDetail]:
+        """Update multiple graph schemas for the authenticated caller."""
         return await _call_graph_content_from_context(
             services,
-            "update_graph_schema",
+            "update_graph_schemas",
             ctx,
             graph_id=params.graph_id,
-            name=params.name,
-            json_schema=params.json_schema,
-            kind=params.kind,
+            schemas=params.schemas,
         )
 
     @service.tool(
-        name="graph_schema_delete",
+        name="graph_schemas_delete",
         surfaces=_graph_surface_specs(cli_renderer=CLI_ALIAS_JSON_RENDERER),
         access=GRAPH_TOOL_ACCESS,
     )
-    async def graph_schema_delete(
-        params: GraphSchemaDeleteParams,
+    async def graph_schemas_delete(
+        params: GraphSchemasDeleteParams,
         ctx: InvocationContext = inject_context(),
-    ) -> GraphSchemaDetail:
-        """Delete one graph schema for the authenticated caller."""
+    ) -> list[GraphSchemaDetail]:
+        """Delete multiple graph schemas for the authenticated caller."""
         deleted = await _call_graph_content_from_context(
             services,
             "delete_graph_schemas",
             ctx,
             graph_id=params.graph_id,
-            names=[params.name],
+            names=params.names,
         )
-        if len(deleted) != 1:
-            raise RuntimeError("Expected exactly one schema to be deleted")
-        return deleted[0]
+        return deleted
 
     @service.tool(
         name="instance_list",
@@ -616,142 +738,120 @@ def _build_graph_content_service(services: AdminServices) -> ToolService:
         )
 
     @service.tool(
-        name="graph_node_get",
+        name="graph_nodes_get",
         surfaces=_graph_surface_specs(cli_renderer=CLI_ALIAS_JSON_RENDERER),
         access=GRAPH_TOOL_ACCESS,
     )
-    async def graph_node_get(
-        params: NodeGetParams,
+    async def graph_nodes_get(
+        params: GraphNodesGetParams,
         ctx: InvocationContext = inject_context(),
-    ) -> GraphNodeDetail:
-        """Return one graph node for the authenticated caller."""
+    ) -> list[GraphNodeDetail]:
+        """Return multiple graph nodes for the authenticated caller."""
         return await _call_graph_content_from_context(
             services,
-            "get_graph_node",
+            "get_graph_nodes",
             ctx,
             graph_id=params.graph_id,
-            node_id=params.node_id,
+            node_ids=params.node_ids,
         )
 
     @service.tool(
-        name="graph_node_create",
+        name="graph_nodes_create",
         surfaces=_graph_surface_specs(cli_renderer=CLI_ALIAS_JSON_RENDERER),
         access=GRAPH_TOOL_ACCESS,
     )
-    async def graph_node_create(
-        params: NodeCreateParams,
+    async def graph_nodes_create(
+        params: GraphNodesCreateParams,
         ctx: InvocationContext = inject_context(),
-    ) -> GraphNodeDetail:
-        """Create one graph node for the authenticated caller."""
+    ) -> list[GraphNodeDetail]:
+        """Create multiple graph nodes for the authenticated caller."""
         return await _call_graph_content_from_context(
             services,
-            "create_graph_node",
+            "create_graph_nodes",
             ctx,
             graph_id=params.graph_id,
-            type=params.type,
-            name=params.name,
-            schema_name=params.schema_name,
-            owner_id=params.owner_id,
-            parent_id=params.parent_id,
-            tags=params.tags,
-            data=params.data,
-            payload=(
-                base64.b64decode(params.payload_base64)
-                if params.payload_base64
-                else None
-            ),
-            payload_mime=params.payload_mime,
-            payload_filename=params.payload_filename,
+            nodes=params.nodes,
         )
 
     @service.tool(
-        name="graph_node_update",
+        name="graph_nodes_update",
         surfaces=_graph_surface_specs(cli_renderer=CLI_ALIAS_JSON_RENDERER),
         access=GRAPH_TOOL_ACCESS,
     )
-    async def graph_node_update(
-        params: NodeUpdateParams,
+    async def graph_nodes_update(
+        params: GraphNodesUpdateParams,
         ctx: InvocationContext = inject_context(),
-    ) -> GraphNodeDetail:
-        """Update one graph node for the authenticated caller."""
+    ) -> list[GraphNodeDetail]:
+        """Update multiple graph nodes for the authenticated caller."""
         return await _call_graph_content_from_context(
             services,
-            "update_graph_node",
+            "update_graph_nodes",
             ctx,
             graph_id=params.graph_id,
-            node_id=params.node_id,
-            type=params.type,
-            name=params.name,
-            schema_name=params.schema_name,
-            owner_id=params.owner_id,
-            parent_id=params.parent_id,
-            tags=params.tags,
-            data=params.data,
-            payload=(
-                base64.b64decode(params.payload_base64)
-                if params.payload_base64
-                else None
-            ),
-            payload_mime=params.payload_mime,
-            payload_filename=params.payload_filename,
-            clear_payload=params.clear_payload,
+            updates=params.nodes,
         )
 
     @service.tool(
-        name="graph_node_delete",
+        name="graph_nodes_delete",
         surfaces=_graph_surface_specs(cli_renderer=CLI_ALIAS_JSON_RENDERER),
         access=GRAPH_TOOL_ACCESS,
     )
-    async def graph_node_delete(
-        params: NodeDeleteParams,
+    async def graph_nodes_delete(
+        params: GraphNodesDeleteParams,
         ctx: InvocationContext = inject_context(),
-    ) -> GraphNodeDetail:
-        """Delete one graph node for the authenticated caller."""
+    ) -> list[GraphNodeDetail]:
+        """Delete multiple graph nodes for the authenticated caller."""
         return await _call_graph_content_from_context(
             services,
-            "delete_graph_node",
+            "delete_graph_nodes",
             ctx,
             graph_id=params.graph_id,
-            node_id=params.node_id,
+            node_ids=params.node_ids,
         )
 
     @service.tool(
-        name="graph_node_payload_get",
+        name="graph_node_payloads_get",
         surfaces=_graph_surface_specs(cli_renderer=CLI_ALIAS_JSON_RENDERER),
         access=GRAPH_TOOL_ACCESS,
     )
-    async def graph_node_payload_get(
-        params: NodePayloadGetParams,
+    async def graph_node_payloads_get(
+        params: GraphNodePayloadsGetParams,
         ctx: InvocationContext = inject_context(),
-    ) -> GraphNodePayload:
-        """Return one graph node payload for the authenticated caller."""
+    ) -> list[GraphNodePayload]:
+        """Return multiple graph node payloads for the authenticated caller."""
         return await _call_graph_content_from_context(
             services,
-            "get_graph_node_payload",
+            "get_graph_node_payloads",
             ctx,
             graph_id=params.graph_id,
-            node_id=params.node_id,
+            node_ids=params.node_ids,
         )
 
     @service.tool(
-        name="graph_node_payload_set",
+        name="graph_node_payloads_set",
         surfaces=_graph_surface_specs(cli_renderer=CLI_ALIAS_JSON_RENDERER),
         access=GRAPH_TOOL_ACCESS,
     )
-    async def graph_node_payload_set(
-        params: NodePayloadSetParams,
+    async def graph_node_payloads_set(
+        params: GraphNodePayloadsSetParams,
         ctx: InvocationContext = inject_context(),
-    ) -> GraphNodeDetail:
-        """Set one graph node payload for the authenticated caller."""
+    ) -> list[GraphNodeDetail]:
+        """Set multiple graph node payloads for the authenticated caller."""
+        payloads = [
+            GraphNodePayloadSetParam(
+                node_id=item.node_id,
+                payload=base64.b64decode(item.payload_base64),
+                mime=item.payload_mime,
+                payload_filename=item.payload_filename,
+            )
+            for item in params.payloads
+        ]
         return await _call_graph_content_from_context(
             services,
-            "set_graph_node_payload",
+            "set_graph_node_payloads",
             ctx,
             graph_id=params.graph_id,
-            node_id=params.node_id,
-            payload=base64.b64decode(params.payload_base64),
-            mime=params.payload_mime,
-            payload_filename=params.payload_filename,
+            payloads=payloads,
         )
 
     @service.tool(
@@ -780,86 +880,75 @@ def _build_graph_content_service(services: AdminServices) -> ToolService:
         )
 
     @service.tool(
-        name="graph_edge_get",
+        name="graph_edges_get",
         surfaces=_graph_surface_specs(cli_renderer=CLI_ALIAS_JSON_RENDERER),
         access=GRAPH_TOOL_ACCESS,
     )
-    async def graph_edge_get(
-        params: EdgeGetParams,
+    async def graph_edges_get(
+        params: GraphEdgesGetParams,
         ctx: InvocationContext = inject_context(),
-    ) -> GraphEdgeDetail:
-        """Return one graph edge for the authenticated caller."""
+    ) -> list[GraphEdgeDetail]:
+        """Return multiple graph edges for the authenticated caller."""
         return await _call_graph_content_from_context(
             services,
-            "get_graph_edge",
+            "get_graph_edges",
             ctx,
             graph_id=params.graph_id,
-            edge_id=params.edge_id,
+            edge_ids=params.edge_ids,
         )
 
     @service.tool(
-        name="graph_edge_create",
+        name="graph_edges_create",
         surfaces=_graph_surface_specs(cli_renderer=CLI_ALIAS_JSON_RENDERER),
         access=GRAPH_TOOL_ACCESS,
     )
-    async def graph_edge_create(
-        params: EdgeCreateParams,
+    async def graph_edges_create(
+        params: GraphEdgesCreateParams,
         ctx: InvocationContext = inject_context(),
-    ) -> GraphEdgeDetail:
-        """Create one graph edge for the authenticated caller."""
+    ) -> list[GraphEdgeDetail]:
+        """Create multiple graph edges for the authenticated caller."""
         return await _call_graph_content_from_context(
             services,
-            "create_graph_edge",
+            "create_graph_edges",
             ctx,
             graph_id=params.graph_id,
-            type=params.type,
-            source_id=params.source_id,
-            target_id=params.target_id,
-            schema_name=params.schema_name,
-            tags=params.tags,
-            data=params.data,
+            edges=params.edges,
         )
 
     @service.tool(
-        name="graph_edge_update",
+        name="graph_edges_update",
         surfaces=_graph_surface_specs(cli_renderer=CLI_ALIAS_JSON_RENDERER),
         access=GRAPH_TOOL_ACCESS,
     )
-    async def graph_edge_update(
-        params: EdgeUpdateParams,
+    async def graph_edges_update(
+        params: GraphEdgesUpdateParams,
         ctx: InvocationContext = inject_context(),
-    ) -> GraphEdgeDetail:
-        """Update one graph edge for the authenticated caller."""
+    ) -> list[GraphEdgeDetail]:
+        """Update multiple graph edges for the authenticated caller."""
         return await _call_graph_content_from_context(
             services,
-            "update_graph_edge",
+            "update_graph_edges",
             ctx,
             graph_id=params.graph_id,
-            edge_id=params.edge_id,
-            type=params.type,
-            source_id=params.source_id,
-            target_id=params.target_id,
-            schema_name=params.schema_name,
-            tags=params.tags,
-            data=params.data,
+            updates=params.updates,
         )
 
     @service.tool(
-        name="graph_edge_delete",
+        name="graph_edges_delete",
         surfaces=_graph_surface_specs(cli_renderer=CLI_ALIAS_JSON_RENDERER),
         access=GRAPH_TOOL_ACCESS,
     )
-    async def graph_edge_delete(
-        params: EdgeDeleteParams,
+    async def graph_edges_delete(
+        params: GraphEdgesDeleteParams,
         ctx: InvocationContext = inject_context(),
-    ) -> GraphEdgeDetail:
-        """Delete one graph edge for the authenticated caller."""
+    ) -> list[GraphEdgeDetail]:
+        """Delete multiple graph edges for the authenticated caller."""
         return await _call_graph_content_from_context(
             services,
-            "delete_graph_edge",
+            "delete_graph_edges",
             ctx,
             graph_id=params.graph_id,
-            edge_id=params.edge_id,
+            edge_ids=params.edge_ids,
         )
 
     return service

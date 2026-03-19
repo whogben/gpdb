@@ -106,7 +106,7 @@
           href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_edit_page', graph_id=current_graph.id, schema_name=schema_detail.schema.name) }}">Edit
           schema</a>
         <form class="inline-form"
-          action="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_delete', graph_id=current_graph.id, schema_name=schema_detail.schema.name) }}"
+          action="{{ mount_prefix }}{{ web_app.url_path_for('graph_schemas_delete', graph_id=current_graph.id, schema_name=schema_detail.schema.name) }}"
           method="post">
           <button class="button button-danger" type="submit" {% if schema_detail.schema.usage.node_count or
             schema_detail.schema.usage.edge_count %}disabled{% endif %}>Delete schema</button>

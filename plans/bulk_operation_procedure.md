@@ -118,16 +118,16 @@ After you update the GPDB implementation, find all places that were calling the 
 
 Locate the tool or tools that wrap the underlying GPDB method and make it available.
 
-For example, if we just updated gpdb's graph.py `set_schema(..)` method, turning it into `set_schemas(..)`, then we will need to update both `update_graph_schema` and `create_graph_schema` in graph_content.py service.
+For example, if we just updated gpdb's graph.py `set_schema(..)` method, turning it into `set_schemas(..)`, then we will need to update both `update_graph_schemas` and `create_graph_schemas` in graph_content.py service.
 
 
 ### If Needed, Extract Service Arguments into a Pydantic Model
 
 Some service methods have individual named arguments, instead of wrapping them in a schema. This doesn't work for bulk updating, and so the args must first be extracted into a Pydantic object, before the method can be modified to accept a list of them.
 
-For example with create_graph_schema, the initial signature is:
+For example with create_graph_schemas, the initial signature is:
 ```python
-async def create_graph_schema(
+async def create_graph_schemas(
     self,
     *,
     graph_id: str,
@@ -146,7 +146,7 @@ class GraphSchemaCreateParam(BaseModel):
     json_schema: dict[str, Any] = Field(..)
     kind: str = Field(default="node")
 
-async def create_graph_schema(
+async def create_graph_schemas(
     self,
     *,
     graph_id: str,

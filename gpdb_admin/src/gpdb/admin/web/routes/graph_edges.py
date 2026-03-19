@@ -7,7 +7,11 @@ import json
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from gpdb.admin.graph_content import GraphContentError
+from gpdb.admin.graph_content import (
+    GraphContentError,
+    GraphEdgeCreateParam,
+    GraphEdgeUpdateParam,
+)
 from gpdb.admin.web.routes.common import (
     get_admin_store,
     redirect_with_message,
@@ -148,8 +152,8 @@ async def graph_edge_create_page(request: Request, graph_id: str) -> HTMLRespons
     )
 
 
-@router.post("/graphs/{graph_id}/edges", name="graph_edge_create")
-async def graph_edge_create(
+@router.post("/graphs/{graph_id}/edges", name="graph_edges_create")
+async def graph_edges_create(
     request: Request,
     graph_id: str,
     type: str = Form(...),
@@ -184,16 +188,21 @@ async def graph_edge_create(
         )
 
     try:
-        created = await require_graph_content_service(request).create_graph_edge(
+        created_list = await require_graph_content_service(request).create_graph_edges(
             graph_id=graph_id,
-            type=form_data["type"],
-            source_id=form_data["source_id"],
-            target_id=form_data["target_id"],
-            schema_name=form_data["schema_name"],
-            tags=_parse_tags_text(form_data["tags"]),
-            data=parsed_data,
+            edges=[
+                GraphEdgeCreateParam(
+                    type=form_data["type"],
+                    source_id=form_data["source_id"],
+                    target_id=form_data["target_id"],
+                    schema_name=form_data["schema_name"],
+                    tags=_parse_tags_text(form_data["tags"]),
+                    data=parsed_data,
+                )
+            ],
             current_user=current_user,
         )
+        created = created_list[0]
     except GraphContentError as exc:
         return await _render_graph_edge_form(
             request,
@@ -229,11 +238,12 @@ async def graph_edge_edit_page(
 
     try:
         graph_content = require_graph_content_service(request)
-        detail = await graph_content.get_graph_edge(
+        detail_list = await graph_content.get_graph_edges(
             graph_id=graph_id,
-            edge_id=edge_id,
+            edge_ids=[edge_id],
             current_user=current_user,
         )
+        detail = detail_list[0]
     except GraphContentError as exc:
         return redirect_with_message(
             request,
@@ -259,8 +269,8 @@ async def graph_edge_edit_page(
     )
 
 
-@router.post("/graphs/{graph_id}/edges/{edge_id}", name="graph_edge_update")
-async def graph_edge_update(
+@router.post("/graphs/{graph_id}/edges/{edge_id}", name="graph_edges_update")
+async def graph_edges_update(
     request: Request,
     graph_id: str,
     edge_id: str,
@@ -297,17 +307,22 @@ async def graph_edge_update(
         )
 
     try:
-        updated = await require_graph_content_service(request).update_graph_edge(
+        updated_list = await require_graph_content_service(request).update_graph_edges(
             graph_id=graph_id,
-            edge_id=edge_id,
-            type=form_data["type"],
-            source_id=form_data["source_id"],
-            target_id=form_data["target_id"],
-            schema_name=form_data["schema_name"],
-            tags=_parse_tags_text(form_data["tags"]),
-            data=parsed_data,
+            updates=[
+                GraphEdgeUpdateParam(
+                    edge_id=edge_id,
+                    type=form_data["type"],
+                    source_id=form_data["source_id"],
+                    target_id=form_data["target_id"],
+                    schema_name=form_data["schema_name"],
+                    tags=_parse_tags_text(form_data["tags"]),
+                    data=parsed_data,
+                )
+            ],
             current_user=current_user,
         )
+        updated = updated_list[0]
     except GraphContentError as exc:
         return await _render_graph_edge_form(
             request,
@@ -344,22 +359,24 @@ async def graph_edge_detail_page(
 
     try:
         graph_content = require_graph_content_service(request)
-        detail = await graph_content.get_graph_edge(
+        detail_list = await graph_content.get_graph_edges(
             graph_id=graph_id,
-            edge_id=edge_id,
+            edge_ids=[edge_id],
             current_user=current_user,
         )
+        detail = detail_list[0]
         overview = await graph_content.get_graph_overview(
             graph_id=graph_id,
             current_user=current_user,
         )
         schema_json = None
         if detail.edge.schema_name:
-            schema_detail = await graph_content.get_graph_schema(
+            schema_details = await graph_content.get_graph_schemas(
                 graph_id=graph_id,
-                name=detail.edge.schema_name,
+                names=[detail.edge.schema_name],
                 current_user=current_user,
             )
+            schema_detail = schema_details[0]
             schema_json = schema_detail.schema.json_schema
     except GraphContentError as exc:
         return redirect_with_message(
@@ -386,8 +403,8 @@ async def graph_edge_detail_page(
     )
 
 
-@router.post("/graphs/{graph_id}/edges/{edge_id}/delete", name="graph_edge_delete")
-async def graph_edge_delete(
+@router.post("/graphs/{graph_id}/edges/{edge_id}/delete", name="graph_edges_delete")
+async def graph_edges_delete(
     request: Request,
     graph_id: str,
     edge_id: str,
@@ -398,11 +415,12 @@ async def graph_edge_delete(
         return current_user
 
     try:
-        deleted = await require_graph_content_service(request).delete_graph_edge(
+        deleted_list = await require_graph_content_service(request).delete_graph_edges(
             graph_id=graph_id,
-            edge_id=edge_id,
+            edge_ids=[edge_id],
             current_user=current_user,
         )
+        deleted = deleted_list[0]
     except GraphContentError as exc:
         return redirect_with_message(
             request,
@@ -439,11 +457,12 @@ async def _render_graph_edge_form(
         )
         overview_payload = overview.model_dump(mode="json")
         if edge_id is not None:
-            detail = await graph_content.get_graph_edge(
+            detail_list = await graph_content.get_graph_edges(
                 graph_id=graph_id,
-                edge_id=edge_id,
+                edge_ids=[edge_id],
                 current_user=current_user,
             )
+            detail = detail_list[0]
             edge_detail = detail.model_dump(mode="json", by_alias=True)
         schema_list = await graph_content.list_graph_schemas(
             graph_id=graph_id,
@@ -473,12 +492,12 @@ async def _render_graph_edge_form(
         is_edit=is_edit,
         submit_url=(
             request.app.url_path_for(
-                "graph_edge_update",
+                "graph_edges_update",
                 graph_id=graph_id,
                 edge_id=edge_id,
             )
             if is_edit
-            else request.app.url_path_for("graph_edge_create", graph_id=graph_id)
+            else request.app.url_path_for("graph_edges_create", graph_id=graph_id)
         ),
         graphs=await get_admin_store(request).list_graphs(),
         error_message=error_message,

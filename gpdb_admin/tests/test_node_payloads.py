@@ -14,7 +14,7 @@ from gpdb.admin.store import AdminStore
 
 
 def test_rest_payload_set_then_get_returns_stored_payload(admin_test_env):
-    """graph_node_payload_set (REST) then payload_get returns same bytes and metadata."""
+    """graph_node_payloads_set (REST) then payloads_get returns same bytes and metadata."""
     manager = admin_test_env.manager
     client = admin_test_env.client
 
@@ -24,28 +24,36 @@ def test_rest_payload_set_then_get_returns_stored_payload(admin_test_env):
 
     payload_bytes = b"rest payload set only"
     response = client.post(
-        "/api/graph_node_payload_set",
+        "/api/graph_node_payloads_set",
         json={
             "graph_id": graph_id,
-            "node_id": node_id,
-            "payload_base64": base64.b64encode(payload_bytes).decode("ascii"),
-            "payload_mime": "text/plain",
-            "payload_filename": "set-via-rest.txt",
+            "payloads": [
+                {
+                    "node_id": node_id,
+                    "payload_base64": base64.b64encode(payload_bytes).decode(
+                        "ascii"
+                    ),
+                    "payload_mime": "text/plain",
+                    "payload_filename": "set-via-rest.txt",
+                }
+            ],
         },
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
-    data = response.json()
+    data_list = response.json()
+    data = data_list[0]
     assert data["node"]["payload_size"] == len(payload_bytes)
     assert data["node"]["payload_filename"] == "set-via-rest.txt"
 
     response = client.post(
-        "/api/graph_node_payload_get",
-        json={"graph_id": graph_id, "node_id": node_id},
+        "/api/graph_node_payloads_get",
+        json={"graph_id": graph_id, "node_ids": [node_id]},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
-    got = response.json()
+    got_list = response.json()
+    got = got_list[0]
     assert base64.b64decode(got["payload_base64"]) == payload_bytes
     assert got["node"]["payload_mime"] == "text/plain"
     assert got["node"]["payload_filename"] == "set-via-rest.txt"
@@ -53,7 +61,7 @@ def test_rest_payload_set_then_get_returns_stored_payload(admin_test_env):
 
 
 def test_mcp_payload_set_then_get_returns_stored_payload(admin_test_env):
-    """graph_node_payload_set (MCP) then payload_get returns same bytes and metadata."""
+    """graph_node_payloads_set (MCP) then payloads_get returns same bytes and metadata."""
     manager = admin_test_env.manager
     client = admin_test_env.client
 
@@ -65,22 +73,30 @@ def test_mcp_payload_set_then_get_returns_stored_payload(admin_test_env):
     _call_persisted_authenticated_mcp_tool(
         manager,
         api_key_value,
-        "graph_node_payload_set",
+        "graph_node_payloads_set",
         {
             "graph_id": graph_id,
-            "node_id": node_id,
-            "payload_base64": base64.b64encode(payload_bytes).decode("ascii"),
-            "payload_mime": "application/octet-stream",
-            "payload_filename": "set-via-mcp.bin",
+            "payloads": [
+                {
+                    "node_id": node_id,
+                    "payload_base64": base64.b64encode(payload_bytes).decode(
+                        "ascii"
+                    ),
+                    "payload_mime": "application/octet-stream",
+                    "payload_filename": "set-via-mcp.bin",
+                }
+            ],
         },
     )
 
     got = _call_persisted_authenticated_mcp_tool(
         manager,
         api_key_value,
-        "graph_node_payload_get",
-        {"graph_id": graph_id, "node_id": node_id},
+        "graph_node_payloads_get",
+        {"graph_id": graph_id, "node_ids": [node_id]},
     )
+    got_list = got
+    got = got_list[0]
     assert base64.b64decode(got.payload_base64) == payload_bytes
     assert got.node.payload_mime == "application/octet-stream"
     assert got.node.payload_filename == "set-via-mcp.bin"
@@ -88,7 +104,7 @@ def test_mcp_payload_set_then_get_returns_stored_payload(admin_test_env):
 
 
 def test_payload_get_without_payload_returns_400_rest(admin_test_env):
-    """REST graph_node_payload_get for node with no payload returns 400."""
+    """REST graph_node_payloads_get for node with no payload returns 400."""
     manager = admin_test_env.manager
     client = admin_test_env.client
 
@@ -97,8 +113,8 @@ def test_payload_get_without_payload_returns_400_rest(admin_test_env):
     graph_id, node_id, api_key_value = _graph_and_node_without_payload(client, manager)
 
     response = client.post(
-        "/api/graph_node_payload_get",
-        json={"graph_id": graph_id, "node_id": node_id},
+        "/api/graph_node_payloads_get",
+        json={"graph_id": graph_id, "node_ids": [node_id]},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 400
@@ -106,7 +122,7 @@ def test_payload_get_without_payload_returns_400_rest(admin_test_env):
 
 
 def test_payload_get_without_payload_returns_error_mcp(admin_test_env):
-    """MCP graph_node_payload_get for node with no payload raises/returns error."""
+    """MCP graph_node_payloads_get for node with no payload raises/returns error."""
     manager = admin_test_env.manager
     client = admin_test_env.client
 
@@ -118,14 +134,14 @@ def test_payload_get_without_payload_returns_error_mcp(admin_test_env):
         _call_persisted_authenticated_mcp_tool(
             manager,
             api_key_value,
-            "graph_node_payload_get",
-            {"graph_id": graph_id, "node_id": node_id},
+            "graph_node_payloads_get",
+            {"graph_id": graph_id, "node_ids": [node_id]},
         )
     assert "does not have a payload" in str(exc_info.value)
 
 
 def test_payload_get_nonexistent_node_returns_404(admin_test_env):
-    """REST graph_node_payload_get for non-existent node returns 404."""
+    """REST graph_node_payloads_get for non-existent node returns 404."""
     manager = admin_test_env.manager
     client = admin_test_env.client
 
@@ -135,15 +151,15 @@ def test_payload_get_nonexistent_node_returns_404(admin_test_env):
     nonexistent_id = "nonexistent-node-id"
 
     response = client.post(
-        "/api/graph_node_payload_get",
-        json={"graph_id": graph_id, "node_id": nonexistent_id},
+        "/api/graph_node_payloads_get",
+        json={"graph_id": graph_id, "node_ids": [nonexistent_id]},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 404
 
 
 def test_payload_set_invalid_base64_returns_400(admin_test_env):
-    """graph_node_payload_set with invalid base64 returns 400."""
+    """graph_node_payloads_set with invalid base64 returns 400."""
     manager = admin_test_env.manager
     client = admin_test_env.client
 
@@ -152,13 +168,17 @@ def test_payload_set_invalid_base64_returns_400(admin_test_env):
     graph_id, node_id, api_key_value = _graph_and_node_without_payload(client, manager)
 
     response = client.post(
-        "/api/graph_node_payload_set",
+        "/api/graph_node_payloads_set",
         json={
             "graph_id": graph_id,
-            "node_id": node_id,
-            "payload_base64": "not-valid-base64!!",
-            "payload_mime": "text/plain",
-            "payload_filename": "x.txt",
+            "payloads": [
+                {
+                    "node_id": node_id,
+                    "payload_base64": "not-valid-base64!!",
+                    "payload_mime": "text/plain",
+                    "payload_filename": "x.txt",
+                }
+            ],
         },
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
@@ -176,29 +196,36 @@ def test_payload_binary_roundtrip(admin_test_env):
 
     payload_bytes = bytes(range(256))
     response = client.post(
-        "/api/graph_node_payload_set",
+        "/api/graph_node_payloads_set",
         json={
             "graph_id": graph_id,
-            "node_id": node_id,
-            "payload_base64": base64.b64encode(payload_bytes).decode("ascii"),
-            "payload_mime": "application/octet-stream",
-            "payload_filename": "binary.bin",
+            "payloads": [
+                {
+                    "node_id": node_id,
+                    "payload_base64": base64.b64encode(payload_bytes).decode(
+                        "ascii"
+                    ),
+                    "payload_mime": "application/octet-stream",
+                    "payload_filename": "binary.bin",
+                }
+            ],
         },
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
 
     response = client.post(
-        "/api/graph_node_payload_get",
-        json={"graph_id": graph_id, "node_id": node_id},
+        "/api/graph_node_payloads_get",
+        json={"graph_id": graph_id, "node_ids": [node_id]},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
-    assert base64.b64decode(response.json()["payload_base64"]) == payload_bytes
+    got = response.json()[0]
+    assert base64.b64decode(got["payload_base64"]) == payload_bytes
 
 
 def test_payload_set_replaces_existing_payload(admin_test_env):
-    """Calling payload_set twice stores the second payload."""
+    """Calling payloads_set twice stores the second payload."""
     manager = admin_test_env.manager
     client = admin_test_env.client
 
@@ -208,13 +235,17 @@ def test_payload_set_replaces_existing_payload(admin_test_env):
 
     first = b"first payload"
     response = client.post(
-        "/api/graph_node_payload_set",
+        "/api/graph_node_payloads_set",
         json={
             "graph_id": graph_id,
-            "node_id": node_id,
-            "payload_base64": base64.b64encode(first).decode("ascii"),
-            "payload_mime": "text/plain",
-            "payload_filename": "first.txt",
+            "payloads": [
+                {
+                    "node_id": node_id,
+                    "payload_base64": base64.b64encode(first).decode("ascii"),
+                    "payload_mime": "text/plain",
+                    "payload_filename": "first.txt",
+                }
+            ],
         },
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
@@ -222,25 +253,29 @@ def test_payload_set_replaces_existing_payload(admin_test_env):
 
     second = b"second payload replaced"
     response = client.post(
-        "/api/graph_node_payload_set",
+        "/api/graph_node_payloads_set",
         json={
             "graph_id": graph_id,
-            "node_id": node_id,
-            "payload_base64": base64.b64encode(second).decode("ascii"),
-            "payload_mime": "application/octet-stream",
-            "payload_filename": "second.txt",
+            "payloads": [
+                {
+                    "node_id": node_id,
+                    "payload_base64": base64.b64encode(second).decode("ascii"),
+                    "payload_mime": "application/octet-stream",
+                    "payload_filename": "second.txt",
+                }
+            ],
         },
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
 
     response = client.post(
-        "/api/graph_node_payload_get",
-        json={"graph_id": graph_id, "node_id": node_id},
+        "/api/graph_node_payloads_get",
+        json={"graph_id": graph_id, "node_ids": [node_id]},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
-    got = response.json()
+    got = response.json()[0]
     assert base64.b64decode(got["payload_base64"]) == second
     assert got["node"]["payload_filename"] == "second.txt"
 
@@ -266,7 +301,7 @@ def test_web_payload_upload_no_file_redirects_with_error(admin_test_env):
 
 
 def test_create_node_without_payload_has_no_payload(admin_test_env):
-    """REST graph_node_create without payload_base64 yields has_payload false."""
+    """REST graph_nodes_create without payload_base64 yields has_payload false."""
     manager = admin_test_env.manager
     client = admin_test_env.client
 
@@ -275,37 +310,45 @@ def test_create_node_without_payload_has_no_payload(admin_test_env):
     graph_id, api_key_value = _graph_and_api_key(client, manager)
 
     response = client.post(
-        "/api/graph_node_create",
+        "/api/graph_nodes_create",
         json={
             "graph_id": graph_id,
-            "type": "task",
-            "name": "no-payload-node",
-            "data": {"name": "No payload"},
+            "nodes": [
+                {
+                    "type": "task",
+                    "name": "no-payload-node",
+                    "data": {"name": "No payload"},
+                }
+            ],
         },
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
-    data = response.json()
-    assert data["node"]["has_payload"] is False
-    assert data["node"]["payload_size"] == 0
-    assert data["node"].get("payload_filename") is None
+    node_detail = response.json()[0]
+    assert node_detail["node"]["has_payload"] is False
+    assert node_detail["node"]["payload_size"] == 0
+    assert node_detail["node"].get("payload_filename") is None
 
 
 def _graph_and_node_without_payload(client, manager):
     """Create graph + node without payload, return (graph_id, node_id, api_key)."""
     graph_id, api_key_value = _graph_and_api_key(client, manager)
     response = client.post(
-        "/api/graph_node_create",
+        "/api/graph_nodes_create",
         json={
             "graph_id": graph_id,
-            "type": "task",
-            "name": "payload-test-node",
-            "data": {"name": "Payload test"},
+            "nodes": [
+                {
+                    "type": "task",
+                    "name": "payload-test-node",
+                    "data": {"name": "Payload test"},
+                }
+            ],
         },
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
-    node_id = response.json()["node"]["id"]
+    node_id = response.json()[0]["node"]["id"]
     return graph_id, node_id, api_key_value
 
 

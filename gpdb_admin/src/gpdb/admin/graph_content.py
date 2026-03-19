@@ -115,6 +115,122 @@ class GraphSchemaDetail(BaseModel):
         return self.schema_record
 
 
+class GraphSchemaUpdateParam(BaseModel):
+    """Parameters for updating a graph schema. Omitted fields are left unchanged."""
+
+    name: str = Field(..., description="Schema name (identity field).")
+    json_schema: dict[str, Any] | None = Field(
+        None, description="JSON Schema object."
+    )
+    kind: str | None = Field(None, description="Schema kind: node or edge.")
+
+
+class GraphSchemaCreateParam(BaseModel):
+    """Parameters for creating a graph schema."""
+
+    name: str = Field(..., description="Schema name.")
+    json_schema: dict[str, Any] = Field(
+        ..., description="JSON Schema object."
+    )
+    kind: str = Field(
+        default="node", description="Schema kind: node or edge."
+    )
+
+
+class GraphNodeCreateParam(BaseModel):
+    """Parameters for creating nodes in a bulk request."""
+
+    node_id: str | None = Field(
+        None,
+        description="Optional node id for upsert. If omitted, the GPDB layer will generate ids.",
+    )
+    type: str = Field(..., description="Node type.")
+    name: str | None = Field(None, description="Node name.")
+    schema_name: str | None = Field(None, description="Schema name.")
+    owner_id: str | None = Field(None, description="Owner ID.")
+    parent_id: str | None = Field(None, description="Parent node ID.")
+    tags: list[str] = Field(default_factory=list, description="Node tags.")
+    data: dict[str, Any] = Field(
+        ..., description="Node data as a JSON object."
+    )
+    payload_base64: str | None = Field(
+        None,
+        description="Base64-encoded payload data. Omit to create/update without payload.",
+    )
+    payload_mime: str | None = Field(None, description="MIME type of the payload.")
+    payload_filename: str | None = Field(None, description="Filename for the payload.")
+
+
+class GraphNodeUpdateParam(BaseModel):
+    """Parameters for updating nodes in a bulk request.
+
+    Omitted fields are left unchanged.
+    """
+
+    node_id: str = Field(..., description="Node ID (identity field).")
+    type: str | None = Field(None, description="Node type.")
+    data: dict[str, Any] | None = Field(
+        None, description="Node data as a JSON object."
+    )
+    name: str | None = Field(None, description="Node name.")
+    schema_name: str | None = Field(None, description="Schema name.")
+    owner_id: str | None = Field(None, description="Owner ID.")
+    parent_id: str | None = Field(None, description="Parent node ID.")
+    tags: list[str] | None = Field(None, description="Node tags.")
+    payload_base64: str | None = Field(
+        None,
+        description="Base64-encoded payload data. Omit to leave payload bytes unchanged.",
+    )
+    payload_mime: str | None = Field(None, description="MIME type of the payload.")
+    payload_filename: str | None = Field(None, description="Filename for the payload.")
+    clear_payload: bool = Field(
+        default=False, description="Whether to clear the payload bytes."
+    )
+
+
+class GraphEdgeCreateParam(BaseModel):
+    """Parameters for creating edges in a bulk request."""
+
+    edge_id: str | None = Field(
+        None,
+        description="Optional edge id for upsert. If omitted, the GPDB layer will generate ids.",
+    )
+    type: str = Field(..., description="Edge type.")
+    source_id: str = Field(..., description="Source node ID.")
+    target_id: str = Field(..., description="Target node ID.")
+    schema_name: str | None = Field(None, description="Schema name.")
+    tags: list[str] = Field(default_factory=list, description="Edge tags.")
+    data: dict[str, Any] = Field(..., description="Edge data as a JSON object.")
+
+
+class GraphEdgeUpdateParam(BaseModel):
+    """Parameters for updating edges in a bulk request.
+
+    Omitted fields are left unchanged.
+    """
+
+    edge_id: str = Field(..., description="Edge ID (identity field).")
+    type: str | None = Field(None, description="Edge type.")
+    source_id: str | None = Field(None, description="Source node ID.")
+    target_id: str | None = Field(None, description="Target node ID.")
+    schema_name: str | None = Field(None, description="Schema name.")
+    tags: list[str] | None = Field(None, description="Edge tags.")
+    data: dict[str, Any] | None = Field(None, description="Edge data as a JSON object.")
+
+
+class GraphNodePayloadSetParam(BaseModel):
+    """Parameters for setting node payloads in a bulk request."""
+
+    node_id: str = Field(..., description="Node ID (identity field).")
+    payload: bytes = Field(..., description="Payload bytes to store on the node.")
+    mime: str | None = Field(
+        None, description="Optional payload MIME type."
+    )
+    payload_filename: str | None = Field(
+        None, description="Optional payload filename."
+    )
+
+
 class GraphNodeFilters(BaseModel):
     """Current node list filters echoed back to callers."""
 
@@ -422,18 +538,28 @@ class GraphContentService:
         finally:
             await db.sqla_engine.dispose()
 
-    async def get_graph_schema(
+    async def get_graph_schemas(
         self,
         *,
         graph_id: str,
-        name: str,
+        names: list[str],
         current_user: AdminUser | None,
         allow_local_system: bool = False,
-    ) -> GraphSchemaDetail:
-        """Return one graph schema plus usage detail."""
-        clean_name = name.strip()
-        if not clean_name:
-            raise GraphContentValidationError("Schema name is required.")
+    ) -> list[GraphSchemaDetail]:
+        """Return multiple graph schemas plus usage detail."""
+        if not names:
+            raise GraphContentValidationError("At least one schema name is required.")
+
+        # Reject duplicate names
+        if len(names) != len(set(names)):
+            duplicates = [name for name in names if names.count(name) > 1]
+            raise GraphContentValidationError(
+                f"Duplicate schema names provided: {set(duplicates)}"
+            )
+
+        clean_names = [name.strip() for name in names]
+        if not all(clean_names):
+            raise GraphContentValidationError("Schema names cannot be empty.")
 
         graph, instance, db = await self._open_graph(
             graph_id=graph_id,
@@ -443,36 +569,56 @@ class GraphContentService:
         )
         try:
             try:
-                schemas = await db.get_schemas([clean_name])
+                schemas = await db.get_schemas(clean_names)
             except SchemaNotFoundError as exc:
                 raise GraphContentNotFoundError(
-                    f"Schema '{clean_name}' was not found."
+                    f"One or more schemas were not found."
                 ) from exc
-            schema = schemas[0]
-            return GraphSchemaDetail(
-                schema_record=self._serialize_schema_record(
-                    schema,
-                    include_json_schema=True,
-                    usage=await self._inspect_schema_usage(db, clean_name),
-                ),
-            )
+            results = []
+            for schema in schemas:
+                results.append(
+                    GraphSchemaDetail(
+                        schema_record=self._serialize_schema_record(
+                            schema,
+                            include_json_schema=True,
+                            usage=await self._inspect_schema_usage(db, schema.name),
+                        ),
+                    )
+                )
+            return results
         finally:
             await db.sqla_engine.dispose()
 
-    async def create_graph_schema(
+    async def create_graph_schemas(
         self,
         *,
         graph_id: str,
-        name: str,
-        json_schema: dict[str, Any],
+        schemas: list[GraphSchemaCreateParam],
         current_user: AdminUser | None,
-        kind: str = "node",
         allow_local_system: bool = False,
-    ) -> GraphSchemaDetail:
-        """Create one schema in a managed graph."""
-        clean_name = self._validate_schema_name(name)
-        clean_kind = self._validate_schema_kind(kind)
-        self._validate_json_schema(json_schema)
+    ) -> list[GraphSchemaDetail]:
+        """Create multiple schemas in a managed graph."""
+        if not schemas:
+            raise GraphContentValidationError("At least one schema is required.")
+
+        # Reject duplicate names before doing any work
+        names = [s.name for s in schemas]
+        if len(names) != len(set(names)):
+            duplicates = [name for name in names if names.count(name) > 1]
+            raise GraphContentValidationError(
+                f"Duplicate schema names provided: {set(duplicates)}"
+            )
+
+        # Validate all schemas first
+        validated_schemas = []
+        for schema_param in schemas:
+            clean_name = self._validate_schema_name(schema_param.name)
+            clean_kind = self._validate_schema_kind(schema_param.kind)
+            self._validate_json_schema(schema_param.json_schema)
+            validated_schemas.append(
+                (clean_name, schema_param.json_schema, clean_kind)
+            )
+        clean_names = [clean_name for clean_name, _, _ in validated_schemas]
 
         graph, instance, db = await self._open_graph(
             graph_id=graph_id,
@@ -481,50 +627,79 @@ class GraphContentService:
             permission_kind="manage_schemas",
         )
         try:
+            # Check for existing schemas
             try:
-                await db.get_schemas([clean_name])
+                existing = await db.get_schemas(clean_names)
+                existing_names = [s.name for s in existing]
                 raise GraphContentConflictError(
-                    f"Schema '{clean_name}' already exists."
+                    f"Schemas already exist: {existing_names}"
                 )
             except SchemaNotFoundError:
                 pass
+
             try:
-                schemas = await db.set_schemas(
-                    [
-                        SchemaUpsert(
-                            name=clean_name,
-                            json_schema=json_schema,
-                            kind=clean_kind,
-                        )
-                    ]
-                )
-                schema = schemas[0]
+                schema_upserts = [
+                    SchemaUpsert(
+                        name=name,
+                        json_schema=json_schema,
+                        kind=kind,
+                    )
+                    for name, json_schema, kind in validated_schemas
+                ]
+                created_schemas = await db.set_schemas(schema_upserts)
             except (SchemaBreakingChangeError, ValueError) as exc:
                 raise GraphContentValidationError(str(exc)) from exc
-            return GraphSchemaDetail(
-                schema_record=self._serialize_schema_record(
-                    schema,
-                    include_json_schema=True,
-                    usage=GraphSchemaUsage(),
-                ),
-            )
+
+            results = []
+            for schema in created_schemas:
+                results.append(
+                    GraphSchemaDetail(
+                        schema_record=self._serialize_schema_record(
+                            schema,
+                            include_json_schema=True,
+                            usage=GraphSchemaUsage(),
+                        ),
+                    )
+                )
+            return results
         finally:
             await db.sqla_engine.dispose()
 
-    async def update_graph_schema(
+    async def update_graph_schemas(
         self,
         *,
         graph_id: str,
-        name: str,
-        json_schema: dict[str, Any] | None = None,
+        schemas: list[GraphSchemaUpdateParam],
         current_user: AdminUser | None,
-        kind: str | None = None,
         allow_local_system: bool = False,
-    ) -> GraphSchemaDetail:
-        """Update one schema in a managed graph when the change is non-breaking. Omitted fields are left unchanged."""
-        clean_name = self._validate_schema_name(name)
-        if json_schema is not None:
-            self._validate_json_schema(json_schema)
+    ) -> list[GraphSchemaDetail]:
+        """Update multiple schemas in a managed graph when the change is non-breaking. Omitted fields are left unchanged."""
+        if not schemas:
+            raise GraphContentValidationError("At least one schema is required.")
+
+        # Reject duplicate names before doing any work
+        names = [s.name for s in schemas]
+        if len(names) != len(set(names)):
+            duplicates = [name for name in names if names.count(name) > 1]
+            raise GraphContentValidationError(
+                f"Duplicate schema names provided: {set(duplicates)}"
+            )
+
+        # Validate all schemas first
+        validated_schemas = []
+        for schema_param in schemas:
+            clean_name = self._validate_schema_name(schema_param.name)
+            clean_kind = (
+                self._validate_schema_kind(schema_param.kind)
+                if schema_param.kind is not None
+                else None
+            )
+            if schema_param.json_schema is not None:
+                self._validate_json_schema(schema_param.json_schema)
+            validated_schemas.append(
+                (clean_name, schema_param.json_schema, clean_kind)
+            )
+        clean_names = [clean_name for clean_name, _, _ in validated_schemas]
 
         graph, instance, db = await self._open_graph(
             graph_id=graph_id,
@@ -533,46 +708,56 @@ class GraphContentService:
             permission_kind="manage_schemas",
         )
         try:
+            # Check existing schemas
             try:
-                existing_schemas = await db.get_schemas([clean_name])
+                existing_schemas = await db.get_schemas(clean_names)
+                existing_by_name = {s.name: s for s in existing_schemas}
             except SchemaNotFoundError as exc:
                 raise GraphContentNotFoundError(
-                    f"Schema '{clean_name}' was not found."
+                    f"One or more schemas not found: {exc}"
                 ) from exc
-            existing = existing_schemas[0]
-            json_schema_ = (
-                json_schema if json_schema is not None else existing.json_schema
-            )
-            kind_ = (
-                self._validate_schema_kind(kind)
-                if kind is not None
-                else self._schema_kind_from_record(existing)
-            )
-            try:
-                schemas = await db.set_schemas(
-                    [
-                        SchemaUpsert(
-                            name=clean_name,
-                            json_schema=json_schema_,
-                            kind=kind_,
-                        )
-                    ]
+
+            # Build upserts with preserved values for omitted fields
+            schema_upserts = []
+            for clean_name, json_schema, clean_kind in validated_schemas:
+                existing = existing_by_name[clean_name]
+                json_schema_ = (
+                    json_schema if json_schema is not None else existing.json_schema
                 )
-                schema = schemas[0]
+                kind_ = (
+                    clean_kind
+                    if clean_kind is not None
+                    else self._schema_kind_from_record(existing)
+                )
+                schema_upserts.append(
+                    SchemaUpsert(
+                        name=clean_name,
+                        json_schema=json_schema_,
+                        kind=kind_,
+                    )
+                )
+
+            try:
+                updated_schemas = await db.set_schemas(schema_upserts)
             except SchemaBreakingChangeError as exc:
                 raise GraphContentValidationError(
-                    "Breaking schema changes are not supported here yet. "
-                    f"Use a migration workflow for schema '{clean_name}'."
+                    f"Breaking schema changes are not supported yet. Use a migration workflow."
                 ) from exc
             except ValueError as exc:
                 raise GraphContentValidationError(str(exc)) from exc
-            return GraphSchemaDetail(
-                schema_record=self._serialize_schema_record(
-                    schema,
-                    include_json_schema=True,
-                    usage=await self._inspect_schema_usage(db, clean_name),
-                ),
-            )
+
+            results = []
+            for schema in updated_schemas:
+                results.append(
+                    GraphSchemaDetail(
+                        schema_record=self._serialize_schema_record(
+                            schema,
+                            include_json_schema=True,
+                            usage=await self._inspect_schema_usage(db, schema.name),
+                        ),
+                    )
+                )
+            return results
         finally:
             await db.sqla_engine.dispose()
 
@@ -704,16 +889,29 @@ class GraphContentService:
         finally:
             await db.sqla_engine.dispose()
 
-    async def get_graph_node(
+    async def get_graph_nodes(
         self,
         *,
         graph_id: str,
-        node_id: str,
+        node_ids: list[str],
         current_user: AdminUser | None,
         allow_local_system: bool = False,
-    ) -> GraphNodeDetail:
-        """Return one graph node plus metadata."""
-        clean_node_id = self._validate_node_id(node_id)
+    ) -> list[GraphNodeDetail]:
+        """Return multiple graph nodes plus metadata."""
+        if not node_ids:
+            raise GraphContentValidationError(
+                "At least one node id is required."
+            )
+
+        # Reject duplicate ids
+        if len(node_ids) != len(set(node_ids)):
+            duplicates = [nid for nid in node_ids if node_ids.count(nid) > 1]
+            raise GraphContentValidationError(
+                f"Duplicate node ids provided: {set(duplicates)}"
+            )
+
+        clean_node_ids = [self._validate_node_id(nid) for nid in node_ids]
+
         graph, instance, db = await self._open_graph(
             graph_id=graph_id,
             current_user=current_user,
@@ -721,278 +919,393 @@ class GraphContentService:
             permission_kind="view",
         )
         try:
-            nodes = await db.get_nodes([clean_node_id])
-            node = nodes[0]
-            return GraphNodeDetail(
-                node_record=self._serialize_node_record(node),
-                delete_blockers=await self._inspect_node_delete_blockers(
-                    db, clean_node_id
-                ),
-            )
-        except ValueError as e:
-            if "Node ids not found" in str(e):
-                raise GraphContentNotFoundError(
-                    f"Node '{clean_node_id}' was not found."
-                )
-            raise
-        finally:
-            await db.sqla_engine.dispose()
-
-    async def create_graph_node(
-        self,
-        *,
-        graph_id: str,
-        type: str,
-        data: dict[str, Any],
-        current_user: AdminUser | None,
-        allow_local_system: bool = False,
-        name: str | None = None,
-        schema_name: str | None = None,
-        owner_id: str | None = None,
-        parent_id: str | None = None,
-        tags: list[str] | None = None,
-        payload: bytes | None = None,
-        payload_mime: str | None = None,
-        payload_filename: str | None = None,
-        clear_payload: bool = False,
-    ) -> GraphNodeDetail:
-        """Create one node in a managed graph."""
-        clean_type = self._validate_node_type(type)
-        clean_name = self._normalize_optional_text(name)
-        clean_schema_name = self._normalize_optional_text(schema_name)
-        clean_owner_id = self._normalize_optional_text(owner_id)
-        clean_parent_id = self._normalize_optional_text(parent_id)
-        normalized_tags = self._normalize_tag_list(tags)
-        clean_payload_mime = self._normalize_optional_text(payload_mime)
-        clean_payload_filename = self._normalize_optional_text(payload_filename)
-        self._validate_json_object(data, object_name="Node data")
-        if clear_payload:
-            raise GraphContentValidationError(
-                "clear_payload cannot be used while creating a node."
-            )
-
-        graph, instance, db = await self._open_graph(
-            graph_id=graph_id,
-            current_user=current_user,
-            allow_local_system=allow_local_system,
-            permission_kind="manage_nodes",
-        )
-        try:
             try:
-                node_list = await db.set_nodes(
-                    [
-                        NodeUpsert(
-                            type=clean_type,
-                            name=clean_name,
-                            owner_id=clean_owner_id,
-                            parent_id=clean_parent_id,
-                            schema_name=clean_schema_name,
-                            data=data,
-                            tags=normalized_tags,
-                            payload=payload,
-                            payload_mime=clean_payload_mime,
-                            payload_filename=clean_payload_filename,
-                        )
-                    ]
-                )
-                node = node_list[0]
-            except (SchemaNotFoundError, SchemaValidationError, ValueError) as exc:
-                raise GraphContentValidationError(str(exc)) from exc
-            return GraphNodeDetail(
-                node_record=self._serialize_node_record(node),
-                delete_blockers=GraphNodeDeleteBlockers(),
-            )
-        finally:
-            await db.sqla_engine.dispose()
+                nodes = await db.get_nodes(clean_node_ids)
+            except ValueError as e:
+                if "Node ids not found" in str(e):
+                    raise GraphContentNotFoundError(
+                        "One or more nodes were not found."
+                    ) from e
+                raise
 
-    async def update_graph_node(
-        self,
-        *,
-        graph_id: str,
-        node_id: str,
-        type: str | None = None,
-        data: dict[str, Any] | None = None,
-        current_user: AdminUser | None,
-        allow_local_system: bool = False,
-        name: str | None = None,
-        schema_name: str | None = None,
-        owner_id: str | None = None,
-        parent_id: str | None = None,
-        tags: list[str] | None = None,
-        payload: bytes | None = None,
-        payload_mime: str | None = None,
-        payload_filename: str | None = None,
-        clear_payload: bool = False,
-    ) -> GraphNodeDetail:
-        """Update one node in a managed graph. Omitted fields are left unchanged."""
-        clean_node_id = self._validate_node_id(node_id)
-        if payload is not None and clear_payload:
-            raise GraphContentValidationError(
-                "Provide either payload bytes or clear_payload, not both."
-            )
-        if type is not None:
-            self._validate_node_type(type)
-        if data is not None:
-            self._validate_json_object(data, object_name="Node data")
-
-        graph, instance, db = await self._open_graph(
-            graph_id=graph_id,
-            current_user=current_user,
-            allow_local_system=allow_local_system,
-            permission_kind="manage_nodes",
-        )
-        try:
-            nodes = await db.get_nodes([clean_node_id])
-            existing = nodes[0]
-            type_ = (
-                self._validate_node_type(type) if type is not None else existing.type
-            )
-            name_ = (
-                self._normalize_optional_text(name)
-                if name is not None
-                else existing.name
-            )
-            schema_name_ = (
-                self._normalize_optional_text(schema_name)
-                if schema_name is not None
-                else existing.schema_name
-            )
-            owner_id_ = (
-                self._normalize_optional_text(owner_id)
-                if owner_id is not None
-                else existing.owner_id
-            )
-            parent_id_ = (
-                self._normalize_optional_text(parent_id)
-                if parent_id is not None
-                else existing.parent_id
-            )
-            data_ = data if data is not None else existing.data
-            tags_ = (
-                self._normalize_tag_list(tags)
-                if tags is not None
-                else (existing.tags or [])
-            )
-            if payload is not None:
-                payload_ = payload
-                payload_mime_ = (
-                    self._normalize_optional_text(payload_mime)
-                    if payload_mime is not None
-                    else (existing.payload_mime or None)
-                )
-                payload_filename_ = (
-                    self._normalize_optional_text(payload_filename)
-                    if payload_filename is not None
-                    else (existing.payload_filename or None)
-                )
-            else:
-                # None means do not change payload; core only assigns when dto.payload is not None
-                payload_ = None
-                payload_mime_ = (
-                    self._normalize_optional_text(payload_mime)
-                    if payload_mime is not None
-                    else existing.payload_mime
-                )
-                payload_filename_ = (
-                    self._normalize_optional_text(payload_filename)
-                    if payload_filename is not None
-                    else existing.payload_filename
-                )
-            try:
-                async with db.transaction():
-                    node_list = await db.set_nodes(
-                        [
-                            NodeUpsert(
-                                id=clean_node_id,
-                                type=type_,
-                                name=name_,
-                                owner_id=owner_id_,
-                                parent_id=parent_id_,
-                                schema_name=schema_name_,
-                                data=data_,
-                                tags=tags_,
-                                payload=payload_,
-                                payload_mime=payload_mime_,
-                                payload_filename=payload_filename_,
-                            )
-                        ]
+            results = []
+            for node in nodes:
+                results.append(
+                    GraphNodeDetail(
+                        node_record=self._serialize_node_record(node),
+                        delete_blockers=await self._inspect_node_delete_blockers(
+                            db, node.id
+                        ),
                     )
-                    node = node_list[0]
-                    if clear_payload:
-                        node = await db.clear_node_payload(clean_node_id)
+                )
+            return results
+        finally:
+            await db.sqla_engine.dispose()
+
+    async def create_graph_nodes(
+        self,
+        *,
+        graph_id: str,
+        nodes: list[GraphNodeCreateParam],
+        current_user: AdminUser | None,
+        allow_local_system: bool = False,
+    ) -> list[GraphNodeDetail]:
+        """Create multiple nodes in a managed graph.
+
+        This operation is atomic: either all nodes are created, or none are.
+        """
+        if not nodes:
+            raise GraphContentValidationError("At least one node is required.")
+
+        node_ids = [n.node_id for n in nodes if n.node_id is not None]
+        if len(node_ids) != len(set(node_ids)):
+            duplicates = [nid for nid in node_ids if node_ids.count(nid) > 1]
+            raise GraphContentValidationError(
+                f"Duplicate node ids provided: {set(duplicates)}"
+            )
+
+        node_upserts: list[NodeUpsert] = []
+        for node_param in nodes:
+            clean_type = self._validate_node_type(node_param.type)
+            clean_name = self._normalize_optional_text(node_param.name)
+            clean_schema_name = self._normalize_optional_text(node_param.schema_name)
+            clean_owner_id = self._normalize_optional_text(node_param.owner_id)
+            clean_parent_id = self._normalize_optional_text(node_param.parent_id)
+            normalized_tags = self._normalize_tag_list(node_param.tags)
+            clean_payload_mime = self._normalize_optional_text(node_param.payload_mime)
+            clean_payload_filename = self._normalize_optional_text(
+                node_param.payload_filename
+            )
+            self._validate_json_object(node_param.data, object_name="Node data")
+
+            clean_node_id = (
+                self._validate_node_id(node_param.node_id)
+                if node_param.node_id is not None
+                else None
+            )
+            payload = (
+                base64.b64decode(node_param.payload_base64)
+                if node_param.payload_base64 is not None
+                else None
+            )
+
+            node_upserts.append(
+                NodeUpsert(
+                    id=clean_node_id,
+                    type=clean_type,
+                    name=clean_name,
+                    owner_id=clean_owner_id,
+                    parent_id=clean_parent_id,
+                    schema_name=clean_schema_name,
+                    data=node_param.data,
+                    tags=normalized_tags,
+                    payload=payload,
+                    payload_mime=clean_payload_mime,
+                    payload_filename=clean_payload_filename,
+                )
+            )
+
+        graph, instance, db = await self._open_graph(
+            graph_id=graph_id,
+            current_user=current_user,
+            allow_local_system=allow_local_system,
+            permission_kind="manage_nodes",
+        )
+        try:
+            try:
+                created_nodes = await db.set_nodes(node_upserts)
             except (SchemaNotFoundError, SchemaValidationError, ValueError) as exc:
                 raise GraphContentValidationError(str(exc)) from exc
-            return GraphNodeDetail(
-                node_record=self._serialize_node_record(node),
-                delete_blockers=await self._inspect_node_delete_blockers(
+            return [
+                GraphNodeDetail(
+                    node_record=self._serialize_node_record(node),
+                    delete_blockers=GraphNodeDeleteBlockers(),
+                )
+                for node in created_nodes
+            ]
+        finally:
+            await db.sqla_engine.dispose()
+
+    async def update_graph_nodes(
+        self,
+        *,
+        graph_id: str,
+        updates: list[GraphNodeUpdateParam],
+        current_user: AdminUser | None,
+        allow_local_system: bool = False,
+    ) -> list[GraphNodeDetail]:
+        """Update multiple nodes in a managed graph.
+
+        This operation is atomic: either all nodes are updated, or none are.
+        """
+        if not updates:
+            raise GraphContentValidationError("At least one node is required.")
+
+        node_ids = [u.node_id for u in updates]
+        if len(node_ids) != len(set(node_ids)):
+            duplicates = [nid for nid in node_ids if node_ids.count(nid) > 1]
+            raise GraphContentValidationError(
+                f"Duplicate node ids provided: {set(duplicates)}"
+            )
+
+        clean_node_ids = [self._validate_node_id(u.node_id) for u in updates]
+
+        # Validate fields up-front so failures happen before any writes.
+        for update_param in updates:
+            payload = (
+                base64.b64decode(update_param.payload_base64)
+                if update_param.payload_base64 is not None
+                else None
+            )
+            if payload is not None and update_param.clear_payload:
+                raise GraphContentValidationError(
+                    "Provide either payload bytes or clear_payload, not both."
+                )
+            if update_param.type is not None:
+                self._validate_node_type(update_param.type)
+            if update_param.data is not None:
+                self._validate_json_object(
+                    update_param.data, object_name="Node data"
+                )
+
+        graph, instance, db = await self._open_graph(
+            graph_id=graph_id,
+            current_user=current_user,
+            allow_local_system=allow_local_system,
+            permission_kind="manage_nodes",
+        )
+        try:
+            try:
+                existing_nodes = await db.get_nodes(clean_node_ids)
+            except ValueError as e:
+                if "Node ids not found" in str(e):
+                    raise GraphContentNotFoundError(
+                        "One or more nodes were not found."
+                    ) from e
+                raise
+
+            existing_by_id = {node.id: node for node in existing_nodes}
+
+            node_upserts: list[NodeUpsert] = []
+            clear_payload_ids: list[str] = []
+            for update_param, clean_node_id in zip(updates, clean_node_ids):
+                existing = existing_by_id[clean_node_id]
+
+                type_ = (
+                    self._validate_node_type(update_param.type)
+                    if update_param.type is not None
+                    else existing.type
+                )
+                name_ = (
+                    self._normalize_optional_text(update_param.name)
+                    if update_param.name is not None
+                    else existing.name
+                )
+                schema_name_ = (
+                    self._normalize_optional_text(update_param.schema_name)
+                    if update_param.schema_name is not None
+                    else existing.schema_name
+                )
+                owner_id_ = (
+                    self._normalize_optional_text(update_param.owner_id)
+                    if update_param.owner_id is not None
+                    else existing.owner_id
+                )
+                parent_id_ = (
+                    self._normalize_optional_text(update_param.parent_id)
+                    if update_param.parent_id is not None
+                    else existing.parent_id
+                )
+                data_ = (
+                    update_param.data
+                    if update_param.data is not None
+                    else existing.data
+                )
+                tags_ = (
+                    self._normalize_tag_list(update_param.tags)
+                    if update_param.tags is not None
+                    else (existing.tags or [])
+                )
+
+                payload = (
+                    base64.b64decode(update_param.payload_base64)
+                    if update_param.payload_base64 is not None
+                    else None
+                )
+                if payload is not None:
+                    payload_ = payload
+                    payload_mime_ = (
+                        self._normalize_optional_text(update_param.payload_mime)
+                        if update_param.payload_mime is not None
+                        else (existing.payload_mime or None)
+                    )
+                    payload_filename_ = (
+                        self._normalize_optional_text(update_param.payload_filename)
+                        if update_param.payload_filename is not None
+                        else (existing.payload_filename or None)
+                    )
+                else:
+                    # None means do not change payload bytes; core assigns payload only when dto.payload is not None.
+                    payload_ = None
+                    payload_mime_ = (
+                        self._normalize_optional_text(update_param.payload_mime)
+                        if update_param.payload_mime is not None
+                        else existing.payload_mime
+                    )
+                    payload_filename_ = (
+                        self._normalize_optional_text(update_param.payload_filename)
+                        if update_param.payload_filename is not None
+                        else existing.payload_filename
+                    )
+
+                node_upserts.append(
+                    NodeUpsert(
+                        id=clean_node_id,
+                        type=type_,
+                        name=name_,
+                        owner_id=owner_id_,
+                        parent_id=parent_id_,
+                        schema_name=schema_name_,
+                        data=data_,
+                        tags=tags_,
+                        payload=payload_,
+                        payload_mime=payload_mime_,
+                        payload_filename=payload_filename_,
+                    )
+                )
+                if update_param.clear_payload:
+                    clear_payload_ids.append(clean_node_id)
+
+            try:
+                node_by_id: dict[str, Any] = {}
+                async with db.transaction():
+                    node_list = await db.set_nodes(node_upserts)
+                    node_by_id = {node.id: node for node in node_list}
+                    for clean_node_id in clear_payload_ids:
+                        node_by_id[clean_node_id] = (
+                            await db.clear_node_payload(clean_node_id)
+                        )
+            except (SchemaNotFoundError, SchemaValidationError, ValueError) as exc:
+                raise GraphContentValidationError(str(exc)) from exc
+
+            return [
+                GraphNodeDetail(
+                    node_record=self._serialize_node_record(node_by_id[clean_node_id]),
+                    delete_blockers=await self._inspect_node_delete_blockers(
+                        db, clean_node_id
+                    ),
+                )
+                for clean_node_id in clean_node_ids
+            ]
+        finally:
+            await db.sqla_engine.dispose()
+
+    async def delete_graph_nodes(
+        self,
+        *,
+        graph_id: str,
+        node_ids: list[str],
+        current_user: AdminUser | None,
+        allow_local_system: bool = False,
+    ) -> list[GraphNodeDetail]:
+        """Delete multiple graph nodes when they have no child/edge blockers."""
+        if not node_ids:
+            raise GraphContentValidationError("At least one node id is required.")
+
+        if len(node_ids) != len(set(node_ids)):
+            duplicates = [nid for nid in node_ids if node_ids.count(nid) > 1]
+            raise GraphContentValidationError(
+                f"Duplicate node ids provided: {set(duplicates)}"
+            )
+
+        clean_node_ids = [self._validate_node_id(nid) for nid in node_ids]
+
+        graph, instance, db = await self._open_graph(
+            graph_id=graph_id,
+            current_user=current_user,
+            allow_local_system=allow_local_system,
+            permission_kind="manage_nodes",
+        )
+        try:
+            try:
+                nodes = await db.get_nodes(clean_node_ids)
+            except ValueError as e:
+                if "Node ids not found" in str(e):
+                    raise GraphContentNotFoundError(
+                        "One or more nodes were not found."
+                    ) from e
+                raise
+
+            nodes_by_id = {node.id: node for node in nodes}
+
+            blockers_by_id: dict[str, GraphNodeDeleteBlockers] = {}
+            in_use_messages: list[str] = []
+
+            for clean_node_id in clean_node_ids:
+                blockers = await self._inspect_node_delete_blockers(
                     db, clean_node_id
-                ),
-            )
-        except ValueError as e:
-            if "Node ids not found" in str(e):
-                raise GraphContentNotFoundError(
-                    f"Node '{clean_node_id}' was not found."
                 )
-            raise
-        finally:
-            await db.sqla_engine.dispose()
+                blockers_by_id[clean_node_id] = blockers
+                if blockers.child_count or blockers.incident_edge_count:
+                    in_use_messages.append(
+                        self._format_node_delete_blocker_message(
+                            clean_node_id, blockers
+                        )
+                    )
 
-    async def delete_graph_node(
-        self,
-        *,
-        graph_id: str,
-        node_id: str,
-        current_user: AdminUser | None,
-        allow_local_system: bool = False,
-    ) -> GraphNodeDetail:
-        """Delete one graph node when it has no child or edge blockers."""
-        clean_node_id = self._validate_node_id(node_id)
-        graph, instance, db = await self._open_graph(
-            graph_id=graph_id,
-            current_user=current_user,
-            allow_local_system=allow_local_system,
-            permission_kind="manage_nodes",
-        )
-        try:
-            nodes = await db.get_nodes([clean_node_id])
-            node = nodes[0]
-            blockers = await self._inspect_node_delete_blockers(db, clean_node_id)
-            deleted = GraphNodeDetail(
-                node_record=self._serialize_node_record(node),
-                delete_blockers=blockers,
-            )
+            if in_use_messages:
+                raise GraphContentConflictError("; ".join(in_use_messages))
             try:
-                await db.delete_nodes([clean_node_id])
+                await db.delete_nodes(clean_node_ids)
             except IntegrityError as exc:
-                blockers = await self._inspect_node_delete_blockers(db, clean_node_id)
-                raise GraphContentConflictError(
-                    self._format_node_delete_blocker_message(clean_node_id, blockers)
-                ) from exc
-            return deleted
-        except ValueError as e:
-            if "Node ids not found" in str(e):
-                raise GraphContentNotFoundError(
-                    f"Node '{clean_node_id}' was not found."
+                # Concurrency: recompute blocker info for a helpful message.
+                recomputed_messages: list[str] = []
+                for clean_node_id in clean_node_ids:
+                    blockers = await self._inspect_node_delete_blockers(
+                        db, clean_node_id
+                    )
+                    if blockers.child_count or blockers.incident_edge_count:
+                        recomputed_messages.append(
+                            self._format_node_delete_blocker_message(
+                                clean_node_id, blockers
+                            )
+                        )
+                if recomputed_messages:
+                    raise GraphContentConflictError(
+                        "; ".join(recomputed_messages)
+                    ) from exc
+                raise
+
+            return [
+                GraphNodeDetail(
+                    node_record=self._serialize_node_record(nodes_by_id[clean_node_id]),
+                    delete_blockers=blockers_by_id[clean_node_id],
                 )
-            raise
+                for clean_node_id in clean_node_ids
+            ]
         finally:
             await db.sqla_engine.dispose()
 
-    async def set_graph_node_payload(
+    async def set_graph_node_payloads(
         self,
         *,
         graph_id: str,
-        node_id: str,
-        payload: bytes,
+        payloads: list[GraphNodePayloadSetParam],
         current_user: AdminUser | None,
         allow_local_system: bool = False,
-        mime: str | None = None,
-        payload_filename: str | None = None,
-    ) -> GraphNodeDetail:
-        """Upload or replace one graph node payload."""
-        clean_node_id = self._validate_node_id(node_id)
-        clean_mime = self._normalize_optional_text(mime)
-        clean_payload_filename = self._normalize_optional_text(payload_filename)
+    ) -> list[GraphNodeDetail]:
+        """Upload or replace node payloads in an atomic bulk request."""
+        if not payloads:
+            raise GraphContentValidationError("At least one payload is required.")
+
+        node_ids = [p.node_id for p in payloads]
+        if len(node_ids) != len(set(node_ids)):
+            duplicates = [nid for nid in node_ids if node_ids.count(nid) > 1]
+            raise GraphContentValidationError(
+                f"Duplicate node ids provided: {set(duplicates)}"
+            )
+
+        clean_node_ids = [self._validate_node_id(nid) for nid in node_ids]
 
         graph, instance, db = await self._open_graph(
             graph_id=graph_id,
@@ -1001,36 +1314,72 @@ class GraphContentService:
             permission_kind="manage_nodes",
         )
         try:
+            # Preflight: ensure all nodes exist before writing anything.
             try:
-                node = await db.set_node_payload(
-                    clean_node_id,
-                    payload,
-                    mime=clean_mime,
-                    filename=clean_payload_filename,
-                )
+                await db.get_nodes(clean_node_ids)
             except ValueError as exc:
                 raise GraphContentNotFoundError(
-                    f"Node '{clean_node_id}' was not found."
+                    "One or more nodes were not found."
                 ) from exc
-            return GraphNodeDetail(
-                node_record=self._serialize_node_record(node),
-                delete_blockers=await self._inspect_node_delete_blockers(
-                    db, clean_node_id
-                ),
-            )
+
+            updated_nodes: list[Any] = []
+            async with db.transaction():
+                for payload_param, clean_node_id in zip(
+                    payloads, clean_node_ids
+                ):
+                    clean_mime = self._normalize_optional_text(payload_param.mime)
+                    clean_payload_filename = self._normalize_optional_text(
+                        payload_param.payload_filename
+                    )
+                    try:
+                        node = await db.set_node_payload(
+                            clean_node_id,
+                            payload_param.payload,
+                            mime=clean_mime,
+                            filename=clean_payload_filename,
+                        )
+                    except ValueError as exc:
+                        raise GraphContentNotFoundError(
+                            f"Node '{clean_node_id}' was not found."
+                        ) from exc
+                    updated_nodes.append(node)
+
+            results: list[GraphNodeDetail] = []
+            for node, clean_node_id in zip(updated_nodes, clean_node_ids):
+                results.append(
+                    GraphNodeDetail(
+                        node_record=self._serialize_node_record(node),
+                        delete_blockers=await self._inspect_node_delete_blockers(
+                            db, clean_node_id
+                        ),
+                    )
+                )
+            return results
         finally:
             await db.sqla_engine.dispose()
 
-    async def get_graph_node_payload(
+    async def get_graph_node_payloads(
         self,
         *,
         graph_id: str,
-        node_id: str,
+        node_ids: list[str],
         current_user: AdminUser | None,
         allow_local_system: bool = False,
-    ) -> GraphNodePayload:
-        """Return one node payload encoded for JSON-based admin surfaces."""
-        clean_node_id = self._validate_node_id(node_id)
+    ) -> list[GraphNodePayload]:
+        """Return multiple node payloads encoded for JSON-based admin surfaces."""
+        if not node_ids:
+            raise GraphContentValidationError(
+                "At least one node id is required."
+            )
+
+        if len(node_ids) != len(set(node_ids)):
+            duplicates = [nid for nid in node_ids if node_ids.count(nid) > 1]
+            raise GraphContentValidationError(
+                f"Duplicate node ids provided: {set(duplicates)}"
+            )
+
+        clean_node_ids = [self._validate_node_id(nid) for nid in node_ids]
+
         graph, instance, db = await self._open_graph(
             graph_id=graph_id,
             current_user=current_user,
@@ -1038,24 +1387,34 @@ class GraphContentService:
             permission_kind="view",
         )
         try:
-            nodes = await db.get_node_payloads([clean_node_id])
-            node = nodes[0]
-            if node.payload is None:
-                raise GraphContentConflictError(
-                    f"Node '{clean_node_id}' does not have a payload."
-                )
-            node_record = self._serialize_node_record(node)
-            return GraphNodePayload(
-                node_record=node_record,
-                payload_base64=base64.b64encode(node.payload).decode("ascii"),
-                filename=self._build_node_payload_filename(node_record),
-            )
-        except ValueError as e:
-            if "not found" in str(e).lower():
+            try:
+                nodes = await db.get_node_payloads(clean_node_ids)
+            except ValueError as exc:
                 raise GraphContentNotFoundError(
-                    f"Node '{clean_node_id}' was not found."
-                ) from e
-            raise
+                    "One or more nodes were not found."
+                ) from exc
+
+            node_by_id = {node.id: node for node in nodes}
+            results: list[GraphNodePayload] = []
+            for clean_node_id in clean_node_ids:
+                node = node_by_id[clean_node_id]
+                if node.payload is None:
+                    raise GraphContentConflictError(
+                        f"Node '{clean_node_id}' does not have a payload."
+                    )
+                node_record = self._serialize_node_record(node)
+                results.append(
+                    GraphNodePayload(
+                        node_record=node_record,
+                        payload_base64=base64.b64encode(node.payload).decode(
+                            "ascii"
+                        ),
+                        filename=self._build_node_payload_filename(
+                            node_record
+                        ),
+                    )
+                )
+            return results
         finally:
             await db.sqla_engine.dispose()
 
@@ -1207,16 +1566,26 @@ class GraphContentService:
             edge_count=len(edge_list.items),
         )
 
-    async def get_graph_edge(
+    async def get_graph_edges(
         self,
         *,
         graph_id: str,
-        edge_id: str,
+        edge_ids: list[str],
         current_user: AdminUser | None,
         allow_local_system: bool = False,
-    ) -> GraphEdgeDetail:
-        """Return one graph edge plus metadata."""
-        clean_edge_id = self._validate_edge_id(edge_id)
+    ) -> list[GraphEdgeDetail]:
+        """Return multiple graph edges plus metadata."""
+        if not edge_ids:
+            raise GraphContentValidationError("At least one edge id is required.")
+
+        if len(edge_ids) != len(set(edge_ids)):
+            duplicates = [eid for eid in edge_ids if edge_ids.count(eid) > 1]
+            raise GraphContentValidationError(
+                f"Duplicate edge ids provided: {set(duplicates)}"
+            )
+
+        clean_edge_ids = [self._validate_edge_id(eid) for eid in edge_ids]
+
         graph, instance, db = await self._open_graph(
             graph_id=graph_id,
             current_user=current_user,
@@ -1225,39 +1594,69 @@ class GraphContentService:
         )
         try:
             try:
-                edge = (await db.get_edges([clean_edge_id]))[0]
+                edges = await db.get_edges(clean_edge_ids)
             except ValueError as e:
                 if "edge ids not found" in str(e).lower():
                     raise GraphContentNotFoundError(
-                        f"Edge '{clean_edge_id}' was not found."
+                        "One or more edges were not found."
                     ) from e
                 raise
-            return GraphEdgeDetail(
-                edge_record=self._serialize_edge_record(edge),
-            )
+
+            return [
+                GraphEdgeDetail(edge_record=self._serialize_edge_record(edge))
+                for edge in edges
+            ]
         finally:
             await db.sqla_engine.dispose()
 
-    async def create_graph_edge(
+    async def create_graph_edges(
         self,
         *,
         graph_id: str,
-        type: str,
-        source_id: str,
-        target_id: str,
-        data: dict[str, Any],
+        edges: list[GraphEdgeCreateParam],
         current_user: AdminUser | None,
         allow_local_system: bool = False,
-        schema_name: str | None = None,
-        tags: list[str] | None = None,
-    ) -> GraphEdgeDetail:
-        """Create one edge in a managed graph."""
-        clean_type = self._validate_edge_type(type)
-        clean_source_id = self._validate_related_node_id(source_id, field_name="Source")
-        clean_target_id = self._validate_related_node_id(target_id, field_name="Target")
-        clean_schema_name = self._normalize_optional_text(schema_name)
-        normalized_tags = self._normalize_tag_list(tags)
-        self._validate_json_object(data, object_name="Edge data")
+    ) -> list[GraphEdgeDetail]:
+        """Create multiple edges in a managed graph (atomic bulk)."""
+        if not edges:
+            raise GraphContentValidationError("At least one edge is required.")
+
+        edge_ids = [e.edge_id for e in edges if e.edge_id is not None]
+        if edge_ids and len(edge_ids) != len(set(edge_ids)):
+            duplicates = [eid for eid in edge_ids if edge_ids.count(eid) > 1]
+            raise GraphContentValidationError(
+                f"Duplicate edge ids provided: {set(duplicates)}"
+            )
+
+        edge_upserts: list[EdgeUpsert] = []
+        for edge_param in edges:
+            clean_edge_id = (
+                self._validate_edge_id(edge_param.edge_id)
+                if edge_param.edge_id is not None
+                else None
+            )
+            clean_type = self._validate_edge_type(edge_param.type)
+            clean_source_id = self._validate_related_node_id(
+                edge_param.source_id, field_name="Source"
+            )
+            clean_target_id = self._validate_related_node_id(
+                edge_param.target_id, field_name="Target"
+            )
+            clean_schema_name = self._normalize_optional_text(edge_param.schema_name)
+            normalized_tags = self._normalize_tag_list(edge_param.tags)
+            self._validate_json_object(edge_param.data, object_name="Edge data")
+
+            edge_upserts.append(
+                EdgeUpsert(
+                    id=clean_edge_id,
+                    type=clean_type,
+                    source_id=clean_source_id,
+                    target_id=clean_target_id,
+                    schema_name=clean_schema_name,
+                    data=edge_param.data,
+                    tags=normalized_tags,
+                )
+            )
 
         graph, instance, db = await self._open_graph(
             graph_id=graph_id,
@@ -1267,52 +1666,58 @@ class GraphContentService:
         )
         try:
             try:
-                edge = (await db.set_edges(
-                    [EdgeUpsert(
-                        type=clean_type,
-                        source_id=clean_source_id,
-                        target_id=clean_target_id,
-                        schema_name=clean_schema_name,
-                        data=data,
-                        tags=normalized_tags,
-                    )]
-                ))[0]
+                created_edges = await db.set_edges(edge_upserts)
             except IntegrityError as exc:
                 raise GraphContentValidationError(
                     "Source and target nodes must exist before creating an edge."
                 ) from exc
             except (SchemaNotFoundError, SchemaValidationError, ValueError) as exc:
                 raise GraphContentValidationError(str(exc)) from exc
-            return GraphEdgeDetail(
-                edge_record=self._serialize_edge_record(edge),
-            )
+
+            return [
+                GraphEdgeDetail(edge_record=self._serialize_edge_record(edge))
+                for edge in created_edges
+            ]
         finally:
             await db.sqla_engine.dispose()
 
-    async def update_graph_edge(
+    async def update_graph_edges(
         self,
         *,
         graph_id: str,
-        edge_id: str,
-        type: str | None = None,
-        source_id: str | None = None,
-        target_id: str | None = None,
-        data: dict[str, Any] | None = None,
+        updates: list[GraphEdgeUpdateParam],
         current_user: AdminUser | None,
         allow_local_system: bool = False,
-        schema_name: str | None = None,
-        tags: list[str] | None = None,
-    ) -> GraphEdgeDetail:
-        """Update one edge in a managed graph. Omitted fields are left unchanged."""
-        clean_edge_id = self._validate_edge_id(edge_id)
-        if type is not None:
-            self._validate_edge_type(type)
-        if source_id is not None:
-            self._validate_related_node_id(source_id, field_name="Source")
-        if target_id is not None:
-            self._validate_related_node_id(target_id, field_name="Target")
-        if data is not None:
-            self._validate_json_object(data, object_name="Edge data")
+    ) -> list[GraphEdgeDetail]:
+        """Update multiple edges in a managed graph (atomic bulk)."""
+        if not updates:
+            raise GraphContentValidationError("At least one edge is required.")
+
+        edge_ids = [u.edge_id for u in updates]
+        if len(edge_ids) != len(set(edge_ids)):
+            duplicates = [eid for eid in edge_ids if edge_ids.count(eid) > 1]
+            raise GraphContentValidationError(
+                f"Duplicate edge ids provided: {set(duplicates)}"
+            )
+
+        clean_edge_ids = [self._validate_edge_id(u.edge_id) for u in updates]
+
+        # Validate fields up-front so failures happen before any writes.
+        for update_param in updates:
+            if update_param.type is not None:
+                self._validate_edge_type(update_param.type)
+            if update_param.source_id is not None:
+                self._validate_related_node_id(
+                    update_param.source_id, field_name="Source"
+                )
+            if update_param.target_id is not None:
+                self._validate_related_node_id(
+                    update_param.target_id, field_name="Target"
+                )
+            if update_param.data is not None:
+                self._validate_json_object(
+                    update_param.data, object_name="Edge data"
+                )
 
         graph, instance, db = await self._open_graph(
             graph_id=graph_id,
@@ -1322,40 +1727,57 @@ class GraphContentService:
         )
         try:
             try:
-                existing = (await db.get_edges([clean_edge_id]))[0]
+                existing_edges = await db.get_edges(clean_edge_ids)
             except ValueError as e:
                 if "edge ids not found" in str(e).lower():
                     raise GraphContentNotFoundError(
-                        f"Edge '{clean_edge_id}' was not found."
+                        "One or more edges were not found."
                     ) from e
                 raise
-            type_ = (
-                self._validate_edge_type(type) if type is not None else existing.type
-            )
-            source_id_ = (
-                self._validate_related_node_id(source_id, field_name="Source")
-                if source_id is not None
-                else existing.source_id
-            )
-            target_id_ = (
-                self._validate_related_node_id(target_id, field_name="Target")
-                if target_id is not None
-                else existing.target_id
-            )
-            schema_name_ = (
-                self._normalize_optional_text(schema_name)
-                if schema_name is not None
-                else existing.schema_name
-            )
-            data_ = data if data is not None else existing.data
-            tags_ = (
-                self._normalize_tag_list(tags)
-                if tags is not None
-                else (existing.tags or [])
-            )
-            try:
-                edge = (await db.set_edges(
-                    [EdgeUpsert(
+
+            existing_by_id = {edge.id: edge for edge in existing_edges}
+
+            edge_upserts: list[EdgeUpsert] = []
+            for update_param, clean_edge_id in zip(updates, clean_edge_ids):
+                existing = existing_by_id[clean_edge_id]
+
+                type_ = (
+                    self._validate_edge_type(update_param.type)
+                    if update_param.type is not None
+                    else existing.type
+                )
+                source_id_ = (
+                    self._validate_related_node_id(
+                        update_param.source_id, field_name="Source"
+                    )
+                    if update_param.source_id is not None
+                    else existing.source_id
+                )
+                target_id_ = (
+                    self._validate_related_node_id(
+                        update_param.target_id, field_name="Target"
+                    )
+                    if update_param.target_id is not None
+                    else existing.target_id
+                )
+                schema_name_ = (
+                    self._normalize_optional_text(update_param.schema_name)
+                    if update_param.schema_name is not None
+                    else existing.schema_name
+                )
+                data_ = (
+                    update_param.data
+                    if update_param.data is not None
+                    else existing.data
+                )
+                tags_ = (
+                    self._normalize_tag_list(update_param.tags)
+                    if update_param.tags is not None
+                    else (existing.tags or [])
+                )
+
+                edge_upserts.append(
+                    EdgeUpsert(
                         id=clean_edge_id,
                         type=type_,
                         source_id=source_id_,
@@ -1363,30 +1785,45 @@ class GraphContentService:
                         schema_name=schema_name_,
                         data=data_,
                         tags=tags_,
-                    )]
-                ))[0]
+                    )
+                )
+
+            try:
+                updated_edges = await db.set_edges(edge_upserts)
             except IntegrityError as exc:
                 raise GraphContentValidationError(
                     "Source and target nodes must exist before updating an edge."
                 ) from exc
             except (SchemaNotFoundError, SchemaValidationError, ValueError) as exc:
                 raise GraphContentValidationError(str(exc)) from exc
-            return GraphEdgeDetail(
-                edge_record=self._serialize_edge_record(edge),
-            )
+
+            return [
+                GraphEdgeDetail(edge_record=self._serialize_edge_record(edge))
+                for edge in updated_edges
+            ]
         finally:
             await db.sqla_engine.dispose()
 
-    async def delete_graph_edge(
+    async def delete_graph_edges(
         self,
         *,
         graph_id: str,
-        edge_id: str,
+        edge_ids: list[str],
         current_user: AdminUser | None,
         allow_local_system: bool = False,
-    ) -> GraphEdgeDetail:
-        """Delete one edge from a managed graph."""
-        clean_edge_id = self._validate_edge_id(edge_id)
+    ) -> list[GraphEdgeDetail]:
+        """Delete multiple edges from a managed graph (atomic bulk)."""
+        if not edge_ids:
+            raise GraphContentValidationError("At least one edge id is required.")
+
+        if len(edge_ids) != len(set(edge_ids)):
+            duplicates = [eid for eid in edge_ids if edge_ids.count(eid) > 1]
+            raise GraphContentValidationError(
+                f"Duplicate edge ids provided: {set(duplicates)}"
+            )
+
+        clean_edge_ids = [self._validate_edge_id(eid) for eid in edge_ids]
+
         graph, instance, db = await self._open_graph(
             graph_id=graph_id,
             current_user=current_user,
@@ -1395,18 +1832,29 @@ class GraphContentService:
         )
         try:
             try:
-                edge = (await db.get_edges([clean_edge_id]))[0]
+                edges = await db.get_edges(clean_edge_ids)
             except ValueError as e:
                 if "edge ids not found" in str(e).lower():
                     raise GraphContentNotFoundError(
-                        f"Edge '{clean_edge_id}' was not found."
+                        "One or more edges were not found."
                     ) from e
                 raise
-            deleted = GraphEdgeDetail(
-                edge_record=self._serialize_edge_record(edge),
-            )
-            await db.delete_edges([clean_edge_id])
-            return deleted
+
+            deleted_details = [
+                GraphEdgeDetail(edge_record=self._serialize_edge_record(edge))
+                for edge in edges
+            ]
+
+            try:
+                await db.delete_edges(clean_edge_ids)
+            except ValueError as e:
+                if "edge ids not found" in str(e).lower():
+                    raise GraphContentNotFoundError(
+                        "One or more edges were not found."
+                    ) from e
+                raise
+
+            return deleted_details
         finally:
             await db.sqla_engine.dispose()
 

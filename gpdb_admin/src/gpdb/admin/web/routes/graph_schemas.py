@@ -7,7 +7,11 @@ import json
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from gpdb.admin.graph_content import GraphContentError
+from gpdb.admin.graph_content import (
+    GraphContentError,
+    GraphSchemaCreateParam,
+    GraphSchemaUpdateParam,
+)
 from gpdb.admin.web.routes.common import (
     get_admin_store,
     redirect_with_message,
@@ -92,15 +96,15 @@ async def graph_schema_create_page(request: Request, graph_id: str) -> HTMLRespo
     )
 
 
-@router.post("/graphs/{graph_id}/schemas", name="graph_schema_create")
-async def graph_schema_create(
+@router.post("/graphs/{graph_id}/schemas", name="graph_schemas_create")
+async def graph_schemas_create(
     request: Request,
     graph_id: str,
     name: str = Form(...),
     kind: str = Form("node"),
     json_schema: str = Form(...),
 ):
-    """Create one schema in a managed graph."""
+    """Create one schema in a managed graph (wraps into a one-item batch)."""
     current_user = await require_authenticated_user(request)
     if isinstance(current_user, RedirectResponse):
         return current_user
@@ -122,13 +126,18 @@ async def graph_schema_create(
         )
 
     try:
-        created = await require_graph_content_service(request).create_graph_schema(
+        created_list = await require_graph_content_service(request).create_graph_schemas(
             graph_id=graph_id,
-            name=form_data["name"],
-            kind=form_data["kind"],
-            json_schema=parsed_schema,
+            schemas=[
+                GraphSchemaCreateParam(
+                    name=form_data["name"],
+                    kind=form_data["kind"],
+                    json_schema=parsed_schema,
+                )
+            ],
             current_user=current_user,
         )
+        created = created_list[0]
     except GraphContentError as exc:
         return await _render_graph_schema_form(
             request,
@@ -163,11 +172,12 @@ async def graph_schema_edit_page(
         return current_user
 
     try:
-        detail = await require_graph_content_service(request).get_graph_schema(
+        details = await require_graph_content_service(request).get_graph_schemas(
             graph_id=graph_id,
-            name=schema_name,
+            names=[schema_name],
             current_user=current_user,
         )
+        detail = details[0]
     except GraphContentError as exc:
         return redirect_with_message(
             request,
@@ -194,8 +204,8 @@ async def graph_schema_edit_page(
     )
 
 
-@router.post("/graphs/{graph_id}/schemas/{schema_name}", name="graph_schema_update")
-async def graph_schema_update(
+@router.post("/graphs/{graph_id}/schemas/{schema_name}", name="graph_schemas_update")
+async def graph_schemas_update(
     request: Request,
     graph_id: str,
     schema_name: str,
@@ -225,13 +235,18 @@ async def graph_schema_update(
         )
 
     try:
-        updated = await require_graph_content_service(request).update_graph_schema(
+        updated = await require_graph_content_service(request).update_graph_schemas(
             graph_id=graph_id,
-            name=schema_name,
-            kind=form_data["kind"],
-            json_schema=parsed_schema,
+            schemas=[
+                GraphSchemaUpdateParam(
+                    name=schema_name,
+                    kind=form_data["kind"],
+                    json_schema=parsed_schema,
+                )
+            ],
             current_user=current_user,
         )
+        updated = updated[0]  # Unwrap single result
     except GraphContentError as exc:
         return await _render_graph_schema_form(
             request,
@@ -280,11 +295,12 @@ async def graph_schema_detail_page(
         )
 
     try:
-        detail = await require_graph_content_service(request).get_graph_schema(
+        details = await require_graph_content_service(request).get_graph_schemas(
             graph_id=graph_id,
-            name=schema_name,
+            names=[schema_name],
             current_user=current_user,
         )
+        detail = details[0]
     except GraphContentError as exc:
         return redirect_with_message(
             request,
@@ -314,9 +330,9 @@ async def graph_schema_detail_page(
 
 @router.post(
     "/graphs/{graph_id}/schemas/{schema_name}/delete",
-    name="graph_schema_delete",
+    name="graph_schemas_delete",
 )
-async def graph_schema_delete(
+async def graph_schemas_delete(
     request: Request,
     graph_id: str,
     schema_name: str,
@@ -375,11 +391,12 @@ async def _render_graph_schema_form(
 
     if schema_name is not None:
         try:
-            detail = await require_graph_content_service(request).get_graph_schema(
+            details = await require_graph_content_service(request).get_graph_schemas(
                 graph_id=graph_id,
-                name=schema_name,
+                names=[schema_name],
                 current_user=current_user,
             )
+            detail = details[0]
             schema_detail = detail.model_dump(mode="json", by_alias=True)
         except GraphContentError as exc:
             return redirect_with_message(request, "home", error=str(exc))
@@ -397,12 +414,12 @@ async def _render_graph_schema_form(
         is_edit=is_edit,
         submit_url=(
             request.app.url_path_for(
-                "graph_schema_update",
+                "graph_schemas_update",
                 graph_id=graph_id,
                 schema_name=schema_name,
             )
             if is_edit
-            else request.app.url_path_for("graph_schema_create", graph_id=graph_id)
+            else request.app.url_path_for("graph_schemas_create", graph_id=graph_id)
         ),
         graphs=await get_admin_store(request).list_graphs(),
         error_message=error_message,

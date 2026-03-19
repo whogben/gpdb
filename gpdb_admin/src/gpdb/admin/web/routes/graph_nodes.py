@@ -8,7 +8,12 @@ import json
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
-from gpdb.admin.graph_content import GraphContentError
+from gpdb.admin.graph_content import (
+    GraphContentError,
+    GraphNodeCreateParam,
+    GraphNodePayloadSetParam,
+    GraphNodeUpdateParam,
+)
 from gpdb.admin.web.routes.common import (
     get_admin_store,
     redirect_with_message,
@@ -192,20 +197,32 @@ async def graph_node_create(
         )
 
     try:
-        created = await require_graph_content_service(request).create_graph_node(
+        payload_base64 = (
+            base64.b64encode(payload_bytes).decode("ascii")
+            if payload_bytes is not None
+            else None
+        )
+        created_list = await require_graph_content_service(
+            request
+        ).create_graph_nodes(
             graph_id=graph_id,
-            type=form_data["type"],
-            name=form_data["name"],
-            schema_name=form_data["schema_name"],
-            owner_id=form_data["owner_id"],
-            parent_id=form_data["parent_id"],
-            tags=_parse_tags_text(form_data["tags"]),
-            data=parsed_data,
-            payload=payload_bytes,
-            payload_mime=form_data["mime"],
-            payload_filename=payload_filename,
+            nodes=[
+                GraphNodeCreateParam(
+                    type=form_data["type"],
+                    name=form_data["name"],
+                    schema_name=form_data["schema_name"],
+                    owner_id=form_data["owner_id"],
+                    parent_id=form_data["parent_id"],
+                    tags=_parse_tags_text(form_data["tags"]),
+                    data=parsed_data,
+                    payload_base64=payload_base64,
+                    payload_mime=form_data["mime"],
+                    payload_filename=payload_filename,
+                )
+            ],
             current_user=current_user,
         )
+        created = created_list[0]
     except GraphContentError as exc:
         return await _render_graph_node_form(
             request,
@@ -241,11 +258,12 @@ async def graph_node_edit_page(
 
     try:
         graph_content = require_graph_content_service(request)
-        detail = await graph_content.get_graph_node(
+        detail_list = await graph_content.get_graph_nodes(
             graph_id=graph_id,
-            node_id=node_id,
+            node_ids=[node_id],
             current_user=current_user,
         )
+        detail = detail_list[0]
     except GraphContentError as exc:
         return redirect_with_message(
             request,
@@ -329,22 +347,34 @@ async def graph_node_update(
         )
 
     try:
-        updated = await require_graph_content_service(request).update_graph_node(
+        payload_base64 = (
+            base64.b64encode(payload_bytes).decode("ascii")
+            if payload_bytes is not None
+            else None
+        )
+        updated_list = await require_graph_content_service(
+            request
+        ).update_graph_nodes(
             graph_id=graph_id,
-            node_id=node_id,
-            type=form_data["type"],
-            name=form_data["name"],
-            schema_name=form_data["schema_name"],
-            owner_id=form_data["owner_id"],
-            parent_id=form_data["parent_id"],
-            tags=_parse_tags_text(form_data["tags"]),
-            data=parsed_data,
-            payload=payload_bytes,
-            payload_mime=form_data["mime"],
-            payload_filename=payload_filename,
-            clear_payload=clear_payload,
+            updates=[
+                GraphNodeUpdateParam(
+                    node_id=node_id,
+                    type=form_data["type"],
+                    name=form_data["name"],
+                    schema_name=form_data["schema_name"],
+                    owner_id=form_data["owner_id"],
+                    parent_id=form_data["parent_id"],
+                    tags=_parse_tags_text(form_data["tags"]),
+                    data=parsed_data,
+                    payload_base64=payload_base64,
+                    payload_mime=form_data["mime"],
+                    payload_filename=payload_filename,
+                    clear_payload=clear_payload,
+                )
+            ],
             current_user=current_user,
         )
+        updated = updated_list[0]
     except GraphContentError as exc:
         return await _render_graph_node_form(
             request,
@@ -381,22 +411,24 @@ async def graph_node_detail_page(
 
     try:
         graph_content = require_graph_content_service(request)
-        detail = await graph_content.get_graph_node(
+        detail_list = await graph_content.get_graph_nodes(
             graph_id=graph_id,
-            node_id=node_id,
+            node_ids=[node_id],
             current_user=current_user,
         )
+        detail = detail_list[0]
         overview = await graph_content.get_graph_overview(
             graph_id=graph_id,
             current_user=current_user,
         )
         schema_json = None
         if detail.node.schema_name:
-            schema_detail = await graph_content.get_graph_schema(
+            schema_details = await graph_content.get_graph_schemas(
                 graph_id=graph_id,
-                name=detail.node.schema_name,
+                names=[detail.node.schema_name],
                 current_user=current_user,
             )
+            schema_detail = schema_details[0]
             schema_json = schema_detail.schema.json_schema
     except GraphContentError as exc:
         return redirect_with_message(
@@ -435,11 +467,14 @@ async def graph_node_delete(
         return current_user
 
     try:
-        deleted = await require_graph_content_service(request).delete_graph_node(
+        deleted_list = await require_graph_content_service(
+            request
+        ).delete_graph_nodes(
             graph_id=graph_id,
-            node_id=node_id,
+            node_ids=[node_id],
             current_user=current_user,
         )
+        deleted = deleted_list[0]
     except GraphContentError as exc:
         return redirect_with_message(
             request,
@@ -483,14 +518,21 @@ async def graph_node_payload_upload(
     payload_bytes = await payload_file.read()
 
     try:
-        updated = await require_graph_content_service(request).set_graph_node_payload(
+        updated_list = await require_graph_content_service(request).set_graph_node_payloads(
             graph_id=graph_id,
-            node_id=node_id,
-            payload=payload_bytes,
-            mime=mime,
-            payload_filename=payload_file.filename,
+            payloads=[
+                GraphNodePayloadSetParam(
+                    node_id=node_id,
+                    payload=payload_bytes,
+                    mime=mime,
+                    payload_filename=payload_file.filename,
+                )
+            ],
             current_user=current_user,
         )
+        if len(updated_list) != 1:
+            raise GraphContentError("Expected exactly one node payload to be updated")
+        updated = updated_list[0]
     except GraphContentError as exc:
         return redirect_with_message(
             request,
@@ -524,11 +566,14 @@ async def graph_node_payload_download(
         return current_user
 
     try:
-        payload = await require_graph_content_service(request).get_graph_node_payload(
+        payloads = await require_graph_content_service(request).get_graph_node_payloads(
             graph_id=graph_id,
-            node_id=node_id,
+            node_ids=[node_id],
             current_user=current_user,
         )
+        if len(payloads) != 1:
+            raise GraphContentError("Expected exactly one node payload to be returned")
+        payload = payloads[0]
     except GraphContentError as exc:
         return redirect_with_message(
             request,
@@ -566,11 +611,12 @@ async def _render_graph_node_form(
         )
         overview_payload = overview.model_dump(mode="json")
         if node_id is not None:
-            detail = await graph_content.get_graph_node(
+            detail_list = await graph_content.get_graph_nodes(
                 graph_id=graph_id,
-                node_id=node_id,
+                node_ids=[node_id],
                 current_user=current_user,
             )
+            detail = detail_list[0]
             node_detail = detail.model_dump(mode="json", by_alias=True)
         schema_list = await graph_content.list_graph_schemas(
             graph_id=graph_id,

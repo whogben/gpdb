@@ -22,6 +22,11 @@ from gpdb.graph import (
     SearchQuery,
     Sort,
 )
+from gpdb.query_docs import (
+    EDGE_LIST_SORT_DESCRIPTION,
+    FILTER_DSL_DESCRIPTION,
+    NODE_LIST_SORT_DESCRIPTION,
+)
 
 __version__ = "0.1.0"
 
@@ -48,4 +53,7 @@ __all__ = [
     "SchemaValidationError",
     "SearchQuery",
     "Sort",
+    "FILTER_DSL_DESCRIPTION",
+    "NODE_LIST_SORT_DESCRIPTION",
+    "EDGE_LIST_SORT_DESCRIPTION",
 ]
