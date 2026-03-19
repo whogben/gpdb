@@ -752,7 +752,7 @@ def test_graph_edge_update_and_delete_across_surfaces(admin_test_env):
     assert response.status_code == 200
     deleted_list = response.json()
     deleted = deleted_list[0]
-    assert deleted["edge"]["id"] == rest_edge_id
+    assert deleted["id"] == rest_edge_id
 
     mcp_updated = _call_persisted_authenticated_mcp_tool(
         manager,
@@ -789,7 +789,7 @@ def test_graph_edge_update_and_delete_across_surfaces(admin_test_env):
         {"graph_id": graph_id, "edge_ids": [mcp_edge_id]},
     )
     mcp_deleted = mcp_deleted[0]
-    assert mcp_deleted.edge.id == mcp_edge_id
+    assert mcp_deleted.id == mcp_edge_id
 
     _login(client)
     response = client.get(f"/graphs/{graph_id}/edges")

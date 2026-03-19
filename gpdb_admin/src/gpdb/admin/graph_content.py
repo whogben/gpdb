@@ -357,6 +357,24 @@ class GraphEdgeDetail(BaseModel):
         return self.edge_record
 
 
+class GraphSchemaDeleteResult(BaseModel):
+    """Result of deleting a graph schema - only the name is returned."""
+
+    name: str
+
+
+class GraphNodeDeleteResult(BaseModel):
+    """Result of deleting a graph node - only the ID is returned."""
+
+    id: str
+
+
+class GraphEdgeDeleteResult(BaseModel):
+    """Result of deleting a graph edge - only the ID is returned."""
+
+    id: str
+
+
 class InstanceRecord(BaseModel):
     """Stable instance payload returned by admin instance APIs."""
 
@@ -768,7 +786,7 @@ class GraphContentService:
         names: list[str],
         current_user: AdminUser | None,
         allow_local_system: bool = False,
-    ) -> list[GraphSchemaDetail]:
+    ) -> list[GraphSchemaDeleteResult]:
         """Delete multiple unused schemas from a managed graph."""
         clean_names = [self._validate_schema_name(name) for name in names]
 
@@ -799,7 +817,6 @@ class GraphContentService:
                     f"Schemas not found: {missing}"
                 ) from exc
             in_use_messages: list[str] = []
-            deleted = []
             for schema in schemas:
                 usage = await self._inspect_schema_usage(db, schema.name)
                 if usage.node_count or usage.edge_count:
@@ -808,15 +825,6 @@ class GraphContentService:
                             schema.name, usage
                         )
                     )
-                deleted.append(
-                    GraphSchemaDetail(
-                        schema_record=self._serialize_schema_record(
-                            schema,
-                            include_json_schema=True,
-                            usage=usage,
-                        ),
-                    )
-                )
             if in_use_messages:
                 # Keep the user-facing error message stable by formatting
                 # from computed usage counts (matches UI tests).
@@ -825,7 +833,7 @@ class GraphContentService:
                 await db.delete_schemas(clean_names)
             except SchemaInUseError as exc:
                 raise GraphContentConflictError(str(exc)) from exc
-            return deleted
+            return [GraphSchemaDeleteResult(name=name) for name in clean_names]
         finally:
             await db.sqla_engine.dispose()
 
@@ -1207,7 +1215,7 @@ class GraphContentService:
         node_ids: list[str],
         current_user: AdminUser | None,
         allow_local_system: bool = False,
-    ) -> list[GraphNodeDetail]:
+    ) -> list[GraphNodeDeleteResult]:
         """Delete multiple graph nodes when they have no child/edge blockers."""
         if not node_ids:
             raise GraphContentValidationError("At least one node id is required.")
@@ -1235,8 +1243,6 @@ class GraphContentService:
                         "One or more nodes were not found."
                     ) from e
                 raise
-
-            nodes_by_id = {node.id: node for node in nodes}
 
             blockers_by_id: dict[str, GraphNodeDeleteBlockers] = {}
             in_use_messages: list[str] = []
@@ -1276,13 +1282,7 @@ class GraphContentService:
                     ) from exc
                 raise
 
-            return [
-                GraphNodeDetail(
-                    node_record=self._serialize_node_record(nodes_by_id[clean_node_id]),
-                    delete_blockers=blockers_by_id[clean_node_id],
-                )
-                for clean_node_id in clean_node_ids
-            ]
+            return [GraphNodeDeleteResult(id=node_id) for node_id in clean_node_ids]
         finally:
             await db.sqla_engine.dispose()
 
@@ -1811,7 +1811,7 @@ class GraphContentService:
         edge_ids: list[str],
         current_user: AdminUser | None,
         allow_local_system: bool = False,
-    ) -> list[GraphEdgeDetail]:
+    ) -> list[GraphEdgeDeleteResult]:
         """Delete multiple edges from a managed graph (atomic bulk)."""
         if not edge_ids:
             raise GraphContentValidationError("At least one edge id is required.")
@@ -1840,11 +1840,6 @@ class GraphContentService:
                     ) from e
                 raise
 
-            deleted_details = [
-                GraphEdgeDetail(edge_record=self._serialize_edge_record(edge))
-                for edge in edges
-            ]
-
             try:
                 await db.delete_edges(clean_edge_ids)
             except ValueError as e:
@@ -1854,7 +1849,7 @@ class GraphContentService:
                     ) from e
                 raise
 
-            return deleted_details
+            return [GraphEdgeDeleteResult(id=edge_id) for edge_id in clean_edge_ids]
         finally:
             await db.sqla_engine.dispose()
 

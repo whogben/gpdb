@@ -12,11 +12,13 @@ from toolaccess import (
 from gpdb.admin.context import _call_graph_content_from_context
 from gpdb.admin.graph_content import (
     GraphDetail,
+    GraphEdgeDeleteResult,
     GraphEdgeDetail,
     GraphEdgeList,
     GraphEdgeCreateParam,
     GraphList,
     GraphNodeCreateParam,
+    GraphNodeDeleteResult,
     GraphNodeDetail,
     GraphNodeList,
     GraphNodePayload,
@@ -24,6 +26,7 @@ from gpdb.admin.graph_content import (
     GraphOverview,
     GraphNodeUpdateParam,
     GraphEdgeUpdateParam,
+    GraphSchemaDeleteResult,
     GraphSchemaDetail,
     GraphSchemaList,
     GraphSchemaCreateParam,
@@ -515,7 +518,7 @@ def _build_graph_content_service(services: AdminServices) -> ToolService:
     async def graph_schemas_delete(
         params: GraphSchemasDeleteParams,
         ctx: InvocationContext = inject_context(),
-    ) -> list[GraphSchemaDetail]:
+    ) -> list[GraphSchemaDeleteResult]:
         """Delete multiple graph schemas for the authenticated caller."""
         deleted = await _call_graph_content_from_context(
             services,
@@ -799,7 +802,7 @@ def _build_graph_content_service(services: AdminServices) -> ToolService:
     async def graph_nodes_delete(
         params: GraphNodesDeleteParams,
         ctx: InvocationContext = inject_context(),
-    ) -> list[GraphNodeDetail]:
+    ) -> list[GraphNodeDeleteResult]:
         """Delete multiple graph nodes for the authenticated caller."""
         return await _call_graph_content_from_context(
             services,
@@ -941,7 +944,7 @@ def _build_graph_content_service(services: AdminServices) -> ToolService:
     async def graph_edges_delete(
         params: GraphEdgesDeleteParams,
         ctx: InvocationContext = inject_context(),
-    ) -> list[GraphEdgeDetail]:
+    ) -> list[GraphEdgeDeleteResult]:
         """Delete multiple graph edges for the authenticated caller."""
         return await _call_graph_content_from_context(
             services,

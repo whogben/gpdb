@@ -643,7 +643,7 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
     )
     assert response.status_code == 200
     deleted_rest = response.json()[0]
-    assert deleted_rest["node"]["id"] == rest_node_id
+    assert deleted_rest["id"] == rest_node_id
 
     mcp_updated = _call_persisted_authenticated_mcp_tool(
         manager,
@@ -719,7 +719,7 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
         {"graph_id": graph_id, "node_ids": [mcp_node_id]},
     )
     mcp_deleted = mcp_deleted[0]
-    assert mcp_deleted.node.id == mcp_node_id
+    assert mcp_deleted.id == mcp_node_id
 
     _login(client)
     response = client.get(f"/graphs/{graph_id}/nodes")

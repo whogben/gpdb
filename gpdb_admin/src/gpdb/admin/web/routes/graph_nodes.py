@@ -488,7 +488,7 @@ async def graph_node_delete(
         request,
         "graph_node_list_page",
         graph_id=graph_id,
-        success=f"Node '{deleted.node.name or deleted.node.id}' deleted.",
+        success=f"Node '{deleted.id}' deleted.",
     )
 
 

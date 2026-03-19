@@ -434,7 +434,7 @@ async def graph_edges_delete(
         request,
         "graph_edge_list_page",
         graph_id=graph_id,
-        success=f"Edge '{deleted.edge.id}' deleted.",
+        success=f"Edge '{deleted.id}' deleted.",
     )
 
 

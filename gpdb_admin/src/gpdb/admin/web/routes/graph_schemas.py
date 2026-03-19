@@ -365,7 +365,7 @@ async def graph_schemas_delete(
         request,
         "graph_schema_list_page",
         graph_id=graph_id,
-        success=f"Schema '{deleted_schema.schema.name}' deleted.",
+        success=f"Schema '{deleted_schema.name}' deleted.",
     )
 
 
