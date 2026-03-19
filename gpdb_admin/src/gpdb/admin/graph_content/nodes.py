@@ -59,7 +59,6 @@ async def list_graph_nodes(
     current_user: AdminUser | None,
     allow_local_system: bool = False,
     type: str | None = None,
-    schema_name: str | None = None,
     parent_id: str | None = None,
     filter_dsl: str | None = None,
     limit: int = 50,
@@ -88,7 +87,6 @@ async def list_graph_nodes(
         else:
             filter_value = build_node_filter(
                 type=type,
-                schema_name=schema_name,
                 parent_id=parent_id,
             )
         query = SearchQuery(
@@ -105,7 +103,6 @@ async def list_graph_nodes(
             offset=page.offset,
             filters=GraphNodeFilters(
                 type=normalize_optional_text(type),
-                schema_name=normalize_optional_text(schema_name),
                 parent_id=normalize_optional_text(parent_id),
                 filter_dsl=clean_filter_dsl,
                 sort=sort,
@@ -197,7 +194,6 @@ async def create_graph_nodes(
     for node_param in nodes:
         clean_type = validate_node_type(node_param.type)
         clean_name = normalize_optional_text(node_param.name)
-        clean_schema_name = normalize_optional_text(node_param.schema_name)
         clean_owner_id = normalize_optional_text(node_param.owner_id)
         clean_parent_id = normalize_optional_text(node_param.parent_id)
         normalized_tags = normalize_tag_list(node_param.tags)
@@ -225,7 +221,6 @@ async def create_graph_nodes(
                 name=clean_name,
                 owner_id=clean_owner_id,
                 parent_id=clean_parent_id,
-                schema_name=clean_schema_name,
                 data=node_param.data,
                 tags=normalized_tags,
                 payload=payload,
@@ -337,11 +332,6 @@ async def update_graph_nodes(
                 if update_param.name is not None
                 else existing.name
             )
-            schema_name_ = (
-                normalize_optional_text(update_param.schema_name)
-                if update_param.schema_name is not None
-                else existing.schema_name
-            )
             owner_id_ = (
                 normalize_optional_text(update_param.owner_id)
                 if update_param.owner_id is not None
@@ -401,7 +391,6 @@ async def update_graph_nodes(
                     name=name_,
                     owner_id=owner_id_,
                     parent_id=parent_id_,
-                    schema_name=schema_name_,
                     data=data_,
                     tags=tags_,
                     payload=payload_,

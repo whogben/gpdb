@@ -43,7 +43,7 @@ def test_graph_node_schema_editor_renders_ui(admin_test_env):
     assert graph is not None
     graph_id = graph.id
     _seed_graph_schema(
-        manager, table_prefix="node_schema_editor", schema_name="task_schema"
+        manager, table_prefix="node_schema_editor", schema_name="task"
     )
     _seed_graph_schema(
         manager,
@@ -56,7 +56,6 @@ def test_graph_node_schema_editor_renders_ui(admin_test_env):
         table_prefix="node_schema_editor",
         type="task",
         name="schema-backed-node",
-        schema_name="task_schema",
         data={"name": "Schema backed node"},
     )
 
@@ -67,23 +66,23 @@ def test_graph_node_schema_editor_renders_ui(admin_test_env):
     assert "jedison.umd.js" in response.text
     assert "jedison-form.js" in response.text
     assert "data-jedison-root" in response.text
-    assert '"task_schema"' in response.text
-    assert '"description": "task_schema schema"' in response.text
+    assert '"task"' in response.text
+    assert '"description": "task schema"' in response.text
     assert '"edge_only_schema"' not in response.text
 
     response = client.get(f"/graphs/{graph_id}/nodes/{node_id}/edit")
     assert response.status_code == 200
     assert "Schema Editor" in response.text
     assert "Schema backed node" in response.text
-    assert '<option value="task_schema" selected' in response.text
+    assert '<option value="task" selected' in response.text
 
     response = client.get(f"/graphs/{graph_id}/nodes/{node_id}")
     assert response.status_code == 200
     assert "Show schema view" in response.text
-    assert '<p class="resource-subtitle">task_schema</p>' in response.text
+    assert '<p class="resource-subtitle">task</p>' in response.text
     assert "jedison.umd.js" in response.text
     assert "jedison-form.js" in response.text
-    assert '"description": "task_schema schema"' in response.text
+    assert '"description": "task schema"' in response.text
 
 
 def test_graph_node_browse_and_create_across_surfaces(admin_test_env):
@@ -117,7 +116,7 @@ def test_graph_node_browse_and_create_across_surfaces(admin_test_env):
     graph = _read_graph_by_prefix(manager, table_prefix="node_slice")
     assert graph is not None
     graph_id = graph.id
-    _seed_graph_schema(manager, table_prefix="node_slice", schema_name="task_schema")
+    _seed_graph_schema(manager, table_prefix="node_slice", schema_name="task")
     _seed_graph_schema(
         manager,
         table_prefix="node_slice",
@@ -129,7 +128,6 @@ def test_graph_node_browse_and_create_across_surfaces(admin_test_env):
         table_prefix="node_slice",
         type="task",
         name="seeded-node",
-        schema_name="task_schema",
         data={"name": "Seeded node"},
         tags=["seeded"],
     )
@@ -137,7 +135,7 @@ def test_graph_node_browse_and_create_across_surfaces(admin_test_env):
     response = client.get(f"/graphs/{graph_id}/nodes/new")
     assert response.status_code == 200
     assert "Create a node for Node Slice." in response.text
-    assert '<option value="task_schema"' in response.text
+    assert '<option value="task"' in response.text
     assert 'value="edge_only_schema"' not in response.text
 
     response = client.post(
@@ -145,7 +143,6 @@ def test_graph_node_browse_and_create_across_surfaces(admin_test_env):
         data={
             "type": "task",
             "name": "web-node",
-            "schema_name": "task_schema",
             "owner_id": "",
             "parent_id": "",
             "tags": "alpha, beta",
@@ -196,7 +193,6 @@ def test_graph_node_browse_and_create_across_surfaces(admin_test_env):
                 {
                     "type": "task",
                     "name": "rest-node",
-                    "schema_name": "task_schema",
                     "tags": ["rest"],
                     "payload_base64": base64.b64encode(b"rest payload").decode(
                         "ascii"
@@ -213,7 +209,7 @@ def test_graph_node_browse_and_create_across_surfaces(admin_test_env):
     rest_created_list = response.json()
     rest_created = rest_created_list[0]
     assert rest_created["node"]["name"] == "rest-node"
-    assert rest_created["node"]["schema_name"] == "task_schema"
+    assert rest_created["node"]["type"] == "task"
     assert rest_created["node"]["tags"] == ["rest"]
     assert rest_created["node"]["payload_size"] == 12
     assert rest_created["node"]["payload_filename"] == "rest.txt"
@@ -252,7 +248,6 @@ def test_graph_node_browse_and_create_across_surfaces(admin_test_env):
                 {
                     "type": "task",
                     "name": "mcp-node",
-                    "schema_name": "task_schema",
                     "tags": ["mcp", "final"],
                     "data": {"name": "MCP node"},
                     "payload_base64": base64.b64encode(b"mcp payload").decode(
@@ -335,21 +330,21 @@ def test_node_list_filter_dsl(admin_test_env):
     _seed_node_record(
         manager,
         table_prefix="dsl_filter_nodes",
-        type="task",
+        type="__default__",
         name="a-task",
         data={"n": 1},
     )
     _seed_node_record(
         manager,
         table_prefix="dsl_filter_nodes",
-        type="other",
+        type="__default__",
         name="other-node",
         data={"n": 2},
     )
 
     response = client.get(
         f"/graphs/{graph_id}/nodes",
-        params={"filter": "type = task"},
+        params={"filter": "name = a-task"},
     )
     assert response.status_code == 200
     assert "a-task" in response.text
@@ -398,7 +393,7 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
     assert graph is not None
     graph_id = graph.id
     _seed_graph_schema(
-        manager, table_prefix="node_slice_phase2", schema_name="task_schema"
+        manager, table_prefix="node_slice_phase2", schema_name="task"
     )
 
     blocked_id = _seed_node_record(
@@ -406,7 +401,6 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
         table_prefix="node_slice_phase2",
         type="task",
         name="blocked-root",
-        schema_name="task_schema",
         data={"name": "Blocked root"},
     )
     _seed_node_record(
@@ -427,7 +421,7 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
     _seed_edge_record(
         manager,
         table_prefix="node_slice_phase2",
-        type="depends_on",
+        type="__default__",
         source_id=blocked_id,
         target_id=blocked_target_id,
         data={"kind": "blocker"},
@@ -437,7 +431,6 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
         table_prefix="node_slice_phase2",
         type="task",
         name="web-edit",
-        schema_name="task_schema",
         data={"name": "Web edit"},
         tags=["before"],
     )
@@ -502,7 +495,6 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
         data={
             "type": "task",
             "name": "web-edit-renamed",
-            "schema_name": "task_schema",
             "owner_id": "owner-1",
             "parent_id": "",
             "tags": "alpha, beta",
@@ -535,7 +527,6 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
         data={
             "type": "task",
             "name": "web-edit-renamed",
-            "schema_name": "task_schema",
             "owner_id": "owner-1",
             "parent_id": "",
             "tags": "alpha, beta",
@@ -577,7 +568,6 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
                     "node_id": rest_node_id,
                     "type": "task",
                     "name": "rest-edit-renamed",
-                    "schema_name": "task_schema",
                     "tags": ["rest", "updated"],
                     "payload_base64": base64.b64encode(b"rest payload").decode(
                         "ascii"
@@ -593,7 +583,7 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
     assert response.status_code == 200
     updated_rest = response.json()[0]
     assert updated_rest["node"]["name"] == "rest-edit-renamed"
-    assert updated_rest["node"]["schema_name"] == "task_schema"
+    assert updated_rest["node"]["type"] == "task"
     assert updated_rest["node"]["tags"] == ["rest", "updated"]
     assert updated_rest["node"]["payload_size"] == 12
     assert updated_rest["node"]["payload_filename"] == "rest.txt"
@@ -621,7 +611,6 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
                     "node_id": rest_node_id,
                     "type": "task",
                     "name": "rest-edit-renamed",
-                    "schema_name": "task_schema",
                     "tags": ["rest", "updated"],
                     "clear_payload": True,
                     "data": {"name": "Rest edit updated", "status": "active"},
@@ -656,7 +645,6 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
                     "node_id": mcp_node_id,
                     "type": "task",
                     "name": "mcp-edit-renamed",
-                    "schema_name": "task_schema",
                     "tags": ["mcp", "updated"],
                     "data": {"name": "MCP edit updated", "status": "active"},
                     "payload_base64": base64.b64encode(b"mcp payload").decode(
@@ -699,7 +687,6 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
                     "node_id": mcp_node_id,
                     "type": "task",
                     "name": "mcp-edit-renamed",
-                    "schema_name": "task_schema",
                     "tags": ["mcp", "updated"],
                     "data": {"name": "MCP edit updated", "status": "active"},
                     "clear_payload": True,
@@ -758,13 +745,12 @@ def test_node_partial_update_preserves_omitted_fields(admin_test_env):
     graph = _read_graph_by_prefix(manager, table_prefix="partial_node")
     assert graph is not None
     graph_id = graph.id
-    _seed_graph_schema(manager, table_prefix="partial_node", schema_name="task_schema")
+    _seed_graph_schema(manager, table_prefix="partial_node", schema_name="task")
     node_id = _seed_node_record(
         manager,
         table_prefix="partial_node",
         type="task",
         name="partial-a",
-        schema_name="task_schema",
         data={"name": "partial-a", "x": 1, "label": "original"},
         tags=["keep", "me"],
     )
@@ -796,7 +782,6 @@ def test_node_partial_update_preserves_omitted_fields(admin_test_env):
         data["node"]["data"] == {"name": "partial-a", "x": 1, "label": "original"}
     )
     assert data["node"]["type"] == "task"
-    assert data["node"]["schema_name"] == "task_schema"
 
 
 def _bootstrap_owner(client: TestClient) -> None:
@@ -905,7 +890,6 @@ def _seed_node_record(
     type: str,
     name: str,
     data: dict[str, object],
-    schema_name: str | None = None,
     tags: list[str] | None = None,
     parent_id: str | None = None,
 ) -> str:
@@ -921,7 +905,6 @@ def _seed_node_record(
                         type=type,
                         name=name,
                         parent_id=parent_id,
-                        schema_name=schema_name,
                         data=data,
                         tags=list(tags or []),
                     )
@@ -943,7 +926,6 @@ def _seed_edge_record(
     source_id: str,
     target_id: str,
     data: dict[str, object],
-    schema_name: str | None = None,
     tags: list[str] | None = None,
 ) -> str:
     services = manager.app.state.services
@@ -958,7 +940,6 @@ def _seed_edge_record(
                         type=type,
                         source_id=source_id,
                         target_id=target_id,
-                        schema_name=schema_name,
                         data=data,
                         tags=list(tags or []),
                     )

@@ -33,7 +33,7 @@ async def test_delete_schemas_blocked_when_referenced(db: GPGraph):
 
     # Create a node that references the first schema
     node = NodeUpsert(
-        type="person", schema_name="person_delete", data={"name": "Alice"}
+        type="person_delete", schema_name="person_delete", data={"name": "Alice"}
     )
     await db.set_nodes([node])
 
@@ -76,8 +76,8 @@ async def test_delete_schemas_blocked_when_referenced_by_edge(db: GPGraph):
     await db.set_schemas([SchemaUpsert(name="unused_edge_delete", json_schema=unused_schema, kind="edge")])
 
     # Create two nodes
-    node1 = NodeUpsert(type="test", data={"label": "A"})
-    node2 = NodeUpsert(type="test", data={"label": "B"})
+    node1 = NodeUpsert(type="__default__", data={"label": "A"})
+    node2 = NodeUpsert(type="__default__", data={"label": "B"})
     result1_list = await db.set_nodes([node1])
     result2_list = await db.set_nodes([node2])
     result1 = result1_list[0]
@@ -87,8 +87,7 @@ async def test_delete_schemas_blocked_when_referenced_by_edge(db: GPGraph):
     edge = EdgeUpsert(
         source_id=result1.id,
         target_id=result2.id,
-        type="connected",
-        schema_name="relationship_delete",
+        type="relationship_delete",
         data={"weight": 0.5},
     )
     await db.set_edges([edge])
@@ -213,9 +212,8 @@ async def test_delete_schemas_single_item(db: GPGraph):
 @pytest.mark.asyncio
 async def test_update_node_preserves_schema(db: GPGraph):
     """
-    Test that updating a node without providing schema_name preserves the existing schema.
-    Per requirements: "If you don't pass schema_name in the update, the system preserves
-    the existing schema and validates against it automatically."
+    Test that updating a node preserves the existing type (schema).
+    Per Phase 3: The type field is the schema name and is preserved on update.
     """
     from gpdb import SchemaValidationError
 
@@ -230,29 +228,29 @@ async def test_update_node_preserves_schema(db: GPGraph):
     }
     await db.set_schemas([SchemaUpsert(name="person_preserve", json_schema=person_schema, kind="node")])
 
-    # Create a node with schema_name
+    # Create a node with type referencing the schema
     node = NodeUpsert(
-        type="person", schema_name="person_preserve", data={"name": "Alice", "age": 30}
+        type="person_preserve", data={"name": "Alice", "age": 30}
     )
     result_list = await db.set_nodes([node])
     result = result_list[0]
-    assert result.schema_name == "person_preserve"
+    assert result.type == "person_preserve"
 
-    # Update the node without providing schema_name
-    # The existing schema should be preserved and validation should still apply
+    # Update the node without changing type
+    # The existing type should be preserved and validation should still apply
     updated_node = NodeUpsert(
-        id=result.id, type="person", data={"name": "Alice", "age": 31}
+        id=result.id, type="person_preserve", data={"name": "Alice", "age": 31}
     )
     updated_result_list = await db.set_nodes([updated_node])
     updated_result = updated_result_list[0]
 
-    # Verify schema_name is preserved
-    assert updated_result.schema_name == "person_preserve"
+    # Verify type is preserved
+    assert updated_result.type == "person_preserve"
 
     # Verify data was updated
     assert updated_result.data["age"] == 31
 
     # Verify validation still applies (try invalid data)
-    invalid_node = NodeUpsert(id=result.id, type="person", data={"age": 32})
+    invalid_node = NodeUpsert(id=result.id, type="person_preserve", data={"age": 32})
     with pytest.raises(SchemaValidationError):
         await db.set_nodes([invalid_node])

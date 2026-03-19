@@ -26,9 +26,6 @@ class _GPRecord(_Base):
 
     # -- User-defined Content --
     type: Mapped[str] = mapped_column(String, index=True, nullable=False)
-    schema_name: Mapped[str | None] = mapped_column(
-        String, index=True, nullable=True
-    )
     data: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict)
     tags: Mapped[List[str]] = mapped_column(JSONB, default=list)
 

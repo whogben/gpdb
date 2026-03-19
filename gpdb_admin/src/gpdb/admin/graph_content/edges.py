@@ -53,7 +53,6 @@ async def list_graph_edges(
     current_user: AdminUser | None,
     allow_local_system: bool = False,
     type: str | None = None,
-    schema_name: str | None = None,
     source_id: str | None = None,
     target_id: str | None = None,
     filter_dsl: str | None = None,
@@ -83,7 +82,6 @@ async def list_graph_edges(
         else:
             filter_value = build_edge_filter(
                 type=type,
-                schema_name=schema_name,
                 source_id=source_id,
                 target_id=target_id,
             )
@@ -101,7 +99,6 @@ async def list_graph_edges(
             offset=page.offset,
             filters=GraphEdgeFilters(
                 type=normalize_optional_text(type),
-                schema_name=normalize_optional_text(schema_name),
                 source_id=normalize_optional_text(source_id),
                 target_id=normalize_optional_text(target_id),
                 filter_dsl=clean_filter_dsl,
@@ -119,12 +116,10 @@ async def get_graph_viewer_data(
     current_user: AdminUser | None,
     allow_local_system: bool = False,
     node_type: str | None = None,
-    node_schema_name: str | None = None,
     node_parent_id: str | None = None,
     node_filter_dsl: str | None = None,
     node_limit: int = 200,
     edge_type: str | None = None,
-    edge_schema_name: str | None = None,
     edge_source_id: str | None = None,
     edge_target_id: str | None = None,
     edge_filter_dsl: str | None = None,
@@ -140,7 +135,6 @@ async def get_graph_viewer_data(
             current_user=current_user,
             allow_local_system=allow_local_system,
             type=node_type,
-            schema_name=node_schema_name,
             parent_id=node_parent_id,
             filter_dsl=node_filter_dsl,
             limit=min(node_limit, 500),
@@ -153,7 +147,6 @@ async def get_graph_viewer_data(
             current_user=current_user,
             allow_local_system=allow_local_system,
             type=edge_type,
-            schema_name=edge_schema_name,
             source_id=edge_source_id,
             target_id=edge_target_id,
             filter_dsl=edge_filter_dsl,
@@ -281,7 +274,6 @@ async def create_graph_edges(
         clean_target_id = validate_related_node_id(
             edge_param.target_id, field_name="Target"
         )
-        clean_schema_name = normalize_optional_text(edge_param.schema_name)
         normalized_tags = normalize_tag_list(edge_param.tags)
         validate_json_object(edge_param.data, object_name="Edge data")
 
@@ -291,7 +283,6 @@ async def create_graph_edges(
                 type=clean_type,
                 source_id=clean_source_id,
                 target_id=clean_target_id,
-                schema_name=clean_schema_name,
                 data=edge_param.data,
                 tags=normalized_tags,
             )
@@ -404,11 +395,6 @@ async def update_graph_edges(
                 if update_param.target_id is not None
                 else existing.target_id
             )
-            schema_name_ = (
-                normalize_optional_text(update_param.schema_name)
-                if update_param.schema_name is not None
-                else existing.schema_name
-            )
             data_ = (
                 update_param.data
                 if update_param.data is not None
@@ -426,7 +412,6 @@ async def update_graph_edges(
                     type=type_,
                     source_id=source_id_,
                     target_id=target_id_,
-                    schema_name=schema_name_,
                     data=data_,
                     tags=tags_,
                 )

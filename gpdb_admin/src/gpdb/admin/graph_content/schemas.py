@@ -68,12 +68,12 @@ async def get_graph_overview(
         instance=serialize_instance(instance),
     )
     try:
-        schema_names = await db.list_schemas()
+        schema_refs = await db.list_schemas()
         from gpdb import SearchQuery
         node_page = await db.search_nodes(SearchQuery(limit=1))
         edge_page = await db.search_edges(SearchQuery(limit=1))
         overview.summary = GraphContentSummary(
-            schema_count=len(schema_names),
+            schema_count=len(schema_refs),
             node_count=node_page.total,
             edge_count=edge_page.total,
         )
@@ -111,59 +111,35 @@ async def list_graph_schemas(
     try:
         items: list[dict[str, object]] = []
         clean_kind = normalize_optional_schema_kind(kind)
-        schema_names = sorted(await db.list_schemas(kind=clean_kind))
-        if schema_names:
-            from gpdb import SchemaRef
-            # If no kind filter, we need to get all schemas and filter by name
-            if clean_kind is None:
-                # Get all schemas with both kinds - but get them separately to handle missing ones
-                name_set = set(schema_names)
-                for schema_name in schema_names:
-                    for kind in ("node", "edge"):
-                        try:
-                            schemas = await db.get_schemas(
-                                [SchemaRef(name=schema_name, kind=kind)]
-                            )
-                            for schema in schemas:
-                                items.append(
-                                    serialize_schema_record(
-                                        schema,
-                                        include_json_schema=include_json_schema,
-                                        usage=GraphSchemaUsage(),
-                                    )
+        schema_refs = await db.list_schemas(kind=clean_kind)
+        if schema_refs:
+            try:
+                schemas = await db.get_schemas(schema_refs)
+                for schema in schemas:
+                    items.append(
+                        serialize_schema_record(
+                            schema,
+                            include_json_schema=include_json_schema,
+                            usage=GraphSchemaUsage(),
+                        )
+                    )
+            except SchemaNotFoundError:
+                # TOCTOU protection: `list_schemas()` may become stale
+                # if another user deletes a schema between list+get.
+                # Best-effort: skip missing schemas and return the rest.
+                for ref in schema_refs:
+                    try:
+                        schemas = await db.get_schemas([ref])
+                        for schema in schemas:
+                            items.append(
+                                serialize_schema_record(
+                                    schema,
+                                    include_json_schema=include_json_schema,
+                                    usage=GraphSchemaUsage(),
                                 )
-                        except SchemaNotFoundError:
-                            # Schema with this name/kind doesn't exist, skip
-                            pass
-            else:
-                try:
-                    refs = [SchemaRef(name=name, kind=clean_kind) for name in schema_names]
-                    schemas = await db.get_schemas(refs)
-                    for schema in schemas:
-                        items.append(
-                            serialize_schema_record(
-                                schema,
-                                include_json_schema=include_json_schema,
-                                usage=GraphSchemaUsage(),
                             )
-                        )
-                except SchemaNotFoundError:
-                    # TOCTOU protection: `list_schemas()` may become stale
-                    # if another user deletes a schema between list+get.
-                    # Best-effort: skip missing schemas and return the rest.
-                    for schema_name in schema_names:
-                        try:
-                            schemas = await db.get_schemas([SchemaRef(name=schema_name, kind=clean_kind)])
-                            schema = schemas[0]
-                        except SchemaNotFoundError:
-                            continue
-                        items.append(
-                            serialize_schema_record(
-                                schema,
-                                include_json_schema=include_json_schema,
-                                usage=GraphSchemaUsage(),
-                            )
-                        )
+                    except SchemaNotFoundError:
+                        continue
         return GraphSchemaList(
             items=[GraphSchemaRecord(**item) for item in items],
             total=len(items),
@@ -394,10 +370,10 @@ async def update_graph_schemas(
             
             if refs_without_kind:
                 # Get all schemas from the database by listing them all
-                all_schema_names = await db.list_schemas()
+                all_schema_refs = await db.list_schemas()
                 
                 # Filter to only the names we need
-                needed_names = [n for n in all_schema_names if n in refs_without_kind]
+                needed_names = [ref.name for ref in all_schema_refs if ref.name in refs_without_kind]
                 
                 if needed_names:
                     # Try to get each schema by name, handling missing kinds

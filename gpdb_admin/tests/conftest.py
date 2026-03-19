@@ -68,6 +68,15 @@ async def _reset_captive_database(url: str, session_secret: str) -> None:
 
         await store.initialize()
         await db.create_tables()
+        # Create schemas for admin node types (instance, graph, user, api_key)
+        # These are used as type identifiers, not for validation
+        from gpdb import SchemaUpsert
+        await store.db.set_schemas([
+            SchemaUpsert(name="instance", json_schema={"type": "object"}, kind="node"),
+            SchemaUpsert(name="graph", json_schema={"type": "object"}, kind="node"),
+            SchemaUpsert(name="user", json_schema={"type": "object"}, kind="node"),
+            SchemaUpsert(name="api_key", json_schema={"type": "object"}, kind="node"),
+        ])
         builtin_instance = await store.ensure_builtin_instance()
         await store.upsert_graph_metadata(
             instance_id=builtin_instance.id,

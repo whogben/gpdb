@@ -372,7 +372,7 @@ def _graph_and_api_key(client, manager):
     graph = _read_graph_by_prefix(manager, table_prefix="payload_tests")
     assert graph is not None
     graph_id = graph.id
-    _seed_graph_schema(manager, table_prefix="payload_tests", schema_name="task_schema")
+    _seed_graph_schema(manager, table_prefix="payload_tests", schema_name="task")
     response = client.post(
         "/apikeys",
         data={"label": "Payload test key"},

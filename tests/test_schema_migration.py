@@ -175,12 +175,12 @@ async def test_migrate_schema_transaction(db: GPGraph):
 
     # Create nodes with v1 schema
     node1 = NodeUpsert(
-        type="person",
+        type="person_transaction",
         schema_name="person_transaction",
         data={"name": "Alice", "age": 30},
     )
     node2 = NodeUpsert(
-        type="person", schema_name="person_transaction", data={"name": "Bob", "age": 25}
+        type="person_transaction", schema_name="person_transaction", data={"name": "Bob", "age": 25}
     )
     result1_list = await db.set_nodes([node1])
     result2_list = await db.set_nodes([node2])

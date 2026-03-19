@@ -36,8 +36,6 @@ def _node_upsert_to_orm(
             existing.owner_id = dto.owner_id
         if dto.parent_id is not None:
             existing.parent_id = dto.parent_id
-        if dto.schema_name is not None:
-            existing.schema_name = dto.schema_name
         if "data" in fields_set:
             existing.data = dto.data
         if "tags" in fields_set:
@@ -55,7 +53,6 @@ def _node_upsert_to_orm(
         "name": dto.name,
         "owner_id": dto.owner_id,
         "parent_id": dto.parent_id,
-        "schema_name": dto.schema_name,
         "data": dto.data,
         "tags": dto.tags,
         "payload": dto.payload,
@@ -98,8 +95,6 @@ def _edge_upsert_to_orm(
             existing.source_id = dto.source_id
         if dto.target_id is not None:
             existing.target_id = dto.target_id
-        if dto.schema_name is not None:
-            existing.schema_name = dto.schema_name
         if "data" in fields_set:
             existing.data = dto.data
         if "tags" in fields_set:
@@ -110,7 +105,6 @@ def _edge_upsert_to_orm(
         "type": dto.type,
         "source_id": dto.source_id,
         "target_id": dto.target_id,
-        "schema_name": dto.schema_name,
         "data": dto.data,
         "tags": dto.tags,
     }

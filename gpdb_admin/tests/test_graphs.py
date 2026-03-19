@@ -207,9 +207,8 @@ def _seed_graph_content(manager, *, table_prefix: str) -> None:
             source_list = await db.set_nodes(
                 [
                     NodeUpsert(
-                        type="task",
+                        type="task_schema",
                         name="source",
-                        schema_name="task_schema",
                         data={"label": "Source task"},
                     )
                 ]
@@ -218,9 +217,9 @@ def _seed_graph_content(manager, *, table_prefix: str) -> None:
             target_list = await db.set_nodes(
                 [
                     NodeUpsert(
-                        type="task",
+                        type="task_schema",
                         name="target",
-                        data={},
+                        data={"label": "Target task"},
                     )
                 ]
             )
@@ -228,7 +227,7 @@ def _seed_graph_content(manager, *, table_prefix: str) -> None:
             _ = (await db.set_edges(
                 [
                     EdgeUpsert(
-                        type="depends_on",
+                        type="__default__",
                         source_id=source.id,
                         target_id=target.id,
                         data={},

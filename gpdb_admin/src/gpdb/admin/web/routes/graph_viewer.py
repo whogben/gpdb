@@ -30,16 +30,12 @@ def _viewer_filter_summary(params: dict[str, str | int]) -> str:
     parts: list[str] = []
     if params.get("node_type"):
         parts.append(f"node type={params['node_type']}")
-    if params.get("node_schema_name"):
-        parts.append(f"node schema={params['node_schema_name']}")
     if params.get("node_parent_id"):
         parts.append("node parent=…")
     if params.get("node_filter"):
         parts.append("node DSL")
     if params.get("edge_type"):
         parts.append(f"edge type={params['edge_type']}")
-    if params.get("edge_schema_name"):
-        parts.append(f"edge schema={params['edge_schema_name']}")
     if params.get("edge_source_id"):
         parts.append("edge source=…")
     if params.get("edge_target_id"):
@@ -58,7 +54,6 @@ def _viewer_filter_params_from_request(request: Request) -> dict[str, str | int]
     """Extract node and edge filter query params for the viewer (prefixed)."""
     return {
         "node_type": request.query_params.get("node_type", "").strip(),
-        "node_schema_name": request.query_params.get("node_schema_name", "").strip(),
         "node_parent_id": request.query_params.get("node_parent_id", "").strip(),
         "node_filter": request.query_params.get("node_filter", "").strip(),
         "node_limit": parse_int_query_param(
@@ -67,7 +62,6 @@ def _viewer_filter_params_from_request(request: Request) -> dict[str, str | int]
             minimum=1,
         ),
         "edge_type": request.query_params.get("edge_type", "").strip(),
-        "edge_schema_name": request.query_params.get("edge_schema_name", "").strip(),
         "edge_source_id": request.query_params.get("edge_source_id", "").strip(),
         "edge_target_id": request.query_params.get("edge_target_id", "").strip(),
         "edge_filter": request.query_params.get("edge_filter", "").strip(),
@@ -132,12 +126,10 @@ async def graph_viewer_data(request: Request, graph_id: str) -> JSONResponse:
             graph_id=graph_id,
             current_user=current_user,
             node_type=params["node_type"] or None,
-            node_schema_name=params["node_schema_name"] or None,
             node_parent_id=params["node_parent_id"] or None,
             node_filter_dsl=params["node_filter"] or None,
             node_limit=params["node_limit"],
             edge_type=params["edge_type"] or None,
-            edge_schema_name=params["edge_schema_name"] or None,
             edge_source_id=params["edge_source_id"] or None,
             edge_target_id=params["edge_target_id"] or None,
             edge_filter_dsl=params["edge_filter"] or None,

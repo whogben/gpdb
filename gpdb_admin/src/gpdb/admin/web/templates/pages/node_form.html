@@ -6,8 +6,7 @@
     <p class="eyebrow">Node</p>
     <h1>{% if is_edit %}Edit{% else %}Create{% endif %} a node for {{ overview.graph.display_name }}.</h1>
     <p class="hero-text">
-      Update node metadata, schema attachment, raw JSON data, and payload changes in
-      one save.
+      Update node metadata, schema attachment, raw JSON data, and payload.
     </p>
     <ul class="feature-list">
       <li>Graph: {{ overview.graph.display_name }}.</li>
@@ -31,45 +30,39 @@
 
       <label class="field">
         <span>Type</span>
-        <input name="type" value="{{ (form_data or {}).get('type', '') }}" required>
+        <select id="node-type-name" name="type" required>
+          <option value="__default__">__default__</option>
+          {% for schema_name in schema_names %}
+          <option value="{{ schema_name }}" {% if (form_data or {}).get('type', '') == schema_name %}selected{% endif %}>{{ schema_name }}</option>
+          {% endfor %}
+        </select>
       </label>
-
+ 
       <label class="field">
         <span>Name</span>
         <input name="name" value="{{ (form_data or {}).get('name', '') }}">
       </label>
-
-      <label class="field">
-        <span>Schema</span>
-        <select id="node-schema-name" name="schema_name">
-          <option value="">No schema</option>
-          {% for schema_name in schema_names %}
-          <option value="{{ schema_name }}" {% if (form_data or {}).get('schema_name', '') == schema_name %}selected{% endif %}>{{ schema_name }}</option>
-          {% endfor %}
-        </select>
-        <small>Only node schemas are shown here.</small>
-      </label>
-
+ 
       <label class="field">
         <span>Owner ID</span>
         <input name="owner_id" value="{{ (form_data or {}).get('owner_id', '') }}">
       </label>
-
+ 
       <label class="field">
         <span>Parent ID</span>
         <input name="parent_id" value="{{ (form_data or {}).get('parent_id', '') }}">
       </label>
-
+ 
       <label class="field">
         <span>Tags</span>
         <input name="tags" value="{{ (form_data or {}).get('tags', '') }}" placeholder="alpha, beta">
       </label>
-
+ 
       <section
         class="schema-editor-card"
         data-jedison-root
         data-mode="form"
-        data-schema-select-id="node-schema-name"
+        data-schema-select-id="node-type-name"
         data-json-field-id="node-data-json"
       >
         <div class="schema-editor-card__header">

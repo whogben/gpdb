@@ -40,6 +40,12 @@ def _create_test_config(tmp_path: Path) -> tuple[ConfigStore, entry.ResolvedConf
 
 async def _reset_captive_database(url: str, session_secret: str) -> None:
     """Reset captive DB to known state (same logic as conftest._reset_captive_database)."""
+    # Clear model cache BEFORE creating GPGraph instance
+    from gpdb.models.factories import _model_cache
+    from gpdb.models.base import _Base
+    _model_cache.clear()
+    _Base.metadata.clear()
+    
     db = GPGraph(url)
     store = AdminStore(url, instance_secret=session_secret)
     try:
@@ -58,6 +64,15 @@ async def _reset_captive_database(url: str, session_secret: str) -> None:
 
         await store.initialize()
         await db.create_tables()
+        # Create schemas for admin node types (instance, graph, user, api_key)
+        # These are used as type identifiers, not for validation
+        from gpdb import SchemaUpsert
+        await store.db.set_schemas([
+            SchemaUpsert(name="instance", json_schema={"type": "object"}, kind="node"),
+            SchemaUpsert(name="graph", json_schema={"type": "object"}, kind="node"),
+            SchemaUpsert(name="user", json_schema={"type": "object"}, kind="node"),
+            SchemaUpsert(name="api_key", json_schema={"type": "object"}, kind="node"),
+        ])
         builtin_instance = await store.ensure_builtin_instance()
         await store.upsert_graph_metadata(
             instance_id=builtin_instance.id,

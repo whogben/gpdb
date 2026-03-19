@@ -26,17 +26,16 @@ async def test_node_validation_success(db: GPGraph):
         [SchemaUpsert(name="person_validation", json_schema=person_schema, kind="node")]
     )
 
-    # Create a node with schema_name and valid data
+    # Create a node with valid data
     node = NodeUpsert(
-        type="person",
-        schema_name="person_validation",
+        type="person_validation",
         data={"name": "Alice"},
     )
     result_list = await db.set_nodes([node])
     result = result_list[0]
 
     assert result is not None
-    assert result.schema_name == "person_validation"
+    assert result.type == "person_validation"
 
 
 @pytest.mark.asyncio
@@ -87,9 +86,9 @@ async def test_validator_caching(db: GPGraph):
 
     # Create multiple nodes with the same schema
     node1 = NodeUpsert(
-        type="person", schema_name="person_cache", data={"name": "Alice"}
+        type="person_cache", data={"name": "Alice"}
     )
-    node2 = NodeUpsert(type="person", schema_name="person_cache", data={"name": "Bob"})
+    node2 = NodeUpsert(type="person_cache", data={"name": "Bob"})
 
     await db.set_nodes([node1])
     await db.set_nodes([node2])
@@ -203,25 +202,24 @@ async def test_edge_validation(db: GPGraph):
     )
 
     # Create two nodes
-    node1 = NodeUpsert(type="test", data={"label": "A"})
-    node2 = NodeUpsert(type="test", data={"label": "B"})
+    node1 = NodeUpsert(type="__default__", data={"label": "A"})
+    node2 = NodeUpsert(type="__default__", data={"label": "B"})
     result1_list = await db.set_nodes([node1])
     result2_list = await db.set_nodes([node2])
     result1 = result1_list[0]
     result2 = result2_list[0]
 
-    # Create an edge with schema_name and valid data
+    # Create an edge with valid data
     edge = EdgeUpsert(
         source_id=result1.id,
         target_id=result2.id,
-        type="connected",
-        schema_name="relationship",
+        type="relationship",
         data={"weight": 0.5},
     )
     edge_result = (await db.set_edges([edge]))[0]
 
     assert edge_result is not None
-    assert edge_result.schema_name == "relationship"
+    assert edge_result.type == "relationship"
 
 
 @pytest.mark.asyncio
@@ -266,8 +264,8 @@ async def test_edge_cannot_use_node_schema(db: GPGraph):
         [SchemaUpsert(name="node_only_person", json_schema=person_schema, kind="node")]
     )
 
-    node1_list = await db.set_nodes([NodeUpsert(type="test", data={"label": "A"})])
-    node2_list = await db.set_nodes([NodeUpsert(type="test", data={"label": "B"})])
+    node1_list = await db.set_nodes([NodeUpsert(type="__default__", data={"label": "A"})])
+    node2_list = await db.set_nodes([NodeUpsert(type="__default__", data={"label": "B"})])
     node1 = node1_list[0]
     node2 = node2_list[0]
 

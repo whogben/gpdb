@@ -14,11 +14,10 @@ class NodeUpsert(BaseModel):
     """Input model for creating/updating nodes."""
 
     id: str | None = None
-    type: str
+    type: str = "__default__"
     name: str | None = None
     owner_id: str | None = None
     parent_id: str | None = None
-    schema_name: str | None = None
     data: Dict[str, Any] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
     payload: bytes | None = None
@@ -36,7 +35,6 @@ class NodeRead(BaseModel):
     name: str | None = None
     owner_id: str | None = None
     parent_id: str | None = None
-    schema_name: str | None = None
     data: Dict[str, Any] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
     created_at: datetime
@@ -61,10 +59,9 @@ class EdgeUpsert(BaseModel):
     """Input model for creating/updating edges."""
 
     id: str | None = None
-    type: str
+    type: str = "__default__"
     source_id: str
     target_id: str
-    schema_name: str | None = None
     data: Dict[str, Any] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
 
@@ -78,7 +75,6 @@ class EdgeRead(BaseModel):
     type: str
     source_id: str
     target_id: str
-    schema_name: str | None = None
     data: Dict[str, Any] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
     created_at: datetime

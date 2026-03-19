@@ -3,28 +3,23 @@
   <span>Type</span>
   <input name="type" value="{{ filter_form.type }}">
 </label>
-
-<label class="field">
-  <span>Schema name</span>
-  <input name="schema_name" value="{{ filter_form.schema_name }}">
-</label>
-
+ 
 <label class="field">
   <span>Source ID</span>
   <input name="source_id" value="{{ filter_form.source_id }}">
 </label>
-
+ 
 <label class="field">
   <span>Target ID</span>
   <input name="target_id" value="{{ filter_form.target_id }}">
 </label>
-
+ 
 <label class="field">
   <span>Filter (DSL)</span>
   <input name="filter" value="{{ filter_form.filter }}" placeholder="e.g. type = follows and source_id = abc">
   <small class="field-hint">Optional. Leave empty to use the fields above. Same syntax as the API.</small>
 </label>
-
+ 
 <label class="field">
   <span>Sort</span>
   <select name="sort">
@@ -33,7 +28,7 @@
     {% endfor %}
   </select>
 </label>
-
+ 
 <label class="field">
   <span>Page size</span>
   <select name="limit">

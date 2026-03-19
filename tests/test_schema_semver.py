@@ -64,7 +64,7 @@ async def test_semver_minor_change(db: GPGraph):
     await db.set_schemas([SchemaUpsert(name="person_minor", json_schema=person_schema_v1, kind="node")])
 
     # Create node with old schema
-    node = NodeUpsert(type="person", schema_name="person_minor", data={"name": "Alice"})
+    node = NodeUpsert(type="person_minor", data={"name": "Alice"})
     result_list = await db.set_nodes([node])
     result = result_list[0]
 
@@ -84,7 +84,7 @@ async def test_semver_minor_change(db: GPGraph):
     assert schemas[0].version == "1.1.0"
 
     # Verify old data still validates
-    node2 = NodeUpsert(type="person", schema_name="person_minor", data={"name": "Bob"})
+    node2 = NodeUpsert(type="person_minor", data={"name": "Bob"})
     result2_list = await db.set_nodes([node2])
     result2 = result2_list[0]
     assert result2 is not None

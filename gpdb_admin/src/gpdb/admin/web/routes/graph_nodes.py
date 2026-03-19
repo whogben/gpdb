@@ -62,7 +62,6 @@ async def graph_node_list_page(request: Request, graph_id: str) -> HTMLResponse:
             graph_id=graph_id,
             current_user=current_user,
             type=filter_form["type"],
-            schema_name=filter_form["schema_name"],
             parent_id=filter_form["parent_id"],
             filter_dsl=filter_form["filter"] or None,
             limit=filter_form["limit"],
@@ -84,7 +83,6 @@ async def graph_node_list_page(request: Request, graph_id: str) -> HTMLResponse:
             request,
             graph_id=graph_id,
             type=filter_form["type"],
-            schema_name=filter_form["schema_name"],
             parent_id=filter_form["parent_id"],
             filter=filter_form["filter"],
             sort=filter_form["sort"],
@@ -97,7 +95,6 @@ async def graph_node_list_page(request: Request, graph_id: str) -> HTMLResponse:
             request,
             graph_id=graph_id,
             type=filter_form["type"],
-            schema_name=filter_form["schema_name"],
             parent_id=filter_form["parent_id"],
             filter=filter_form["filter"],
             sort=filter_form["sort"],
@@ -141,9 +138,8 @@ async def graph_node_create_page(request: Request, graph_id: str) -> HTMLRespons
         graph_id=graph_id,
         current_user=current_user,
         form_data={
-            "type": "",
+            "type": "__default__",
             "name": "",
-            "schema_name": "",
             "owner_id": "",
             "parent_id": "",
             "tags": "",
@@ -160,7 +156,6 @@ async def graph_node_create(
     graph_id: str,
     type: str = Form(...),
     name: str = Form(""),
-    schema_name: str = Form(""),
     owner_id: str = Form(""),
     parent_id: str = Form(""),
     tags: str = Form(""),
@@ -174,9 +169,8 @@ async def graph_node_create(
         return current_user
 
     form_data = {
-        "type": type.strip(),
+        "type": type.strip() or "__default__",
         "name": name.strip(),
-        "schema_name": schema_name.strip(),
         "owner_id": owner_id.strip(),
         "parent_id": parent_id.strip(),
         "tags": tags.strip(),
@@ -210,7 +204,6 @@ async def graph_node_create(
                 GraphNodeCreateParam(
                     type=form_data["type"],
                     name=form_data["name"],
-                    schema_name=form_data["schema_name"],
                     owner_id=form_data["owner_id"],
                     parent_id=form_data["parent_id"],
                     tags=_parse_tags_text(form_data["tags"]),
@@ -279,7 +272,6 @@ async def graph_node_edit_page(
         form_data={
             "type": detail.node.type,
             "name": detail.node.name or "",
-            "schema_name": detail.node.schema_name or "",
             "owner_id": detail.node.owner_id or "",
             "parent_id": detail.node.parent_id or "",
             "tags": ", ".join(detail.node.tags),
@@ -299,7 +291,6 @@ async def graph_node_update(
     node_id: str,
     type: str = Form(...),
     name: str = Form(""),
-    schema_name: str = Form(""),
     owner_id: str = Form(""),
     parent_id: str = Form(""),
     tags: str = Form(""),
@@ -314,9 +305,8 @@ async def graph_node_update(
         return current_user
 
     form_data = {
-        "type": type.strip(),
+        "type": type.strip() or "__default__",
         "name": name.strip(),
-        "schema_name": schema_name.strip(),
         "owner_id": owner_id.strip(),
         "parent_id": parent_id.strip(),
         "tags": tags.strip(),
@@ -361,7 +351,6 @@ async def graph_node_update(
                     node_id=node_id,
                     type=form_data["type"],
                     name=form_data["name"],
-                    schema_name=form_data["schema_name"],
                     owner_id=form_data["owner_id"],
                     parent_id=form_data["parent_id"],
                     tags=_parse_tags_text(form_data["tags"]),
@@ -422,10 +411,10 @@ async def graph_node_detail_page(
             current_user=current_user,
         )
         schema_json = None
-        if detail.node.schema_name:
+        if detail.node.type:
             schema_details = await graph_content.get_graph_schemas(
                 graph_id=graph_id,
-                names=[detail.node.schema_name],
+                names=[detail.node.type],
                 kind="node",
                 current_user=current_user,
             )

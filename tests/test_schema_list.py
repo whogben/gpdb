@@ -29,11 +29,12 @@ async def test_list_schemas(db: GPGraph):
 
     # Verify all schemas are returned
     assert isinstance(schemas, list)
-    assert "schema1" in schemas
-    assert "schema2" in schemas
-    assert "schema3" in schemas
-    assert set(node_schemas) == {"schema1", "schema2", "schema3", "__default__"}
-    assert edge_schemas == ["__default__"]
+    schema_names = [s.name for s in schemas]
+    assert "schema1" in schema_names
+    assert "schema2" in schema_names
+    assert "schema3" in schema_names
+    assert {s.name for s in node_schemas} == {"schema1", "schema2", "schema3", "__default__"}
+    assert [s.name for s in edge_schemas] == ["__default__"]
 
 
 @pytest.mark.asyncio
@@ -96,9 +97,9 @@ async def test_schema_version_tracking(db: GPGraph):
 @pytest.mark.asyncio
 async def test_edge_schema_validation_persistence(db: GPGraph):
     """
-    Test that edges also properly persist and validate schema_name on updates.
-    Similar to node test - if schema_name is not provided in update,
-    the existing schema should be preserved.
+    Test that edges also properly persist and validate type on updates.
+    Similar to node test - if type is not provided in update,
+    the existing type should be preserved.
     """
     from gpdb import SchemaValidationError
 
@@ -118,37 +119,36 @@ async def test_edge_schema_validation_persistence(db: GPGraph):
     )
 
     # Create two nodes
-    node1 = NodeUpsert(type="test", data={"label": "A"})
-    node2 = NodeUpsert(type="test", data={"label": "B"})
+    node1 = NodeUpsert(type="__default__", data={"label": "A"})
+    node2 = NodeUpsert(type="__default__", data={"label": "B"})
     result1_list = await db.set_nodes([node1])
     result2_list = await db.set_nodes([node2])
     result1 = result1_list[0]
     result2 = result2_list[0]
 
-    # Create an edge with schema_name
+    # Create an edge with type
     edge = EdgeUpsert(
         source_id=result1.id,
         target_id=result2.id,
-        type="connected",
-        schema_name="relationship_persist",
+        type="relationship_persist",
         data={"weight": 0.5, "label": "friend"},
     )
     edge_result = (await db.set_edges([edge]))[0]
-    assert edge_result.schema_name == "relationship_persist"
+    assert edge_result.type == "relationship_persist"
 
-    # Update the edge without providing schema_name
-    # The existing schema should be preserved and validation should still apply
+    # Update the edge with the same type
+    # The existing type should be preserved and validation should still apply
     updated_edge = EdgeUpsert(
         id=edge_result.id,
         source_id=result1.id,
         target_id=result2.id,
-        type="connected",
+        type="relationship_persist",
         data={"weight": 0.8, "label": "close friend"},
     )
     updated_result = (await db.set_edges([updated_edge]))[0]
 
-    # Verify schema_name is preserved
-    assert updated_result.schema_name == "relationship_persist"
+    # Verify type is preserved
+    assert updated_result.type == "relationship_persist"
 
     # Verify data was updated
     assert updated_result.data["weight"] == 0.8
@@ -159,7 +159,7 @@ async def test_edge_schema_validation_persistence(db: GPGraph):
         id=edge_result.id,
         source_id=result1.id,
         target_id=result2.id,
-        type="connected",
+        type="relationship_persist",
         data={"label": "friend"},
     )
     with pytest.raises(SchemaValidationError):

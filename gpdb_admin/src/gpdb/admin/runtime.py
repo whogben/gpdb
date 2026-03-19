@@ -196,6 +196,19 @@ def create_admin_lifespan(services: AdminServices):
             default_graph = GPGraph(server.get_uri())
             await default_graph.create_tables()
             await default_graph.sqla_engine.dispose()
+            # Create schemas for admin node types (instance, graph, user, api_key)
+            # These are used as type identifiers, not for validation
+            from gpdb import SchemaUpsert
+            try:
+                await admin_store.db.set_schemas([
+                    SchemaUpsert(name="instance", json_schema={"type": "object"}, kind="node"),
+                    SchemaUpsert(name="graph", json_schema={"type": "object"}, kind="node"),
+                    SchemaUpsert(name="user", json_schema={"type": "object"}, kind="node"),
+                    SchemaUpsert(name="api_key", json_schema={"type": "object"}, kind="node"),
+                ])
+            except Exception as e:
+                print(f"Error creating schemas: {e}")
+                raise
             builtin_instance = await admin_store.ensure_builtin_instance()
             await admin_store.upsert_graph_metadata(
                 instance_id=builtin_instance.id,

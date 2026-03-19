@@ -78,14 +78,27 @@ class NodeMixin:
                             node_for_attempt = node.model_copy(update={"id": generate_id()})
                             existing = None  # Treat as create even if it collides.
 
-                        schema_to_validate = node_for_attempt.schema_name
-                        if explicit_id and existing is not None and node_for_attempt.schema_name is None and existing.schema_name:
-                            # Preserve schema on omitted schema_name updates, while still validating
+                        # Use type as the schema name
+                        schema_to_validate = node_for_attempt.type
+                        if explicit_id and existing is not None and node_for_attempt.type is None and existing.type:
+                            # Preserve type on omitted type updates, while still validating
                             # the provided data against the existing schema.
-                            schema_to_validate = existing.schema_name
+                            schema_to_validate = existing.type
                             node_for_attempt = node_for_attempt.model_copy(
-                                update={"schema_name": schema_to_validate}
+                                update={"type": schema_to_validate}
                             )
+
+                        # Validate schema exists (except for __default__)
+                        if schema_to_validate and schema_to_validate != "__default__":
+                            from gpdb.models import SchemaRef
+                            ref = SchemaRef(name=schema_to_validate, kind="node")
+                            try:
+                                await self._get_schema_by_ref(ref)
+                            except Exception:
+                                from gpdb.models import SchemaNotFoundError
+                                raise SchemaNotFoundError(
+                                    f"Schema '{schema_to_validate}' not found for node type"
+                                )
 
                         if schema_to_validate:
                             await self._validate_data(

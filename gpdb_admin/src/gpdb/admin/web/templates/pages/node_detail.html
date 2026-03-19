@@ -28,7 +28,7 @@
       <dl class="resource-meta">
         <div>
           <dt>Schema</dt>
-          <dd>{{ node_detail.node.schema_name or "none" }}</dd>
+          <dd>{{ node_detail.node.type or "none" }}</dd>
         </div>
         <div>
           <dt>Parent</dt>
@@ -78,7 +78,7 @@
         </div>
         <div>
           <dt>Schema</dt>
-          <dd>{{ node_detail.node.schema_name or "none" }}</dd>
+          <dd>{{ node_detail.node.type or "none" }}</dd>
         </div>
         <div>
           <dt>Version</dt>
@@ -140,7 +140,7 @@
       <div class="resource-header" style="flex-wrap: wrap; gap: 0.75rem;">
         <div>
           <h3>Data</h3>
-          <p class="resource-subtitle">{% if schema_json %}{{ node_detail.node.schema_name }}{% else %}Stored node body{% endif %}</p>
+          <p class="resource-subtitle">{% if schema_json %}{{ node_detail.node.type }}{% else %}Stored node body{% endif %}</p>
         </div>
         {% if schema_json %}
         <button type="button" class="button button-secondary" id="node-data-view-toggle" aria-pressed="false">Show JSON</button>

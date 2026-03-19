@@ -60,7 +60,6 @@ async def graph_edge_list_page(request: Request, graph_id: str) -> HTMLResponse:
             graph_id=graph_id,
             current_user=current_user,
             type=filter_form["type"],
-            schema_name=filter_form["schema_name"],
             source_id=filter_form["source_id"],
             target_id=filter_form["target_id"],
             filter_dsl=filter_form["filter"] or None,
@@ -83,7 +82,6 @@ async def graph_edge_list_page(request: Request, graph_id: str) -> HTMLResponse:
             request,
             graph_id=graph_id,
             type=filter_form["type"],
-            schema_name=filter_form["schema_name"],
             source_id=filter_form["source_id"],
             target_id=filter_form["target_id"],
             filter=filter_form["filter"],
@@ -97,7 +95,6 @@ async def graph_edge_list_page(request: Request, graph_id: str) -> HTMLResponse:
             request,
             graph_id=graph_id,
             type=filter_form["type"],
-            schema_name=filter_form["schema_name"],
             source_id=filter_form["source_id"],
             target_id=filter_form["target_id"],
             filter=filter_form["filter"],
@@ -142,10 +139,9 @@ async def graph_edge_create_page(request: Request, graph_id: str) -> HTMLRespons
         graph_id=graph_id,
         current_user=current_user,
         form_data={
-            "type": "",
+            "type": "__default__",
             "source_id": "",
             "target_id": "",
-            "schema_name": "",
             "tags": "",
             "data": DEFAULT_EDGE_DATA,
         },
@@ -159,7 +155,6 @@ async def graph_edges_create(
     type: str = Form(...),
     source_id: str = Form(...),
     target_id: str = Form(...),
-    schema_name: str = Form(""),
     tags: str = Form(""),
     data: str = Form(...),
 ):
@@ -169,10 +164,9 @@ async def graph_edges_create(
         return current_user
 
     form_data = {
-        "type": type.strip(),
+        "type": type.strip() or "__default__",
         "source_id": source_id.strip(),
         "target_id": target_id.strip(),
-        "schema_name": schema_name.strip(),
         "tags": tags.strip(),
         "data": data.strip(),
     }
@@ -195,7 +189,6 @@ async def graph_edges_create(
                     type=form_data["type"],
                     source_id=form_data["source_id"],
                     target_id=form_data["target_id"],
-                    schema_name=form_data["schema_name"],
                     tags=_parse_tags_text(form_data["tags"]),
                     data=parsed_data,
                 )
@@ -260,7 +253,6 @@ async def graph_edge_edit_page(
             "type": detail.edge.type,
             "source_id": detail.edge.source_id,
             "target_id": detail.edge.target_id,
-            "schema_name": detail.edge.schema_name or "",
             "tags": ", ".join(detail.edge.tags),
             "data": json.dumps(detail.edge.data, indent=2, sort_keys=True),
         },
@@ -277,7 +269,6 @@ async def graph_edges_update(
     type: str = Form(...),
     source_id: str = Form(...),
     target_id: str = Form(...),
-    schema_name: str = Form(""),
     tags: str = Form(""),
     data: str = Form(...),
 ):
@@ -287,10 +278,9 @@ async def graph_edges_update(
         return current_user
 
     form_data = {
-        "type": type.strip(),
+        "type": type.strip() or "__default__",
         "source_id": source_id.strip(),
         "target_id": target_id.strip(),
-        "schema_name": schema_name.strip(),
         "tags": tags.strip(),
         "data": data.strip(),
     }
@@ -315,7 +305,6 @@ async def graph_edges_update(
                     type=form_data["type"],
                     source_id=form_data["source_id"],
                     target_id=form_data["target_id"],
-                    schema_name=form_data["schema_name"],
                     tags=_parse_tags_text(form_data["tags"]),
                     data=parsed_data,
                 )
@@ -370,10 +359,10 @@ async def graph_edge_detail_page(
             current_user=current_user,
         )
         schema_json = None
-        if detail.edge.schema_name:
+        if detail.edge.type:
             schema_details = await graph_content.get_graph_schemas(
                 graph_id=graph_id,
-                names=[detail.edge.schema_name],
+                names=[detail.edge.type],
                 kind="edge",
                 current_user=current_user,
             )

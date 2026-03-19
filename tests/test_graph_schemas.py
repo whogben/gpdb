@@ -44,30 +44,6 @@ async def test_basic_schema_registration(db: GPGraph):
 
 
 @pytest.mark.asyncio
-async def test_schema_name_column_exists(db: GPGraph):
-    """
-    Verify that nodes and edges have a schema_name column after table creation.
-    """
-    # Check nodes table has schema_name column
-    async with db.sqla_engine.begin() as conn:
-        nodes_columns = await conn.run_sync(
-            lambda sync_conn: [
-                col["name"]
-                for col in inspect(sync_conn).get_columns(db.NodeTable.__tablename__)
-            ]
-        )
-        assert "schema_name" in nodes_columns
-
-        edges_columns = await conn.run_sync(
-            lambda sync_conn: [
-                col["name"]
-                for col in inspect(sync_conn).get_columns(db.EdgeTable.__tablename__)
-            ]
-        )
-        assert "schema_name" in edges_columns
-
-
-@pytest.mark.asyncio
 async def test_retrieve_registered_schema(db: GPGraph):
     """
     Test that a registered schema can be retrieved by name.

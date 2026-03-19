@@ -93,7 +93,6 @@ class GraphNodeCreateParam(BaseModel):
     )
     type: str = Field(..., description="Node type.")
     name: str | None = Field(None, description="Node name.")
-    schema_name: str | None = Field(None, description="Schema name.")
     owner_id: str | None = Field(None, description="Owner ID.")
     parent_id: str | None = Field(None, description="Parent node ID.")
     tags: list[str] = Field(default_factory=list, description="Node tags.")
@@ -120,7 +119,6 @@ class GraphNodeUpdateParam(BaseModel):
         None, description="Node data as a JSON object."
     )
     name: str | None = Field(None, description="Node name.")
-    schema_name: str | None = Field(None, description="Schema name.")
     owner_id: str | None = Field(None, description="Owner ID.")
     parent_id: str | None = Field(None, description="Parent node ID.")
     tags: list[str] | None = Field(None, description="Node tags.")
@@ -145,7 +143,6 @@ class GraphEdgeCreateParam(BaseModel):
     type: str = Field(..., description="Edge type.")
     source_id: str = Field(..., description="Source node ID.")
     target_id: str = Field(..., description="Target node ID.")
-    schema_name: str | None = Field(None, description="Schema name.")
     tags: list[str] = Field(default_factory=list, description="Edge tags.")
     data: dict[str, Any] = Field(..., description="Edge data as a JSON object.")
 
@@ -160,7 +157,6 @@ class GraphEdgeUpdateParam(BaseModel):
     type: str | None = Field(None, description="Edge type.")
     source_id: str | None = Field(None, description="Source node ID.")
     target_id: str | None = Field(None, description="Target node ID.")
-    schema_name: str | None = Field(None, description="Schema name.")
     tags: list[str] | None = Field(None, description="Edge tags.")
     data: dict[str, Any] | None = Field(None, description="Edge data as a JSON object.")
 
@@ -182,7 +178,6 @@ class GraphNodeFilters(BaseModel):
     """Current node list filters echoed back to callers."""
 
     type: str | None = None
-    schema_name: str | None = None
     parent_id: str | None = None
     filter_dsl: str | None = None
     sort: str = "created_at_desc"
@@ -196,7 +191,6 @@ class GraphNodeRecord(BaseModel):
     name: str | None = None
     owner_id: str | None = None
     parent_id: str | None = None
-    schema_name: str | None = None
     data: dict[str, Any] = Field(default_factory=dict)
     tags: list[str] = Field(default_factory=list)
     created_at: str
@@ -261,7 +255,6 @@ class GraphEdgeFilters(BaseModel):
     """Current edge list filters echoed back to callers."""
 
     type: str | None = None
-    schema_name: str | None = None
     source_id: str | None = None
     target_id: str | None = None
     filter_dsl: str | None = None
@@ -275,7 +268,6 @@ class GraphEdgeRecord(BaseModel):
     type: str
     source_id: str
     target_id: str
-    schema_name: str | None = None
     data: dict[str, Any] = Field(default_factory=dict)
     tags: list[str] = Field(default_factory=list)
     created_at: str

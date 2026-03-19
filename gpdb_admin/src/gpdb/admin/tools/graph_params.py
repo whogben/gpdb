@@ -216,14 +216,13 @@ class EdgeListParams(BaseModel):
 
     graph_id: str = Field(..., description="Graph ID.")
     type: str = Field(default="", description="Filter by edge type.")
-    schema_name: str = Field(default="", description="Filter by schema name.")
     source_id: str = Field(default="", description="Filter by source node ID.")
     target_id: str = Field(default="", description="Filter by target node ID.")
     filter: str = Field(
         default="",
         description=(
             "gpdb filter DSL string. If non-empty, this overrides the structured "
-            "filters (`type`, `schema_name`, `source_id`, `target_id`). When empty, "
+            "filters (`type`, `source_id`, `target_id`). When empty, "
             "those structured filters are used instead.\n\n"
             f"{FILTER_DSL_DESCRIPTION}"
         ),
@@ -244,7 +243,6 @@ class EdgeCreateParams(BaseModel):
     source_id: str = Field(..., description="Source node ID.")
     target_id: str = Field(..., description="Target node ID.")
     data: dict[str, object] = Field(..., description="Edge data as JSON object.")
-    schema_name: str = Field(default="", description="Schema name.")
     tags: list[str] = Field(default_factory=list, description="Edge tags.")
 
 
@@ -257,7 +255,6 @@ class EdgeUpdateParams(BaseModel):
     source_id: str | None = Field(None, description="Source node ID.")
     target_id: str | None = Field(None, description="Target node ID.")
     data: dict[str, object] | None = Field(None, description="Edge data as JSON object.")
-    schema_name: str | None = Field(None, description="Schema name.")
     tags: list[str] | None = Field(None, description="Edge tags.")
 
 
@@ -298,13 +295,12 @@ class NodeListParams(BaseModel):
 
     graph_id: str = Field(..., description="Graph ID.")
     type: str = Field(default="", description="Filter by node type.")
-    schema_name: str = Field(default="", description="Filter by schema name.")
     parent_id: str = Field(default="", description="Filter by parent node ID.")
     filter: str = Field(
         default="",
         description=(
             "gpdb filter DSL string. If non-empty, this overrides the structured "
-            "filters (`type`, `schema_name`, `parent_id`). When empty, those "
+            "filters (`type`, `parent_id`). When empty, those "
             "structured filters are used instead.\n\n"
             f"{FILTER_DSL_DESCRIPTION}"
         ),
@@ -324,7 +320,6 @@ class NodeCreateParams(BaseModel):
     type: str = Field(..., description="Node type.")
     data: dict[str, object] = Field(..., description="Node data as JSON object.")
     name: str = Field(default="", description="Node name.")
-    schema_name: str = Field(default="", description="Schema name.")
     owner_id: str = Field(default="", description="Owner ID.")
     parent_id: str = Field(default="", description="Parent node ID.")
     tags: list[str] = Field(default_factory=list, description="Node tags.")
@@ -341,7 +336,6 @@ class NodeUpdateParams(BaseModel):
     type: str | None = Field(None, description="Node type.")
     data: dict[str, object] | None = Field(None, description="Node data as JSON object.")
     name: str | None = Field(None, description="Node name.")
-    schema_name: str | None = Field(None, description="Schema name.")
     owner_id: str | None = Field(None, description="Owner ID.")
     parent_id: str | None = Field(None, description="Parent node ID.")
     tags: list[str] | None = Field(None, description="Node tags.")

@@ -33,7 +33,6 @@ def node_filter_form_from_request(
     sort_raw = (request.query_params.get("sort") or "").strip() or default_sort
     return {
         "type": request.query_params.get("type", "").strip(),
-        "schema_name": request.query_params.get("schema_name", "").strip(),
         "parent_id": request.query_params.get("parent_id", "").strip(),
         "filter": request.query_params.get("filter", "").strip(),
         "sort": sort_raw,
@@ -60,7 +59,6 @@ def edge_filter_form_from_request(
     sort_raw = (request.query_params.get("sort") or "").strip() or default_sort
     return {
         "type": request.query_params.get("type", "").strip(),
-        "schema_name": request.query_params.get("schema_name", "").strip(),
         "source_id": request.query_params.get("source_id", "").strip(),
         "target_id": request.query_params.get("target_id", "").strip(),
         "filter": request.query_params.get("filter", "").strip(),
@@ -83,7 +81,6 @@ def build_node_list_url(
     *,
     graph_id: str,
     type: str,
-    schema_name: str,
     parent_id: str,
     filter: str,
     sort: str,
@@ -99,8 +96,6 @@ def build_node_list_url(
     }
     if type:
         params["type"] = type
-    if schema_name:
-        params["schema_name"] = schema_name
     if parent_id:
         params["parent_id"] = parent_id
     if filter:
@@ -116,7 +111,6 @@ def build_edge_list_url(
     *,
     graph_id: str,
     type: str,
-    schema_name: str,
     source_id: str,
     target_id: str,
     filter: str,
@@ -133,8 +127,6 @@ def build_edge_list_url(
     }
     if type:
         params["type"] = type
-    if schema_name:
-        params["schema_name"] = schema_name
     if source_id:
         params["source_id"] = source_id
     if target_id:

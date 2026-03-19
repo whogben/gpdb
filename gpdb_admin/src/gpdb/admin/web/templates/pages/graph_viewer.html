@@ -37,10 +37,6 @@
         <input name="node_type" value="{{ filter_params.node_type }}" placeholder="e.g. user">
       </label>
       <label class="field">
-        <span>Schema name</span>
-        <input name="node_schema_name" value="{{ filter_params.node_schema_name }}">
-      </label>
-      <label class="field">
         <span>Parent ID</span>
         <input name="node_parent_id" value="{{ filter_params.node_parent_id }}">
       </label>
@@ -53,20 +49,16 @@
         <span>Node limit</span>
         <select name="node_limit">
           {% for option in (50, 100, 200, 500) %}
-          <option value="{{ option }}" {% if filter_params.node_limit==option %}selected{% endif %}>{{ option }}
+          <option value="{{ option }}" {% if filter_params.node_limit==option %}selected{% endif %}{{ option }}
           </option>
           {% endfor %}
         </select>
       </label>
-
+ 
       <h3 class="resource-subtitle">Edge filters</h3>
       <label class="field">
         <span>Type</span>
         <input name="edge_type" value="{{ filter_params.edge_type }}" placeholder="e.g. follows">
-      </label>
-      <label class="field">
-        <span>Schema name</span>
-        <input name="edge_schema_name" value="{{ filter_params.edge_schema_name }}">
       </label>
       <label class="field">
         <span>Source ID</span>

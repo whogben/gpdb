@@ -258,7 +258,7 @@ class SchemaMixin:
             # Check all schemas for usage before deleting any
             for ref in refs:
                 # Check if any nodes use this schema
-                node_stmt = select(self._Node).where(self._Node.schema_name == ref.name)
+                node_stmt = select(self._Node).where(self._Node.type == ref.name)
                 node_result = await session.execute(node_stmt)
                 if node_result.scalars().first() is not None:
                     raise SchemaInUseError(
@@ -266,7 +266,7 @@ class SchemaMixin:
                     )
 
                 # Check if any edges use this schema
-                edge_stmt = select(self._Edge).where(self._Edge.schema_name == ref.name)
+                edge_stmt = select(self._Edge).where(self._Edge.type == ref.name)
                 edge_result = await session.execute(edge_stmt)
                 if edge_result.scalars().first() is not None:
                     raise SchemaInUseError(
@@ -284,26 +284,26 @@ class SchemaMixin:
                     self._validators.pop(cache_key, None)
                     self._schema_kinds.pop(cache_key, None)
 
-    async def list_schemas(self, kind: str | None = None) -> List[str]:
+    async def list_schemas(self, kind: str | None = None) -> List[SchemaRef]:
         """
-        List all registered schema names.
+        List all registered schemas.
 
         Args:
-            kind: Optional compatibility filter ("node" or "edge")
+            kind: Optional filter ("node" or "edge")
 
         Returns:
-            List of schema names
+            List of SchemaRef objects containing name and kind
         """
         resolved_kind = _normalize_schema_kind(kind) if kind is not None else None
         async with self._get_session() as session:
             stmt = select(self._Schema)
             result = await session.execute(stmt)
-            names: List[str] = []
+            refs: List[SchemaRef] = []
             for schema in result.scalars().all():
                 schema_kind = self._schema_kind_from_record(schema)
                 if resolved_kind is None or schema_kind == resolved_kind:
-                    names.append(str(schema.name))
-            return names
+                    refs.append(SchemaRef(name=str(schema.name), kind=schema_kind))
+            return refs
 
     async def migrate_schema(
         self,
@@ -363,7 +363,7 @@ class SchemaMixin:
                 validator = jsonschema.Draft7Validator(json_schema)
 
                 # Get all nodes with this schema
-                stmt = select(self._Node).where(self._Node.schema_name == name)
+                stmt = select(self._Node).where(self._Node.type == name)
                 result = await session.execute(stmt)
                 nodes = result.scalars().all()
 
@@ -379,7 +379,7 @@ class SchemaMixin:
                     node.data = new_data
 
                 # Get all edges with this schema
-                stmt = select(self._Edge).where(self._Edge.schema_name == name)
+                stmt = select(self._Edge).where(self._Edge.type == name)
                 result = await session.execute(stmt)
                 edges = result.scalars().all()
 

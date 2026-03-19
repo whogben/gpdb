@@ -51,7 +51,7 @@ def test_graph_edge_schema_editor_renders_ui(admin_test_env):
     _seed_graph_schema(
         manager,
         table_prefix="edge_schema_editor",
-        schema_name="node_only_schema",
+        schema_name="task",
         kind="node",
     )
     source_id = _seed_node_record(
@@ -71,10 +71,9 @@ def test_graph_edge_schema_editor_renders_ui(admin_test_env):
     edge_id = _seed_edge_record(
         manager,
         table_prefix="edge_schema_editor",
-        type="depends_on",
+        type="edge_schema",
         source_id=source_id,
         target_id=target_id,
-        schema_name="edge_schema",
         data={"name": "Schema backed edge"},
     )
 
@@ -142,7 +141,7 @@ def test_graph_edge_browse_and_create_across_surfaces(admin_test_env):
     _seed_graph_schema(
         manager,
         table_prefix="edge_slice",
-        schema_name="node_only_schema",
+        schema_name="task",
         kind="node",
     )
 
@@ -163,10 +162,9 @@ def test_graph_edge_browse_and_create_across_surfaces(admin_test_env):
     seeded_edge_id = _seed_edge_record(
         manager,
         table_prefix="edge_slice",
-        type="depends_on",
+        type="edge_schema",
         source_id=seeded_source_id,
         target_id=seeded_target_id,
-        schema_name="edge_schema",
         data={"name": "Seeded edge"},
         tags=["seeded"],
     )
@@ -237,10 +235,9 @@ def test_graph_edge_browse_and_create_across_surfaces(admin_test_env):
     response = client.post(
         f"/graphs/{graph_id}/edges",
         data={
-            "type": "depends_on",
+            "type": "edge_schema",
             "source_id": web_source_id,
             "target_id": web_target_id,
-            "schema_name": "edge_schema",
             "tags": "alpha, beta",
             "data": json.dumps({"name": "Web edge"}),
         },
@@ -258,7 +255,7 @@ def test_graph_edge_browse_and_create_across_surfaces(admin_test_env):
     assert "Tags: alpha, beta" in response.text
 
     response = client.get(
-        f"/graphs/{graph_id}/edges", params={"type": "depends_on", "limit": 1}
+        f"/graphs/{graph_id}/edges", params={"type": "edge_schema", "limit": 1}
     )
     assert response.status_code == 200
     assert "Next page" in response.text
@@ -280,10 +277,9 @@ def test_graph_edge_browse_and_create_across_surfaces(admin_test_env):
             "graph_id": graph_id,
             "edges": [
                 {
-                    "type": "depends_on",
+                    "type": "edge_schema",
                     "source_id": rest_source_id,
                     "target_id": rest_target_id,
-                    "schema_name": "edge_schema",
                     "tags": ["rest"],
                     "data": {"name": "Rest edge"},
                 }
@@ -294,13 +290,12 @@ def test_graph_edge_browse_and_create_across_surfaces(admin_test_env):
     assert response.status_code == 200
     rest_created_list = response.json()
     rest_created = rest_created_list[0]
-    assert rest_created["edge"]["type"] == "depends_on"
-    assert rest_created["edge"]["schema_name"] == "edge_schema"
+    assert rest_created["edge"]["type"] == "edge_schema"
     assert rest_created["edge"]["tags"] == ["rest"]
 
     response = client.post(
         "/api/graph_edge_list",
-        json={"graph_id": graph_id, "type": "depends_on", "limit": 10},
+        json={"graph_id": graph_id, "type": "edge_schema", "limit": 10},
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
@@ -331,10 +326,9 @@ def test_graph_edge_browse_and_create_across_surfaces(admin_test_env):
             "graph_id": graph_id,
             "edges": [
                 {
-                    "type": "depends_on",
+                    "type": "edge_schema",
                     "source_id": mcp_source_id,
                     "target_id": mcp_target_id,
-                    "schema_name": "edge_schema",
                     "tags": ["mcp", "final"],
                     "data": {"name": "MCP edge"},
                 }
@@ -342,7 +336,7 @@ def test_graph_edge_browse_and_create_across_surfaces(admin_test_env):
         },
     )
     mcp_created = mcp_created[0]
-    assert mcp_created.edge.schema_name == "edge_schema"
+    assert mcp_created.edge.type == "edge_schema"
     assert mcp_created.edge.tags == ["mcp", "final"]
 
     mcp_get = _call_persisted_authenticated_mcp_tool(
@@ -363,8 +357,7 @@ def test_graph_edge_browse_and_create_across_surfaces(admin_test_env):
         "graph_edge_list",
         {
             "graph_id": graph_id,
-            "type": "depends_on",
-            "schema_name": "",
+            "type": "edge_schema",
             "source_id": "",
             "target_id": "",
             "filter": "",
@@ -413,26 +406,45 @@ def test_edge_list_filter_dsl(admin_test_env):
     assert graph is not None
     graph_id = graph.id
 
+    _seed_graph_schema(
+        manager,
+        table_prefix="dsl_filter_edges",
+        schema_name="n",
+        kind="node",
+    )
+    _seed_graph_schema(
+        manager,
+        table_prefix="dsl_filter_edges",
+        schema_name="follows",
+        kind="edge",
+    )
+    _seed_graph_schema(
+        manager,
+        table_prefix="dsl_filter_edges",
+        schema_name="blocks",
+        kind="edge",
+    )
+
     a_id = _seed_node_record(
         manager,
         table_prefix="dsl_filter_edges",
         type="n",
         name="a",
-        data={},
+        data={"name": "a"},
     )
     b_id = _seed_node_record(
         manager,
         table_prefix="dsl_filter_edges",
         type="n",
         name="b",
-        data={},
+        data={"name": "b"},
     )
     c_id = _seed_node_record(
         manager,
         table_prefix="dsl_filter_edges",
         type="n",
         name="c",
-        data={},
+        data={"name": "c"},
     )
     _seed_edge_record(
         manager,
@@ -440,7 +452,7 @@ def test_edge_list_filter_dsl(admin_test_env):
         type="follows",
         source_id=a_id,
         target_id=b_id,
-        data={},
+        data={"name": "follows edge"},
     )
     _seed_edge_record(
         manager,
@@ -448,12 +460,12 @@ def test_edge_list_filter_dsl(admin_test_env):
         type="blocks",
         source_id=b_id,
         target_id=c_id,
-        data={},
+        data={"name": "blocks edge"},
     )
 
     response = client.get(
         f"/graphs/{graph_id}/edges",
-        params={"filter": "type = follows"},
+        params={"filter": "type = 'follows'"},
     )
     assert response.status_code == 200
     assert "1 edge" in response.text
@@ -503,6 +515,12 @@ def test_graph_edge_update_and_delete_across_surfaces(admin_test_env):
         schema_name="edge_schema",
         kind="edge",
     )
+    _seed_graph_schema(
+        manager,
+        table_prefix="edge_slice_phase2",
+        schema_name="task",
+        kind="node",
+    )
 
     web_source_id = _seed_node_record(
         manager,
@@ -535,20 +553,18 @@ def test_graph_edge_update_and_delete_across_surfaces(admin_test_env):
     web_edit_id = _seed_edge_record(
         manager,
         table_prefix="edge_slice_phase2",
-        type="depends_on",
+        type="edge_schema",
         source_id=web_source_id,
         target_id=web_target_id,
-        schema_name="edge_schema",
         data={"name": "Web edit"},
         tags=["stale"],
     )
     web_delete_id = _seed_edge_record(
         manager,
         table_prefix="edge_slice_phase2",
-        type="depends_on",
+        type="edge_schema",
         source_id=web_target_id,
         target_id=web_source_id,
-        schema_name="edge_schema",
         data={"name": "Web delete"},
         tags=["remove"],
     )
@@ -584,10 +600,9 @@ def test_graph_edge_update_and_delete_across_surfaces(admin_test_env):
     rest_edge_id = _seed_edge_record(
         manager,
         table_prefix="edge_slice_phase2",
-        type="depends_on",
+        type="edge_schema",
         source_id=rest_source_id,
         target_id=rest_target_id,
-        schema_name="edge_schema",
         data={"name": "Rest edit"},
         tags=["rest"],
     )
@@ -623,10 +638,9 @@ def test_graph_edge_update_and_delete_across_surfaces(admin_test_env):
     cli_edge_id = _seed_edge_record(
         manager,
         table_prefix="edge_slice_phase2",
-        type="depends_on",
+        type="edge_schema",
         source_id=cli_source_id,
         target_id=cli_target_id,
-        schema_name="edge_schema",
         data={"name": "CLI edit"},
         tags=["cli"],
     )
@@ -662,10 +676,9 @@ def test_graph_edge_update_and_delete_across_surfaces(admin_test_env):
     mcp_edge_id = _seed_edge_record(
         manager,
         table_prefix="edge_slice_phase2",
-        type="depends_on",
+        type="edge_schema",
         source_id=mcp_source_id,
         target_id=mcp_target_id,
-        schema_name="edge_schema",
         data={"name": "MCP edit"},
         tags=["mcp"],
     )
@@ -683,10 +696,9 @@ def test_graph_edge_update_and_delete_across_surfaces(admin_test_env):
     response = client.post(
         f"/graphs/{graph_id}/edges/{web_edit_id}",
         data={
-            "type": "blocks",
+            "type": "edge_schema",
             "source_id": web_new_source_id,
             "target_id": web_new_target_id,
-            "schema_name": "edge_schema",
             "tags": "alpha, beta",
             "data": json.dumps({"name": "Web edge updated", "status": "active"}),
         },
@@ -725,10 +737,8 @@ def test_graph_edge_update_and_delete_across_surfaces(admin_test_env):
             "updates": [
                 {
                     "edge_id": rest_edge_id,
-                    "type": "blocks",
                     "source_id": rest_new_source_id,
                     "target_id": rest_new_target_id,
-                    "schema_name": "edge_schema",
                     "tags": ["rest", "updated"],
                     "data": {"name": "Rest edge updated", "status": "active"},
                 }
@@ -739,7 +749,7 @@ def test_graph_edge_update_and_delete_across_surfaces(admin_test_env):
     assert response.status_code == 200
     updated_list = response.json()
     updated = updated_list[0]
-    assert updated["edge"]["type"] == "blocks"
+    assert updated["edge"]["type"] == "edge_schema"
     assert updated["edge"]["source_id"] == rest_new_source_id
     assert updated["edge"]["target_id"] == rest_new_target_id
     assert updated["edge"]["tags"] == ["rest", "updated"]
@@ -763,10 +773,8 @@ def test_graph_edge_update_and_delete_across_surfaces(admin_test_env):
             "updates": [
                 {
                     "edge_id": mcp_edge_id,
-                    "type": "blocks",
                     "source_id": mcp_new_source_id,
                     "target_id": mcp_new_target_id,
-                    "schema_name": "edge_schema",
                     "tags": ["mcp", "updated"],
                     "data": {
                         "name": "MCP edge updated",
@@ -777,7 +785,7 @@ def test_graph_edge_update_and_delete_across_surfaces(admin_test_env):
         },
     )
     mcp_updated = mcp_updated[0]
-    assert mcp_updated.edge.type == "blocks"
+    assert mcp_updated.edge.type == "edge_schema"
     assert mcp_updated.edge.source_id == mcp_new_source_id
     assert mcp_updated.edge.target_id == mcp_new_target_id
     assert mcp_updated.edge.tags == ["mcp", "updated"]
@@ -828,24 +836,30 @@ def test_edge_partial_update_preserves_omitted_fields(admin_test_env):
     graph = _read_graph_by_prefix(manager, table_prefix="partial_edge")
     assert graph is not None
     graph_id = graph.id
+    _seed_graph_schema(
+        manager,
+        table_prefix="partial_edge",
+        schema_name="task",
+        kind="node",
+    )
     src_id = _seed_node_record(
         manager,
         table_prefix="partial_edge",
         type="task",
         name="src",
-        data={"n": 1},
+        data={"name": "src", "n": 1},
     )
     tgt_id = _seed_node_record(
         manager,
         table_prefix="partial_edge",
         type="task",
         name="tgt",
-        data={"n": 2},
+        data={"name": "tgt", "n": 2},
     )
     edge_id = _seed_edge_record(
         manager,
         table_prefix="partial_edge",
-        type="depends_on",
+        type="__default__",
         source_id=src_id,
         target_id=tgt_id,
         data={"old": True},
@@ -879,7 +893,7 @@ def test_edge_partial_update_preserves_omitted_fields(admin_test_env):
     assert response.status_code == 200
     data_list = response.json()
     data = data_list[0]
-    assert data["edge"]["type"] == "depends_on"
+    assert data["edge"]["type"] == "__default__"
     assert data["edge"]["source_id"] == src_id
     assert data["edge"]["target_id"] == tgt_id
     assert data["edge"]["tags"] == ["keep", "me"]
@@ -992,7 +1006,6 @@ def _seed_node_record(
     type: str,
     name: str,
     data: dict[str, object],
-    schema_name: str | None = None,
     tags: list[str] | None = None,
     parent_id: str | None = None,
 ) -> str:
@@ -1008,7 +1021,6 @@ def _seed_node_record(
                         type=type,
                         name=name,
                         parent_id=parent_id,
-                        schema_name=schema_name,
                         data=data,
                         tags=list(tags or []),
                     )
@@ -1030,7 +1042,6 @@ def _seed_edge_record(
     source_id: str,
     target_id: str,
     data: dict[str, object],
-    schema_name: str | None = None,
     tags: list[str] | None = None,
 ) -> str:
     services = manager.app.state.services
@@ -1044,7 +1055,6 @@ def _seed_edge_record(
                     type=type,
                     source_id=source_id,
                     target_id=target_id,
-                    schema_name=schema_name,
                     data=data,
                     tags=list(tags or []),
                 )]

@@ -31,40 +31,34 @@
 
       <label class="field">
         <span>Type</span>
-        <input name="type" value="{{ (form_data or {}).get('type', '') }}" required>
+        <select id="edge-type-name" name="type" required>
+          <option value="__default__">__default__</option>
+          {% for schema_name in schema_names %}
+          <option value="{{ schema_name }}" {% if (form_data or {}).get('type', '') == schema_name %}selected{% endif %}>{{ schema_name }}</option>
+          {% endfor %}
+        </select>
       </label>
-
+ 
       <label class="field">
         <span>Source ID</span>
         <input name="source_id" value="{{ (form_data or {}).get('source_id', '') }}" required>
       </label>
-
+ 
       <label class="field">
         <span>Target ID</span>
         <input name="target_id" value="{{ (form_data or {}).get('target_id', '') }}" required>
       </label>
-
-      <label class="field">
-        <span>Schema</span>
-        <select id="edge-schema-name" name="schema_name">
-          <option value="">No schema</option>
-          {% for schema_name in schema_names %}
-          <option value="{{ schema_name }}" {% if (form_data or {}).get('schema_name', '') == schema_name %}selected{% endif %}>{{ schema_name }}</option>
-          {% endfor %}
-        </select>
-        <small>Only edge schemas are shown here.</small>
-      </label>
-
+ 
       <label class="field">
         <span>Tags</span>
         <input name="tags" value="{{ (form_data or {}).get('tags', '') }}" placeholder="alpha, beta">
       </label>
-
+ 
       <section
         class="schema-editor-card"
         data-jedison-root
         data-mode="form"
-        data-schema-select-id="edge-schema-name"
+        data-schema-select-id="edge-type-name"
         data-json-field-id="edge-data-json"
       >
         <div class="schema-editor-card__header">

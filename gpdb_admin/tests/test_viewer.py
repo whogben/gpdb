@@ -86,6 +86,11 @@ def test_viewer_data_applies_filters(admin_test_env):
     assert graph is not None
     graph_id = graph.id
 
+    # Create schemas for the node and edge types
+    _create_schema(manager, table_prefix="viewer_data", name="user", kind="node")
+    _create_schema(manager, table_prefix="viewer_data", name="task", kind="node")
+    _create_schema(manager, table_prefix="viewer_data", name="follows", kind="edge")
+
     a_id = _seed_node_record(
         manager,
         table_prefix="viewer_data",
@@ -250,7 +255,6 @@ def _seed_node_record(
     type: str,
     name: str,
     data: dict,
-    schema_name: str | None = None,
     tags: list | None = None,
     parent_id: str | None = None,
 ) -> str:
@@ -266,7 +270,6 @@ def _seed_node_record(
                         type=type,
                         name=name,
                         parent_id=parent_id,
-                        schema_name=schema_name,
                         data=data,
                         tags=list(tags or []),
                     )
@@ -288,7 +291,6 @@ def _seed_edge_record(
     source_id: str,
     target_id: str,
     data: dict,
-    schema_name: str | None = None,
     tags: list | None = None,
 ) -> str:
     services = manager.app.state.services
@@ -303,7 +305,6 @@ def _seed_edge_record(
                         type=type,
                         source_id=source_id,
                         target_id=target_id,
-                        schema_name=schema_name,
                         data=data,
                         tags=list(tags or []),
                     )
@@ -314,3 +315,32 @@ def _seed_edge_record(
             await db.sqla_engine.dispose()
 
     return asyncio.run(_seed())
+
+
+def _create_schema(
+    manager,
+    *,
+    table_prefix: str,
+    name: str,
+    kind: str,
+) -> None:
+    services = manager.app.state.services
+    assert services.captive_server is not None
+
+    async def _create() -> None:
+        db = GPGraph(services.captive_server.get_uri(), table_prefix=table_prefix)
+        try:
+            from gpdb import SchemaUpsert
+            await db.set_schemas(
+                [
+                    SchemaUpsert(
+                        name=name,
+                        json_schema={"type": "object"},
+                        kind=kind,
+                    )
+                ]
+            )
+        finally:
+            await db.sqla_engine.dispose()
+
+    return asyncio.run(_create())

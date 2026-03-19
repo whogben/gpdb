@@ -34,19 +34,31 @@ class EdgeMixin:
         if len(edge_ids) != len(set(edge_ids)):
             raise ValueError("Duplicate edge ids provided")
 
-        # Preserve existing schema_names and validate all edges before any writes
+        # Preserve existing types and validate all edges before any writes
         edges_to_process = []
         for edge in edges:
-            schema_to_validate = edge.schema_name
-            if edge.id and edge.schema_name is None:
+            schema_to_validate = edge.type
+            if edge.id and edge.type is None:
                 async with self._get_session() as session:
                     existing = await session.get(self._Edge, edge.id)
-                    if existing and existing.schema_name:
-                        schema_to_validate = existing.schema_name
-                        # Update DTO to ensure schema persistence
-                        edge.schema_name = schema_to_validate
+                    if existing and existing.type:
+                        schema_to_validate = existing.type
+                        # Update DTO to ensure type persistence
+                        edge.type = schema_to_validate
 
-            # Validate data against schema if schema_name is provided
+            # Validate schema exists (except for __default__)
+            if schema_to_validate and schema_to_validate != "__default__":
+                from gpdb.models import SchemaRef
+                ref = SchemaRef(name=schema_to_validate, kind="edge")
+                try:
+                    await self._get_schema_by_ref(ref)
+                except Exception:
+                    from gpdb.models import SchemaNotFoundError
+                    raise SchemaNotFoundError(
+                        f"Schema '{schema_to_validate}' not found for edge type"
+                    )
+
+            # Validate data against schema if type is provided
             if schema_to_validate:
                 await self._validate_data(
                     schema_to_validate,

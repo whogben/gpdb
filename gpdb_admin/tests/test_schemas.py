@@ -136,7 +136,7 @@ def test_graph_schema_registry_across_surfaces(admin_test_env):
         headers={"Authorization": f"Bearer {api_key_value}"},
     )
     assert response.status_code == 200
-    assert response.json()["total"] == 7
+    assert response.json()["total"] == 5
     assert {item["name"] for item in response.json()["items"]} == {
         "__default__",
         "mcp_schema",
@@ -168,7 +168,7 @@ def test_graph_schema_registry_across_surfaces(admin_test_env):
         "graph_schema_list",
         {"graph_id": graph_id},
     )
-    assert mcp_list.total == 7
+    assert mcp_list.total == 5
 
     mcp_get = _call_persisted_authenticated_mcp_tool(
         manager,
@@ -809,9 +809,8 @@ def _seed_schema_usage(
                 await db.set_nodes(
                     [
                         NodeUpsert(
-                            type="schema-test",
+                            type=schema_name,
                             name="source",
-                            schema_name=schema_name,
                             data={"name": "Source"},
                         )
                     ]
@@ -823,7 +822,7 @@ def _seed_schema_usage(
             source_list = await db.set_nodes(
                 [
                     NodeUpsert(
-                        type="schema-test",
+                        type="__default__",
                         name="source",
                         data={},
                     )
@@ -833,7 +832,7 @@ def _seed_schema_usage(
             target_list = await db.set_nodes(
                 [
                     NodeUpsert(
-                        type="schema-test",
+                        type="__default__",
                         name="target",
                         data={},
                     )
@@ -843,10 +842,9 @@ def _seed_schema_usage(
             _ = (await db.set_edges(
                 [
                     EdgeUpsert(
-                        type="schema-link",
+                        type=schema_name,
                         source_id=source.id,
                         target_id=target.id,
-                        schema_name=schema_name,
                         data={"name": "Edge"},
                     )
                 ]

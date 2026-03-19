@@ -44,7 +44,7 @@ async def db(pg_server):
 @pytest.mark.asyncio
 async def test_node_crud(db: GPGraph):
     # 1. Create
-    node = NodeUpsert(type="test", data={"foo": "bar"})
+    node = NodeUpsert(type="__default__", data={"foo": "bar"})
     created_list = await db.set_nodes([node])
     assert len(created_list) == 1
     created = created_list[0]
@@ -59,7 +59,7 @@ async def test_node_crud(db: GPGraph):
     assert fetched.data == {"foo": "bar"}
 
     # 3. Update
-    updated_node = NodeUpsert(id=fetched.id, type="test", data={"foo": "baz"})
+    updated_node = NodeUpsert(id=fetched.id, type="__default__", data={"foo": "baz"})
     updated_list = await db.set_nodes([updated_node])
     assert len(updated_list) == 1
     updated = updated_list[0]
@@ -75,12 +75,12 @@ async def test_node_crud(db: GPGraph):
 @pytest.mark.asyncio
 async def test_set_nodes_update_omitted_data_and_tags_preserves_existing(db: GPGraph):
     node_list = await db.set_nodes(
-        [NodeUpsert(type="test", data={"foo": "bar"}, tags=["t1", "t2"])]
+        [NodeUpsert(type="__default__", data={"foo": "bar"}, tags=["t1", "t2"])]
     )
     node = node_list[0]
 
     # Omit `data` and `tags` in the update DTO; existing values must remain.
-    updated_list = await db.set_nodes([NodeUpsert(id=node.id, type="test")])
+    updated_list = await db.set_nodes([NodeUpsert(id=node.id, type="__default__")])
     updated = updated_list[0]
 
     assert updated.data == {"foo": "bar"}
@@ -89,15 +89,15 @@ async def test_set_nodes_update_omitted_data_and_tags_preserves_existing(db: GPG
 
 @pytest.mark.asyncio
 async def test_set_edges_update_omitted_data_and_tags_preserves_existing(db: GPGraph):
-    n1_list = await db.set_nodes([NodeUpsert(type="test", data={"a": 1})])
-    n2_list = await db.set_nodes([NodeUpsert(type="test", data={"b": 2})])
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__", data={"a": 1})])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__", data={"b": 2})])
     n1 = n1_list[0]
     n2 = n2_list[0]
 
     edge_list = await db.set_edges(
         [
             EdgeUpsert(
-                type="link",
+                type="__default__",
                 source_id=n1.id,
                 target_id=n2.id,
                 data={"weight": 10},
@@ -111,7 +111,7 @@ async def test_set_edges_update_omitted_data_and_tags_preserves_existing(db: GPG
         [
             EdgeUpsert(
                 id=edge.id,
-                type="link",
+                type="__default__",
                 source_id=n1.id,
                 target_id=n2.id,
             )
@@ -126,7 +126,7 @@ async def test_set_edges_update_omitted_data_and_tags_preserves_existing(db: GPG
 @pytest.mark.asyncio
 async def test_payload(db: GPGraph):
     payload = b"some binary data"
-    node = NodeUpsert(type="test", payload=payload, payload_filename="blob.bin")
+    node = NodeUpsert(type="__default__", payload=payload, payload_filename="blob.bin")
     created_list = await db.set_nodes([node])
     assert len(created_list) == 1
     created = created_list[0]
@@ -150,7 +150,7 @@ async def test_payload(db: GPGraph):
 
 @pytest.mark.asyncio
 async def test_zero_byte_payload(db: GPGraph):
-    node = NodeUpsert(type="test", payload=b"", payload_filename="empty.txt")
+    node = NodeUpsert(type="__default__", payload=b"", payload_filename="empty.txt")
     created_list = await db.set_nodes([node])
     assert len(created_list) == 1
     created = created_list[0]
@@ -167,9 +167,9 @@ async def test_zero_byte_payload(db: GPGraph):
 async def test_get_node_payloads_bulk(db: GPGraph):
     """Test bulk retrieval of node payloads."""
     # Create multiple nodes with payloads
-    n1_list = await db.set_nodes([NodeUpsert(type="test", payload=b"payload1", payload_filename="file1.txt")])
-    n2_list = await db.set_nodes([NodeUpsert(type="test", payload=b"payload2", payload_filename="file2.txt")])
-    n3_list = await db.set_nodes([NodeUpsert(type="test", payload=b"payload3", payload_filename="file3.txt")])
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__", payload=b"payload1", payload_filename="file1.txt")])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__", payload=b"payload2", payload_filename="file2.txt")])
+    n3_list = await db.set_nodes([NodeUpsert(type="__default__", payload=b"payload3", payload_filename="file3.txt")])
     n1 = n1_list[0]
     n2 = n2_list[0]
     n3 = n3_list[0]
@@ -189,7 +189,7 @@ async def test_get_node_payloads_bulk(db: GPGraph):
 async def test_get_node_payloads_without_payload(db: GPGraph):
     """Test that nodes without payload are still returned with id filled."""
     # Create a node without payload
-    node_list = await db.set_nodes([NodeUpsert(type="test")])
+    node_list = await db.set_nodes([NodeUpsert(type="__default__")])
     node = node_list[0]
     
     # Fetch it with get_node_payloads
@@ -203,7 +203,7 @@ async def test_get_node_payloads_without_payload(db: GPGraph):
 @pytest.mark.asyncio
 async def test_get_node_payloads_duplicate_ids(db: GPGraph):
     """Test that duplicate ids are rejected."""
-    node_list = await db.set_nodes([NodeUpsert(type="test")])
+    node_list = await db.set_nodes([NodeUpsert(type="__default__")])
     node = node_list[0]
     
     with pytest.raises(ValueError, match="Duplicate node ids provided"):
@@ -213,7 +213,7 @@ async def test_get_node_payloads_duplicate_ids(db: GPGraph):
 @pytest.mark.asyncio
 async def test_get_node_payloads_missing_id(db: GPGraph):
     """Test that missing ids cause the entire call to fail."""
-    node_list = await db.set_nodes([NodeUpsert(type="test")])
+    node_list = await db.set_nodes([NodeUpsert(type="__default__")])
     node = node_list[0]
     
     with pytest.raises(ValueError, match="Node\\(s\\) not found"):
@@ -223,9 +223,9 @@ async def test_get_node_payloads_missing_id(db: GPGraph):
 @pytest.mark.asyncio
 async def test_get_node_payloads_preserves_order(db: GPGraph):
     """Test that results are returned in input order."""
-    n1_list = await db.set_nodes([NodeUpsert(type="test", payload=b"a")])
-    n2_list = await db.set_nodes([NodeUpsert(type="test", payload=b"b")])
-    n3_list = await db.set_nodes([NodeUpsert(type="test", payload=b"c")])
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__", payload=b"a")])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__", payload=b"b")])
+    n3_list = await db.set_nodes([NodeUpsert(type="__default__", payload=b"c")])
     n1 = n1_list[0]
     n2 = n2_list[0]
     n3 = n3_list[0]
@@ -239,12 +239,12 @@ async def test_get_node_payloads_preserves_order(db: GPGraph):
 
 @pytest.mark.asyncio
 async def test_edge_crud(db: GPGraph):
-    n1_list = await db.set_nodes([NodeUpsert(type="test")])
-    n2_list = await db.set_nodes([NodeUpsert(type="test")])
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__")])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__")])
     n1 = n1_list[0]
     n2 = n2_list[0]
 
-    edge = EdgeUpsert(source_id=n1.id, target_id=n2.id, type="link")
+    edge = EdgeUpsert(source_id=n1.id, target_id=n2.id, type="__default__")
     created = (await db.set_edges([edge]))[0]
     assert created.id is not None
 
@@ -255,7 +255,7 @@ async def test_edge_crud(db: GPGraph):
     # Update edge
     updated_edge = EdgeUpsert(
         id=fetched.id,
-        type="link",
+        type="__default__",
         source_id=n1.id,
         target_id=n2.id,
         data={"weight": 10},
@@ -274,16 +274,16 @@ async def test_get_edges_bulk(db: GPGraph):
     Test bulk get_edges operation with multiple edges.
     """
     # Create multiple edges
-    n1_list = await db.set_nodes([NodeUpsert(type="test")])
-    n2_list = await db.set_nodes([NodeUpsert(type="test")])
-    n3_list = await db.set_nodes([NodeUpsert(type="test")])
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__")])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__")])
+    n3_list = await db.set_nodes([NodeUpsert(type="__default__")])
     n1 = n1_list[0]
     n2 = n2_list[0]
     n3 = n3_list[0]
 
-    edge1 = (await db.set_edges([EdgeUpsert(source_id=n1.id, target_id=n2.id, type="link1")]))[0]
-    edge2 = (await db.set_edges([EdgeUpsert(source_id=n2.id, target_id=n3.id, type="link2")]))[0]
-    edge3 = (await db.set_edges([EdgeUpsert(source_id=n1.id, target_id=n3.id, type="link3")]))[0]
+    edge1 = (await db.set_edges([EdgeUpsert(source_id=n1.id, target_id=n2.id, type="__default__")]))[0]
+    edge2 = (await db.set_edges([EdgeUpsert(source_id=n2.id, target_id=n3.id, type="__default__")]))[0]
+    edge3 = (await db.set_edges([EdgeUpsert(source_id=n1.id, target_id=n3.id, type="__default__")]))[0]
 
     # Fetch all three edges in bulk
     edges = await db.get_edges([edge1.id, edge2.id, edge3.id])
@@ -305,11 +305,11 @@ async def test_get_edges_duplicate_rejection(db: GPGraph):
     """
     Test that duplicate edge ids are rejected.
     """
-    n1_list = await db.set_nodes([NodeUpsert(type="test")])
-    n2_list = await db.set_nodes([NodeUpsert(type="test")])
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__")])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__")])
     n1 = n1_list[0]
     n2 = n2_list[0]
-    edge = (await db.set_edges([EdgeUpsert(source_id=n1.id, target_id=n2.id, type="link")]))[0]
+    edge = (await db.set_edges([EdgeUpsert(source_id=n1.id, target_id=n2.id, type="__default__")]))[0]
 
     # Try to fetch with duplicate ids
     with pytest.raises(ValueError, match="Duplicate edge ids provided"):
@@ -321,11 +321,11 @@ async def test_get_edges_missing_id_failure(db: GPGraph):
     """
     Test that missing edge ids cause the entire call to fail.
     """
-    n1_list = await db.set_nodes([NodeUpsert(type="test")])
-    n2_list = await db.set_nodes([NodeUpsert(type="test")])
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__")])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__")])
     n1 = n1_list[0]
     n2 = n2_list[0]
-    edge = (await db.set_edges([EdgeUpsert(source_id=n1.id, target_id=n2.id, type="link")]))[0]
+    edge = (await db.set_edges([EdgeUpsert(source_id=n1.id, target_id=n2.id, type="__default__")]))[0]
 
     # Try to fetch with a non-existent id
     with pytest.raises(ValueError, match="Edge ids not found"):
@@ -337,16 +337,16 @@ async def test_get_edges_preserves_order(db: GPGraph):
     """
     Test that get_edges preserves input order in returned results.
     """
-    n1_list = await db.set_nodes([NodeUpsert(type="test")])
-    n2_list = await db.set_nodes([NodeUpsert(type="test")])
-    n3_list = await db.set_nodes([NodeUpsert(type="test")])
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__")])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__")])
+    n3_list = await db.set_nodes([NodeUpsert(type="__default__")])
     n1 = n1_list[0]
     n2 = n2_list[0]
     n3 = n3_list[0]
 
-    edge1 = (await db.set_edges([EdgeUpsert(source_id=n1.id, target_id=n2.id, type="link1")]))[0]
-    edge2 = (await db.set_edges([EdgeUpsert(source_id=n2.id, target_id=n3.id, type="link2")]))[0]
-    edge3 = (await db.set_edges([EdgeUpsert(source_id=n1.id, target_id=n3.id, type="link3")]))[0]
+    edge1 = (await db.set_edges([EdgeUpsert(source_id=n1.id, target_id=n2.id, type="__default__")]))[0]
+    edge2 = (await db.set_edges([EdgeUpsert(source_id=n2.id, target_id=n3.id, type="__default__")]))[0]
+    edge3 = (await db.set_edges([EdgeUpsert(source_id=n1.id, target_id=n3.id, type="__default__")]))[0]
 
     # Fetch in reverse order
     edges = await db.get_edges([edge3.id, edge1.id, edge2.id])
@@ -361,11 +361,11 @@ async def test_referential_integrity(db: GPGraph):
     """
     Verify we cannot delete nodes that are referenced by other nodes or edges.
     """
-    n1_list = await db.set_nodes([NodeUpsert(type="test")])
-    n2_list = await db.set_nodes([NodeUpsert(type="test")])
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__")])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__")])
     n1 = n1_list[0]
     n2 = n2_list[0]
-    edge = (await db.set_edges([EdgeUpsert(source_id=n1.id, target_id=n2.id, type="link")]))[0]
+    edge = (await db.set_edges([EdgeUpsert(source_id=n1.id, target_id=n2.id, type="__default__")]))[0]
 
     # Try to delete source
     with pytest.raises(IntegrityError):
@@ -387,10 +387,10 @@ async def test_set_edges_bulk_create(db: GPGraph):
     Test bulk creation of multiple edges.
     """
     # Create nodes
-    n1_list = await db.set_nodes([NodeUpsert(type="test")])
-    n2_list = await db.set_nodes([NodeUpsert(type="test")])
-    n3_list = await db.set_nodes([NodeUpsert(type="test")])
-    n4_list = await db.set_nodes([NodeUpsert(type="test")])
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__")])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__")])
+    n3_list = await db.set_nodes([NodeUpsert(type="__default__")])
+    n4_list = await db.set_nodes([NodeUpsert(type="__default__")])
     n1 = n1_list[0]
     n2 = n2_list[0]
     n3 = n3_list[0]
@@ -398,17 +398,17 @@ async def test_set_edges_bulk_create(db: GPGraph):
 
     # Create multiple edges in bulk
     edges = [
-        EdgeUpsert(source_id=n1.id, target_id=n2.id, type="link1"),
-        EdgeUpsert(source_id=n2.id, target_id=n3.id, type="link2"),
-        EdgeUpsert(source_id=n3.id, target_id=n4.id, type="link3"),
+        EdgeUpsert(source_id=n1.id, target_id=n2.id, type="__default__"),
+        EdgeUpsert(source_id=n2.id, target_id=n3.id, type="__default__"),
+        EdgeUpsert(source_id=n3.id, target_id=n4.id, type="__default__"),
     ]
     results = await db.set_edges(edges)
 
     assert len(results) == 3
     assert all(e.id is not None for e in results)
-    assert results[0].type == "link1"
-    assert results[1].type == "link2"
-    assert results[2].type == "link3"
+    assert results[0].type == "__default__"
+    assert results[1].type == "__default__"
+    assert results[2].type == "__default__"
 
 
 @pytest.mark.asyncio
@@ -417,20 +417,20 @@ async def test_set_edges_bulk_update(db: GPGraph):
     Test bulk update of multiple edges.
     """
     # Create nodes and edges
-    n1_list = await db.set_nodes([NodeUpsert(type="test")])
-    n2_list = await db.set_nodes([NodeUpsert(type="test")])
-    n3_list = await db.set_nodes([NodeUpsert(type="test")])
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__")])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__")])
+    n3_list = await db.set_nodes([NodeUpsert(type="__default__")])
     n1 = n1_list[0]
     n2 = n2_list[0]
     n3 = n3_list[0]
 
-    edge1 = (await db.set_edges([EdgeUpsert(source_id=n1.id, target_id=n2.id, type="link", data={"weight": 1})]))[0]
-    edge2 = (await db.set_edges([EdgeUpsert(source_id=n2.id, target_id=n3.id, type="link", data={"weight": 2})]))[0]
+    edge1 = (await db.set_edges([EdgeUpsert(source_id=n1.id, target_id=n2.id, type="__default__", data={"weight": 1})]))[0]
+    edge2 = (await db.set_edges([EdgeUpsert(source_id=n2.id, target_id=n3.id, type="__default__", data={"weight": 2})]))[0]
 
     # Update both edges in bulk
     updated_edges = [
-        EdgeUpsert(id=edge1.id, source_id=n1.id, target_id=n2.id, type="link", data={"weight": 10}),
-        EdgeUpsert(id=edge2.id, source_id=n2.id, target_id=n3.id, type="link", data={"weight": 20}),
+        EdgeUpsert(id=edge1.id, source_id=n1.id, target_id=n2.id, type="__default__", data={"weight": 10}),
+        EdgeUpsert(id=edge2.id, source_id=n2.id, target_id=n3.id, type="__default__", data={"weight": 20}),
     ]
     results = await db.set_edges(updated_edges)
 
@@ -444,15 +444,15 @@ async def test_set_edges_duplicate_ids(db: GPGraph):
     """
     Test that duplicate edge ids are rejected.
     """
-    n1_list = await db.set_nodes([NodeUpsert(type="test")])
-    n2_list = await db.set_nodes([NodeUpsert(type="test")])
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__")])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__")])
     n1 = n1_list[0]
     n2 = n2_list[0]
 
     # Try to create edges with duplicate ids
     edges = [
-        EdgeUpsert(id="duplicate-id", source_id=n1.id, target_id=n2.id, type="link1"),
-        EdgeUpsert(id="duplicate-id", source_id=n1.id, target_id=n2.id, type="link2"),
+        EdgeUpsert(id="duplicate-id", source_id=n1.id, target_id=n2.id, type="__default__"),
+        EdgeUpsert(id="duplicate-id", source_id=n1.id, target_id=n2.id, type="__default__"),
     ]
     with pytest.raises(ValueError, match="Duplicate edge ids provided"):
         await db.set_edges(edges)
@@ -465,9 +465,9 @@ async def test_set_edges_atomic_failure(db: GPGraph):
     """
     from gpdb import SchemaUpsert, SchemaValidationError
 
-    n1_list = await db.set_nodes([NodeUpsert(type="test")])
-    n2_list = await db.set_nodes([NodeUpsert(type="test")])
-    n3_list = await db.set_nodes([NodeUpsert(type="test")])
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__")])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__")])
+    n3_list = await db.set_nodes([NodeUpsert(type="__default__")])
     n1 = n1_list[0]
     n2 = n2_list[0]
     n3 = n3_list[0]
@@ -481,14 +481,14 @@ async def test_set_edges_atomic_failure(db: GPGraph):
 
     # Try to create edges where one will fail validation
     edges = [
-        EdgeUpsert(source_id=n1.id, target_id=n2.id, type="link1", schema_name="strict_edge", data={"weight": 1}),
-        EdgeUpsert(source_id=n2.id, target_id=n3.id, type="link2", schema_name="strict_edge", data={"invalid": "data"}),
+        EdgeUpsert(source_id=n1.id, target_id=n2.id, type="strict_edge", data={"weight": 1}),
+        EdgeUpsert(source_id=n2.id, target_id=n3.id, type="strict_edge", data={"invalid": "data"}),
     ]
     with pytest.raises(SchemaValidationError):
         await db.set_edges(edges)
 
     # Verify no edges were created (atomic failure)
-    all_edges = await db.search_edges(SearchQuery(filter=Filter(field="type", op=Op.IN, value=["link1", "link2"])))
+    all_edges = await db.search_edges(SearchQuery(filter=Filter(field="type", op=Op.IN, value=["strict_edge"])))
     assert all_edges.total == 0
 
 
@@ -497,7 +497,7 @@ async def test_transaction_rollback(db: GPGraph):
     """
     Verify that exceptions inside a transaction block roll back changes.
     """
-    node_list = await db.set_nodes([NodeUpsert(type="test")])
+    node_list = await db.set_nodes([NodeUpsert(type="__default__")])
     node = node_list[0]
 
     try:
@@ -519,12 +519,12 @@ async def test_node_hierarchy(db: GPGraph):
     Verify parent/child relationships and constraints.
     """
     # Create parent
-    parent_list = await db.set_nodes([NodeUpsert(type="folder", name="root")])
+    parent_list = await db.set_nodes([NodeUpsert(type="__default__", name="root")])
     parent = parent_list[0]
 
     # Create child
     child1_list = await db.set_nodes([
-        NodeUpsert(type="file", name="config", parent_id=parent.id)
+        NodeUpsert(type="__default__", name="config", parent_id=parent.id)
     ])
     child1 = child1_list[0]
 
@@ -533,11 +533,11 @@ async def test_node_hierarchy(db: GPGraph):
 
     # 1. Test Uniqueness (same parent, same name)
     with pytest.raises(IntegrityError):
-        await db.set_nodes([NodeUpsert(type="file", name="config", parent_id=parent.id)])
+        await db.set_nodes([NodeUpsert(type="__default__", name="config", parent_id=parent.id)])
 
     # 2. Test Null Names (should be allowed multiple times)
-    child2_list = await db.set_nodes([NodeUpsert(type="file", name=None, parent_id=parent.id)])
-    child3_list = await db.set_nodes([NodeUpsert(type="file", name=None, parent_id=parent.id)])
+    child2_list = await db.set_nodes([NodeUpsert(type="__default__", name=None, parent_id=parent.id)])
+    child3_list = await db.set_nodes([NodeUpsert(type="__default__", name=None, parent_id=parent.id)])
     child2 = child2_list[0]
     child3 = child3_list[0]
     assert child2.id != child3.id
@@ -561,13 +561,13 @@ async def test_get_node_child(db: GPGraph):
     Verify get_node_child functionality.
     """
     # Create parent
-    parent_list = await db.set_nodes([NodeUpsert(type="folder", name="root")])
+    parent_list = await db.set_nodes([NodeUpsert(type="__default__", name="root")])
     parent = parent_list[0]
 
     # Create child with payload
     payload = b"child payload"
     child_list = await db.set_nodes([
-        NodeUpsert(type="file", name="config", parent_id=parent.id, payload=payload)
+        NodeUpsert(type="__default__", name="config", parent_id=parent.id, payload=payload)
     ])
     child = child_list[0]
 
@@ -589,7 +589,7 @@ async def test_get_node_payload(db: GPGraph):
     Test get_node_payload and set_node_payload methods.
     """
     # Create node without payload
-    node_list = await db.set_nodes([NodeUpsert(type="test")])
+    node_list = await db.set_nodes([NodeUpsert(type="__default__")])
     node = node_list[0]
 
     # Get payload (should be None)
@@ -618,7 +618,7 @@ async def test_get_node_payload(db: GPGraph):
 @pytest.mark.asyncio
 async def test_clear_node_payload(db: GPGraph):
     node_list = await db.set_nodes([
-        NodeUpsert(type="test", payload=b"payload", payload_filename="notes.txt")
+        NodeUpsert(type="__default__", payload=b"payload", payload_filename="notes.txt")
     ])
     node = node_list[0]
 
@@ -652,20 +652,20 @@ async def test_side_table_isolation(pg_server):
     await scratch.create_tables()
 
     # Create nodes in each
-    main_node_list = await main.set_nodes([NodeUpsert(type="test", data={"src": "main"})])
+    main_node_list = await main.set_nodes([NodeUpsert(type="__default__", data={"src": "main"})])
     main_node = main_node_list[0]
     scratch_node_list = await scratch.set_nodes([
-        NodeUpsert(type="test", data={"src": "scratch"})
+        NodeUpsert(type="__default__", data={"src": "scratch"})
     ])
     scratch_node = scratch_node_list[0]
 
     # Verify isolation - search on main doesn't see scratch
-    main_results = await main.search_nodes(SearchQuery(filter="type eq test"))
+    main_results = await main.search_nodes(SearchQuery(filter="type eq __default__"))
     assert len(main_results.items) == 1
     assert main_results.items[0].data["src"] == "main"
 
     # Verify isolation - search on scratch doesn't see main
-    scratch_results = await scratch.search_nodes(SearchQuery(filter="type eq test"))
+    scratch_results = await scratch.search_nodes(SearchQuery(filter="type eq __default__"))
     assert len(scratch_results.items) == 1
     assert scratch_results.items[0].data["src"] == "scratch"
 
@@ -691,12 +691,12 @@ async def test_side_table_edges(pg_server):
     await scratch.create_tables()
 
     # Create nodes and edge in scratch table
-    n1_list = await scratch.set_nodes([NodeUpsert(type="test")])
-    n2_list = await scratch.set_nodes([NodeUpsert(type="test")])
+    n1_list = await scratch.set_nodes([NodeUpsert(type="__default__")])
+    n2_list = await scratch.set_nodes([NodeUpsert(type="__default__")])
     n1 = n1_list[0]
     n2 = n2_list[0]
     edge = (await scratch.set_edges(
-        [EdgeUpsert(source_id=n1.id, target_id=n2.id, type="link")]
+        [EdgeUpsert(source_id=n1.id, target_id=n2.id, type="__default__")]
     ))[0]
 
     # Verify edge exists
@@ -720,7 +720,7 @@ async def test_drop_tables_for_prefix(pg_server):
     await view_db.create_tables()
 
     # Create a node to verify tables exist
-    node_list = await view_db.set_nodes([NodeUpsert(type="test", data={"src": "view"})])
+    node_list = await view_db.set_nodes([NodeUpsert(type="__default__", data={"src": "view"})])
     node = node_list[0]
     assert node.id is not None
 
@@ -752,8 +752,8 @@ async def test_node_id_collision_retry_succeeds(db: GPGraph):
     collide_id = "col-xx-xxxx"
     unique_id = "uni-yy-yyyy"
     with patch("gpdb.graph_nodes.generate_id", side_effect=[collide_id, unique_id]):
-        await db.set_nodes([NodeUpsert(id=collide_id, type="test", data={})])
-        created_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 1})])
+        await db.set_nodes([NodeUpsert(id=collide_id, type="__default__", data={})])
+        created_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 1})])
     created = created_list[0]
     assert created.id == unique_id
     fetched_list = await db.get_nodes([unique_id])
@@ -765,12 +765,12 @@ async def test_node_id_collision_retry_exhausted(db: GPGraph):
     """When generate_id always returns the same existing id, set_nodes raises after max attempts."""
     same_id = "same-id-always"
     with patch("gpdb.graph_nodes.generate_id", return_value=same_id):
-        await db.set_nodes([NodeUpsert(id=same_id, type="test", data={})])
+        await db.set_nodes([NodeUpsert(id=same_id, type="__default__", data={})])
         with pytest.raises(
             RuntimeError,
             match="Failed to generate unique node ID after 10 attempts",
         ):
-            await db.set_nodes([NodeUpsert(type="test", data={"y": 1})])
+            await db.set_nodes([NodeUpsert(type="__default__", data={"y": 1})])
 
 
 # --- Bulk get_nodes tests ---
@@ -780,9 +780,9 @@ async def test_node_id_collision_retry_exhausted(db: GPGraph):
 async def test_get_nodes_multiple(db: GPGraph):
     """Test getting multiple nodes at once."""
     # Create multiple nodes
-    node1_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 1})])
-    node2_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 2})])
-    node3_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 3})])
+    node1_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 1})])
+    node2_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 2})])
+    node3_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 3})])
     node1 = node1_list[0]
     node2 = node2_list[0]
     node3 = node3_list[0]
@@ -802,9 +802,9 @@ async def test_get_nodes_multiple(db: GPGraph):
 async def test_get_nodes_preserves_order(db: GPGraph):
     """Test that get_nodes preserves input order."""
     # Create multiple nodes
-    node1_list = await db.set_nodes([NodeUpsert(type="test", data={"order": 1})])
-    node2_list = await db.set_nodes([NodeUpsert(type="test", data={"order": 2})])
-    node3_list = await db.set_nodes([NodeUpsert(type="test", data={"order": 3})])
+    node1_list = await db.set_nodes([NodeUpsert(type="__default__", data={"order": 1})])
+    node2_list = await db.set_nodes([NodeUpsert(type="__default__", data={"order": 2})])
+    node3_list = await db.set_nodes([NodeUpsert(type="__default__", data={"order": 3})])
     node1 = node1_list[0]
     node2 = node2_list[0]
     node3 = node3_list[0]
@@ -820,7 +820,7 @@ async def test_get_nodes_preserves_order(db: GPGraph):
 @pytest.mark.asyncio
 async def test_get_nodes_duplicate_ids(db: GPGraph):
     """Test that get_nodes rejects duplicate ids."""
-    node_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 1})])
+    node_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 1})])
     node = node_list[0]
 
     with pytest.raises(ValueError, match="Duplicate node ids provided"):
@@ -830,7 +830,7 @@ async def test_get_nodes_duplicate_ids(db: GPGraph):
 @pytest.mark.asyncio
 async def test_get_nodes_missing_id(db: GPGraph):
     """Test that get_nodes fails when any requested id is missing."""
-    node_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 1})])
+    node_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 1})])
     node = node_list[0]
 
     with pytest.raises(ValueError, match="Node ids not found"):
@@ -847,7 +847,7 @@ async def test_get_nodes_empty_list(db: GPGraph):
 @pytest.mark.asyncio
 async def test_get_nodes_single_item(db: GPGraph):
     """Test that get_nodes works correctly with a single item."""
-    node_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 1})])
+    node_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 1})])
     node = node_list[0]
 
     fetched = await db.get_nodes([node.id])
@@ -860,19 +860,19 @@ async def test_get_nodes_single_item(db: GPGraph):
 async def test_delete_edges_bulk(db: GPGraph):
     """Test bulk deletion of multiple edges."""
     # Create nodes
-    n1_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 1})])
-    n2_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 2})])
-    n3_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 3})])
-    n4_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 4})])
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 1})])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 2})])
+    n3_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 3})])
+    n4_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 4})])
     n1 = n1_list[0]
     n2 = n2_list[0]
     n3 = n3_list[0]
     n4 = n4_list[0]
 
     # Create edges
-    e1 = (await db.set_edges([EdgeUpsert(type="link", source_id=n1.id, target_id=n2.id)]))[0]
-    e2 = (await db.set_edges([EdgeUpsert(type="link", source_id=n2.id, target_id=n3.id)]))[0]
-    e3 = (await db.set_edges([EdgeUpsert(type="link", source_id=n3.id, target_id=n4.id)]))[0]
+    e1 = (await db.set_edges([EdgeUpsert(type="__default__", source_id=n1.id, target_id=n2.id)]))[0]
+    e2 = (await db.set_edges([EdgeUpsert(type="__default__", source_id=n2.id, target_id=n3.id)]))[0]
+    e3 = (await db.set_edges([EdgeUpsert(type="__default__", source_id=n3.id, target_id=n4.id)]))[0]
 
     # Delete multiple edges at once
     await db.delete_edges([e1.id, e2.id, e3.id])
@@ -886,11 +886,11 @@ async def test_delete_edges_bulk(db: GPGraph):
 async def test_delete_edges_duplicate_ids(db: GPGraph):
     """Test that duplicate edge IDs are rejected."""
     # Create nodes and edge
-    n1_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 1})])
-    n2_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 2})])
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 1})])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 2})])
     n1 = n1_list[0]
     n2 = n2_list[0]
-    e1 = (await db.set_edges([EdgeUpsert(type="link", source_id=n1.id, target_id=n2.id)]))[0]
+    e1 = (await db.set_edges([EdgeUpsert(type="__default__", source_id=n1.id, target_id=n2.id)]))[0]
 
     # Try to delete with duplicate IDs
     with pytest.raises(ValueError, match="Duplicate edge ids provided"):
@@ -906,11 +906,11 @@ async def test_delete_edges_duplicate_ids(db: GPGraph):
 async def test_delete_edges_missing_id(db: GPGraph):
     """Test that missing edge IDs cause the entire batch to fail."""
     # Create nodes and edge
-    n1_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 1})])
-    n2_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 2})])
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 1})])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 2})])
     n1 = n1_list[0]
     n2 = n2_list[0]
-    e1 = (await db.set_edges([EdgeUpsert(type="link", source_id=n1.id, target_id=n2.id)]))[0]
+    e1 = (await db.set_edges([EdgeUpsert(type="__default__", source_id=n1.id, target_id=n2.id)]))[0]
 
     # Try to delete with a non-existent ID
     with pytest.raises(ValueError, match="Edge ids not found"):
@@ -926,11 +926,11 @@ async def test_delete_edges_missing_id(db: GPGraph):
 async def test_delete_edges_single_item(db: GPGraph):
     """Test that delete_edges works correctly with a single item."""
     # Create nodes and edge
-    n1_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 1})])
-    n2_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 2})])
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 1})])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 2})])
     n1 = n1_list[0]
     n2 = n2_list[0]
-    e1 = (await db.set_edges([EdgeUpsert(type="link", source_id=n1.id, target_id=n2.id)]))[0]
+    e1 = (await db.set_edges([EdgeUpsert(type="__default__", source_id=n1.id, target_id=n2.id)]))[0]
 
     # Delete single edge using bulk method
     await db.delete_edges([e1.id])
@@ -951,9 +951,9 @@ async def test_delete_edges_empty_list(db: GPGraph):
 async def test_delete_nodes_multiple(db: GPGraph):
     """Test that delete_nodes works correctly with multiple nodes."""
     # Create multiple nodes
-    n1_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 1})])
-    n2_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 2})])
-    n3_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 3})])
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 1})])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 2})])
+    n3_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 3})])
     n1 = n1_list[0]
     n2 = n2_list[0]
     n3 = n3_list[0]
@@ -970,7 +970,7 @@ async def test_delete_nodes_multiple(db: GPGraph):
 async def test_delete_nodes_single(db: GPGraph):
     """Test that delete_nodes works correctly with a single item."""
     # Create node
-    n1_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 1})])
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 1})])
     n1 = n1_list[0]
 
     # Delete single node using bulk method
@@ -984,8 +984,8 @@ async def test_delete_nodes_single(db: GPGraph):
 @pytest.mark.asyncio
 async def test_delete_nodes_missing_id_fails_atomic(db: GPGraph):
     """Test that delete_nodes fails the entire batch if any requested id is missing."""
-    n1_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 1})])
-    n2_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 2})])
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 1})])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 2})])
     n1 = n1_list[0]
     n2 = n2_list[0]
 
@@ -1008,7 +1008,7 @@ async def test_delete_nodes_empty_list(db: GPGraph):
 async def test_delete_nodes_duplicates(db: GPGraph):
     """Test that delete_nodes rejects duplicate ids."""
     # Create node
-    n1_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 1})])
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 1})])
     n1 = n1_list[0]
 
     # Try to delete with duplicate id
@@ -1024,15 +1024,15 @@ async def test_delete_nodes_duplicates(db: GPGraph):
 async def test_delete_nodes_atomic_failure(db: GPGraph):
     """Test that delete_nodes fails atomically when one node cannot be deleted."""
     # Create nodes
-    n1_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 1})])
-    n2_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 2})])
-    n3_list = await db.set_nodes([NodeUpsert(type="test", data={"x": 3})])
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 1})])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 2})])
+    n3_list = await db.set_nodes([NodeUpsert(type="__default__", data={"x": 3})])
     n1 = n1_list[0]
     n2 = n2_list[0]
     n3 = n3_list[0]
 
     # Create an edge from n1 to n2
-    edge = (await db.set_edges([EdgeUpsert(type="link", source_id=n1.id, target_id=n2.id)]))[0]
+    edge = (await db.set_edges([EdgeUpsert(type="__default__", source_id=n1.id, target_id=n2.id)]))[0]
 
     # Try to delete all three nodes - should fail because n1 and n2 have an edge
     with pytest.raises(IntegrityError):

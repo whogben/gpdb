@@ -130,7 +130,6 @@ def serialize_node_record(node: Any) -> GraphNodeRecord:
         name=node.name,
         owner_id=node.owner_id,
         parent_id=node.parent_id,
-        schema_name=node.schema_name,
         data=dict(node.data or {}),
         tags=list(node.tags or []),
         created_at=node.created_at.isoformat(),
@@ -151,7 +150,6 @@ def serialize_edge_record(edge: Any) -> GraphEdgeRecord:
         type=str(edge.type),
         source_id=str(edge.source_id),
         target_id=str(edge.target_id),
-        schema_name=edge.schema_name,
         data=dict(edge.data or {}),
         tags=list(edge.tags or []),
         created_at=edge.created_at.isoformat(),
@@ -329,18 +327,14 @@ def parse_edge_sort(sort: str) -> Sort:
 def build_node_filter(
     *,
     type: str | None,
-    schema_name: str | None,
     parent_id: str | None,
 ) -> FilterGroup | Filter | None:
     """Build a node filter from optional parameters."""
     filters: list[Filter] = []
     clean_type = normalize_optional_text(type)
-    clean_schema_name = normalize_optional_text(schema_name)
     clean_parent_id = normalize_optional_text(parent_id)
     if clean_type:
         filters.append(Filter(field="type", value=clean_type))
-    if clean_schema_name:
-        filters.append(Filter(field="schema_name", value=clean_schema_name))
     if clean_parent_id:
         filters.append(Filter(field="parent_id", value=clean_parent_id))
     if not filters:
@@ -353,20 +347,16 @@ def build_node_filter(
 def build_edge_filter(
     *,
     type: str | None,
-    schema_name: str | None,
     source_id: str | None,
     target_id: str | None,
 ) -> FilterGroup | Filter | None:
     """Build an edge filter from optional parameters."""
     filters: list[Filter] = []
     clean_type = normalize_optional_text(type)
-    clean_schema_name = normalize_optional_text(schema_name)
     clean_source_id = normalize_optional_text(source_id)
     clean_target_id = normalize_optional_text(target_id)
     if clean_type:
         filters.append(Filter(field="type", value=clean_type))
-    if clean_schema_name:
-        filters.append(Filter(field="schema_name", value=clean_schema_name))
     if clean_source_id:
         filters.append(Filter(field="source_id", value=clean_source_id))
     if clean_target_id:
@@ -436,13 +426,13 @@ async def inspect_schema_usage(
     """Inspect schema usage in a graph."""
     node_page = await db.search_nodes(
         SearchQuery(
-            filter=Filter(field="schema_name", value=schema_name),
+            filter=Filter(field="type", value=schema_name),
             limit=max(1, sample_limit),
         )
     )
     edge_page = await db.search_edges(
         SearchQuery(
-            filter=Filter(field="schema_name", value=schema_name),
+            filter=Filter(field="type", value=schema_name),
             limit=max(1, sample_limit),
         )
     )
@@ -489,9 +479,7 @@ async def inspect_node_delete_blockers(
         blockers.sample_child_ids = [
             item.id for item in child_page.items[:sample_limit]
         ]
-        blockers.sample_edge_ids = [
-            item.id for item in edge_page.items[:sample_limit]
-        ]
+        blockers.sample_edge_ids = [item.id for item in edge_page.items[:sample_limit]]
     blockers.can_delete = not (blockers.child_count or blockers.incident_edge_count)
     return blockers
 
@@ -569,7 +557,7 @@ async def open_graph(
         instance,
         GPGraph(
             resolve_instance_url(instance, captive_url_factory),
-            table_prefix=graph.table_prefix
+            table_prefix=graph.table_prefix,
         ),
     )
 
@@ -581,8 +569,6 @@ def resolve_instance_url(
     """Resolve the connection URL for an instance."""
     if instance.mode == "captive":
         if captive_url_factory is None:
-            raise GraphContentNotReadyError(
-                "Captive graph access is not ready yet."
-            )
+            raise GraphContentNotReadyError("Captive graph access is not ready yet.")
         return captive_url_factory()
     return build_postgres_url(instance)
