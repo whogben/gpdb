@@ -23,6 +23,7 @@ from gpdb.models import (
     SchemaBreakingChangeError,
     SchemaInUseError,
     SchemaProtectedError,
+    SchemaInheritanceError,
     _Base,
     _GPRecord,
     _GPNodeBase,
@@ -259,6 +260,7 @@ __all__ = [
     "SchemaBreakingChangeError",
     "SchemaInUseError",
     "SchemaProtectedError",
+    "SchemaInheritanceError",
     # Pydantic models
     "Op",
     "Logic",

@@ -85,6 +85,8 @@ def create_schema_model(table_name: str) -> type:
             "kind": mapped_column(String, primary_key=True),
             "version": mapped_column(String, default="1.0.0"),
             "json_schema": mapped_column(JSONB, default=dict),
+            "extends": mapped_column(JSONB, default=list),
+            "effective_json_schema": mapped_column(JSONB, nullable=True),
             "alias": mapped_column(String, nullable=True),
             "svg_icon": mapped_column(String, nullable=True),
             "created_at": mapped_column(

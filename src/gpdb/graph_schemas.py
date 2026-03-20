@@ -18,6 +18,7 @@ from gpdb.models import (
     SchemaKindMismatchError,
     SchemaBreakingChangeError,
     SchemaProtectedError,
+    SchemaInheritanceError,
     SchemaUpsert,
     SchemaRef,
     _normalize_schema_kind,
@@ -27,6 +28,14 @@ from gpdb.schema import (
     _detect_semver_change,
     _check_breaking_changes,
 )
+from gpdb.schema_inheritance import (
+    build_inheritance_graph,
+    compute_effective_row,
+    detect_cycles,
+    topological_sort,
+    validate_additive_invariant,
+)
+from gpdb.graph_schema_migrate import run_migrate_schema
 from gpdb.svg_sanitizer import normalize_svg_icon_for_display, sanitize_svg
 
 
@@ -81,6 +90,7 @@ class SchemaMixin:
         Raises:
             SchemaBreakingChangeError: If breaking changes are detected
             SchemaProtectedError: If attempting to modify a protected schema
+            SchemaInheritanceError: If inheritance validation fails
             ValueError: If duplicate schema names are provided
 
         Returns:
@@ -99,15 +109,24 @@ class SchemaMixin:
                 )
 
         async with self._get_session() as session:
-            results = []
+            # Build proposed registry: DB state overlaid by batch
+            # First, load all existing schemas of the same kinds
+            kinds_in_batch = {_normalize_schema_kind(s.kind) for s in schemas}
+            stmt = select(self._Schema).where(self._Schema.kind.in_(kinds_in_batch))
+            result = await session.execute(stmt)
+            existing_schemas = result.scalars().all()
+            
+            # Build map of existing schemas by (name, kind)
+            existing_map = {(s.name, s.kind): s for s in existing_schemas}
+            
+            # Build proposed rows (in-memory objects with proposed changes)
+            proposed_rows = []
             for schema_upsert in schemas:
-                # Check if schema already exists using composite key (name, kind)
-                stmt = select(self._Schema).where(
-                    self._Schema.name == schema_upsert.name,
-                    self._Schema.kind == _normalize_schema_kind(schema_upsert.kind),
-                )
-                result = await session.execute(stmt)
-                existing = result.scalars().first()
+                resolved_kind = _normalize_schema_kind(schema_upsert.kind)
+                key = (schema_upsert.name, resolved_kind)
+                
+                # Get existing or create new
+                existing = existing_map.get(key)
                 json_schema, resolved_kind = self._prepare_schema_registration(
                     schema_upsert.json_schema,
                     kind=schema_upsert.kind,
@@ -119,6 +138,23 @@ class SchemaMixin:
                 if schema_upsert.svg_icon is not None:
                     sanitized_svg_icon = sanitize_svg(schema_upsert.svg_icon)
                 
+                # extends: None on update = leave unchanged; on create = []; [] = clear
+                if existing is not None and schema_upsert.extends is None:
+                    extends = list(existing.extends or [])
+                else:
+                    extends = list(schema_upsert.extends or [])
+
+                # Validate extends constraints
+                if schema_upsert.name == "__default__" and extends:
+                    raise SchemaInheritanceError(
+                        f"Schema '__default__' cannot extend other schemas"
+                    )
+                if "__default__" in extends:
+                    raise SchemaInheritanceError(
+                        f"Schema '{schema_upsert.name}' cannot extend '__default__'"
+                    )
+                
+                # Build proposed row
                 if existing:
                     existing_kind = self._schema_kind_from_record(existing)
                     if resolved_kind != existing_kind:
@@ -140,35 +176,148 @@ class SchemaMixin:
                     # Bump version
                     new_version = _bump_semver(existing.version, change_type)
 
-                    # Update existing schema
-                    existing.json_schema = json_schema
-                    existing.kind = resolved_kind
-                    existing.version = new_version
-                    if schema_upsert.alias is not None:
-                        existing.alias = schema_upsert.alias
-                    if schema_upsert.svg_icon is not None:
-                        existing.svg_icon = sanitized_svg_icon
-                    cache_key = (schema_upsert.name, resolved_kind)
-                    self._validators.pop(cache_key, None)  # invalidate cache for updated schema
-                    self._schema_kinds.pop(cache_key, None)
-                    self._schema_display_cache.pop(cache_key, None)
-                    results.append(existing)
+                    # Create proposed row with updates
+                    proposed_row = {
+                        "name": existing.name,
+                        "kind": existing.kind,
+                        "version": new_version,
+                        "json_schema": json_schema,
+                        "extends": extends,
+                        "effective_json_schema": None,  # Will compute
+                        "alias": schema_upsert.alias if schema_upsert.alias is not None else existing.alias,
+                        "svg_icon": sanitized_svg_icon if sanitized_svg_icon is not None else existing.svg_icon,
+                        "existing": existing,
+                    }
                 else:
                     # Create new schema with version 1.0.0
+                    proposed_row = {
+                        "name": schema_upsert.name,
+                        "kind": resolved_kind,
+                        "version": "1.0.0",
+                        "json_schema": json_schema,
+                        "extends": extends,
+                        "effective_json_schema": None,  # Will compute
+                        "alias": schema_upsert.alias,
+                        "svg_icon": sanitized_svg_icon,
+                        "existing": None,
+                    }
+                
+                proposed_rows.append(proposed_row)
+            
+            # Build proposed registry for each kind
+            for kind in kinds_in_batch:
+                # Build map of name -> row for this kind
+                kind_rows = [r for r in proposed_rows if r["kind"] == kind]
+                kind_existing = {s.name: s for s in existing_schemas if s.kind == kind}
+                
+                # Build full proposed registry (existing + proposed)
+                proposed_registry = {}
+                for name, schema in kind_existing.items():
+                    if not any(r["name"] == name and r["kind"] == kind for r in proposed_rows):
+                        # This schema is not being updated, include as-is
+                        proposed_registry[name] = {
+                            "json_schema": schema.json_schema,
+                            "extends": schema.extends or [],
+                        }
+                
+                # Add/update proposed rows
+                for row in kind_rows:
+                    proposed_registry[row["name"]] = {
+                        "json_schema": row["json_schema"],
+                        "extends": row["extends"],
+                    }
+                
+                # Validate parent existence and kind matching
+                for row in kind_rows:
+                    for parent_name in row["extends"]:
+                        if parent_name not in proposed_registry:
+                            raise SchemaInheritanceError(
+                                f"Schema '{row['name']}' extends non-existent schema '{parent_name}'"
+                            )
+                        # Parent must have same kind (already filtered by kind_rows)
+                
+                # Build inheritance graph
+                graph = build_inheritance_graph(proposed_registry)
+                
+                # Detect cycles
+                cycle = detect_cycles(graph)
+                if cycle:
+                    raise SchemaInheritanceError(
+                        f"Cycle detected in inheritance: {' -> '.join(cycle)}"
+                    )
+                
+                # Validate additive invariant
+                is_valid, error_msg = validate_additive_invariant(proposed_registry)
+                if not is_valid:
+                    raise SchemaInheritanceError(error_msg)
+                
+                # Topologically sort to ensure parents before children
+                sorted_names = topological_sort(graph)
+                
+                # Compute effective_json_schema for each schema in topological order
+                for name in sorted_names:
+                    row = next((r for r in kind_rows if r["name"] == name), None)
+                    if row is None:
+                        # This is an existing schema not being updated
+                        continue
+                    
+                    # Get parent effective schemas (batch parents may have effective None = use json_schema)
+                    parent_effectives = []
+                    for parent_name in row["extends"]:
+                        parent_row = next((r for r in kind_rows if r["name"] == parent_name), None)
+                        if parent_row is not None:
+                            if parent_row["effective_json_schema"] is not None:
+                                parent_effectives.append(parent_row["effective_json_schema"])
+                            else:
+                                parent_effectives.append(parent_row["json_schema"])
+                        elif parent_name in kind_existing:
+                            parent_schema = kind_existing[parent_name]
+                            if parent_schema.effective_json_schema is not None:
+                                parent_effectives.append(parent_schema.effective_json_schema)
+                            else:
+                                parent_effectives.append(parent_schema.json_schema)
+                    
+                    # Compute effective schema
+                    effective = compute_effective_row(row["json_schema"], parent_effectives)
+                    row["effective_json_schema"] = effective
+            
+            # Persist all changes
+            results = []
+            for row in proposed_rows:
+                if row["existing"]:
+                    # Update existing schema
+                    row["existing"].json_schema = row["json_schema"]
+                    row["existing"].kind = row["kind"]
+                    row["existing"].version = row["version"]
+                    row["existing"].extends = row["extends"]
+                    row["existing"].effective_json_schema = row["effective_json_schema"]
+                    if row["alias"] is not None:
+                        row["existing"].alias = row["alias"]
+                    if row["svg_icon"] is not None:
+                        row["existing"].svg_icon = row["svg_icon"]
+                    results.append(row["existing"])
+                else:
+                    # Create new schema
                     new_schema = self._Schema(
-                        name=schema_upsert.name,
-                        json_schema=json_schema,
-                        kind=resolved_kind,
-                        version="1.0.0",
-                        alias=schema_upsert.alias,
-                        svg_icon=sanitized_svg_icon,
+                        name=row["name"],
+                        json_schema=row["json_schema"],
+                        kind=row["kind"],
+                        version=row["version"],
+                        extends=row["extends"],
+                        effective_json_schema=row["effective_json_schema"],
+                        alias=row["alias"],
+                        svg_icon=row["svg_icon"],
                     )
                     session.add(new_schema)
-                    cache_key = (schema_upsert.name, resolved_kind)
-                    self._schema_kinds.pop(cache_key, None)
                     results.append(new_schema)
 
             await session.flush()
+            
+            # Clear entire validators cache on any successful schema write
+            self._validators.clear()
+            self._schema_kinds.clear()
+            self._schema_display_cache.clear()
+            
             for result in results:
                 await session.refresh(result)
             return results
@@ -231,6 +380,7 @@ class SchemaMixin:
             ValueError: If duplicate refs are provided
             SchemaInUseError: If any nodes or edges reference any of the schemas
             SchemaProtectedError: If attempting to delete a protected schema
+            SchemaInheritanceError: If attempting to delete a schema that has descendants
         """
         from gpdb.models import SchemaInUseError
 
@@ -287,6 +437,20 @@ class SchemaMixin:
                         f"Cannot delete schema '{ref.name}': it is referenced by one or more edges"
                     )
 
+            # Check for descendants (schemas that extend the target schemas)
+            for ref in refs:
+                # Get all schemas of the same kind
+                kind_stmt = select(self._Schema).where(self._Schema.kind == _normalize_schema_kind(ref.kind))
+                kind_result = await session.execute(kind_stmt)
+                all_schemas = kind_result.scalars().all()
+                
+                # Check if any schema extends the target
+                for schema in all_schemas:
+                    if schema.extends and ref.name in schema.extends:
+                        raise SchemaInheritanceError(
+                            f"Cannot delete schema '{ref.name}': it is extended by schema '{schema.name}'"
+                        )
+
             # Delete all schema records
             for ref in refs:
                 schema = await session.get(
@@ -331,9 +495,10 @@ class SchemaMixin:
         Migrate all nodes/edges using a schema to a new schema version.
 
         This method atomically:
-        1. Migrates all data using the provided migration function
+        1. Migrates all data using the provided migration function (including descendants)
         2. Registers the new schema (with auto SemVer bump)
-        3. All in a single transaction for 100% integrity
+        3. Recomputes effective_json_schema for the migrated schema and all descendants
+        4. All in a single transaction for 100% integrity
 
         Args:
             name: Schema name to migrate
@@ -344,93 +509,7 @@ class SchemaMixin:
         Raises:
             SchemaProtectedError: If attempting to migrate a protected schema
         """
-        # Reject operations on protected schemas
-        if name == "__default__":
-            raise SchemaProtectedError(
-                f"Cannot migrate protected schema '{name}'"
-            )
-
-        async with self.sqla_sessionmaker() as session:
-            async with session.begin():
-                existing = await session.get(
-                    self._Schema, {"name": name, "kind": _normalize_schema_kind(kind)}
-                )
-                # Build SchemaUpsert for the new schema
-                schema_upsert = SchemaUpsert(
-                    name=name,
-                    json_schema=new_schema,
-                    kind=kind,
-                )
-                json_schema, resolved_kind = self._prepare_schema_registration(
-                    schema_upsert.json_schema,
-                    kind=schema_upsert.kind,
-                    existing=existing,
-                )
-                if existing is not None:
-                    existing_kind = self._schema_kind_from_record(existing)
-                    if resolved_kind != existing_kind:
-                        raise SchemaBreakingChangeError(
-                            f"Schema '{name}' cannot change kind from "
-                            f"'{existing_kind}' to '{resolved_kind}'."
-                        )
-
-                # Create validator for new schema directly (not from cache since schema not yet registered)
-                validator = jsonschema.Draft7Validator(json_schema)
-
-                # Get all nodes with this schema
-                stmt = select(self._Node).where(self._Node.type == name)
-                result = await session.execute(stmt)
-                nodes = result.scalars().all()
-
-                # Migrate each node's data and validate
-                for node in nodes:
-                    new_data = migration_func(node.data)
-                    try:
-                        validator.validate(new_data)
-                    except jsonschema.exceptions.ValidationError as e:
-                        raise SchemaValidationError(
-                            f"Migration produced invalid data for node {node.id}: {e.message}"
-                        )
-                    node.data = new_data
-
-                # Get all edges with this schema
-                stmt = select(self._Edge).where(self._Edge.type == name)
-                result = await session.execute(stmt)
-                edges = result.scalars().all()
-
-                # Migrate each edge's data and validate
-                for edge in edges:
-                    new_data = migration_func(edge.data)
-                    try:
-                        validator.validate(new_data)
-                    except jsonschema.exceptions.ValidationError as e:
-                        raise SchemaValidationError(
-                            f"Migration produced invalid data for edge {edge.id}: {e.message}"
-                        )
-                    edge.data = new_data
-
-                # Update schema with new version (bump major for breaking changes)
-                if existing:
-                    # Detect change type and bump version
-                    change_type = _detect_semver_change(
-                        existing.json_schema, json_schema
-                    )
-                    new_version = _bump_semver(existing.version, change_type)
-                    existing.json_schema = json_schema
-                    existing.kind = resolved_kind
-                    existing.version = new_version
-                else:
-                    new_schema_record = self._Schema(
-                        name=name,
-                        json_schema=json_schema,
-                        kind=resolved_kind,
-                        version="1.0.0",
-                    )
-                    session.add(new_schema_record)
-                cache_key = (name, resolved_kind)
-                self._validators.pop(cache_key, None)  # invalidate cache for updated schema
-                self._schema_kinds.pop(cache_key, None)
-                self._schema_display_cache.pop(cache_key, None)
+        await run_migrate_schema(self, name, migration_func, new_schema, kind)
 
     async def _get_schema_by_ref(self, ref: SchemaRef) -> Any:
         """Get a single schema by name and kind."""
@@ -488,7 +567,9 @@ class SchemaMixin:
             return self._validators[cache_key]
 
         schema = await self._get_schema_by_ref(ref)
-        validator = jsonschema.Draft7Validator(schema.json_schema)
+        # Use effective_json_schema if not null, otherwise use json_schema
+        schema_to_validate = schema.effective_json_schema if schema.effective_json_schema is not None else schema.json_schema
+        validator = jsonschema.Draft7Validator(schema_to_validate)
         self._validators[cache_key] = validator
         return validator
 

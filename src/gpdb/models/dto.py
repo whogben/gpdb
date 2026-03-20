@@ -85,11 +85,16 @@ class EdgeRead(BaseModel):
 
 
 class SchemaUpsert(BaseModel):
-    """Input model for creating/updating schemas."""
+    """Input model for creating/updating schemas.
+
+    For ``extends``: on update, ``None`` leaves the stored list unchanged; ``[]``
+    clears parents. On create, omitted ``extends`` means no parents.
+    """
 
     name: str
     json_schema: Union[Dict[str, Any], type[BaseModel]]
     kind: str
+    extends: list[str] | None = None
     alias: str | None = None
     svg_icon: str | None = None
 

@@ -279,3 +279,176 @@ async def test_edge_cannot_use_node_schema(db: GPGraph):
                 data={"name": "invalid"},
             )]
         )
+
+
+# --- Schema Inheritance Validation Tests ---
+
+
+@pytest.mark.asyncio
+async def test_node_validation_with_inherited_schema(db: GPGraph):
+    """
+    Test that a node with inherited schema validates against the effective schema.
+    """
+    # Create parent schema
+    parent_schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+        },
+        "required": ["name"],
+    }
+    await db.set_schemas([SchemaUpsert(name="parent_valid", json_schema=parent_schema, kind="node")])
+
+    # Create child schema extending parent
+    child_schema = {
+        "type": "object",
+        "properties": {
+            "age": {"type": "integer"},
+        },
+    }
+    await db.set_schemas([SchemaUpsert(name="child_valid", json_schema=child_schema, kind="node", extends=["parent_valid"])])
+
+    # Create a node with child type - should validate against effective schema
+    node = NodeUpsert(
+        type="child_valid",
+        data={
+            "name": "Alice",
+            "age": 30,
+        },
+    )
+    result_list = await db.set_nodes([node])
+    result = result_list[0]
+
+    assert result is not None
+    assert result.type == "child_valid"
+    assert result.data["name"] == "Alice"
+    assert result.data["age"] == 30
+
+
+@pytest.mark.asyncio
+async def test_node_validation_with_inherited_schema_missing_required(db: GPGraph):
+    """
+    Test that a node with inherited schema fails validation when missing required field from parent.
+    """
+    from gpdb import SchemaValidationError
+
+    # Create parent schema with required field
+    parent_schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+        },
+        "required": ["name"],
+    }
+    await db.set_schemas([SchemaUpsert(name="parent_req", json_schema=parent_schema, kind="node")])
+
+    # Create child schema extending parent
+    child_schema = {
+        "type": "object",
+        "properties": {
+            "age": {"type": "integer"},
+        },
+    }
+    await db.set_schemas([SchemaUpsert(name="child_req", json_schema=child_schema, kind="node", extends=["parent_req"])])
+
+    # Try to create a node with child type but missing required field from parent
+    node = NodeUpsert(
+        type="child_req",
+        data={
+            "age": 30,  # Missing required "name" from parent
+        },
+    )
+
+    with pytest.raises(SchemaValidationError):
+        await db.set_nodes([node])
+
+
+@pytest.mark.asyncio
+async def test_edge_validation_with_inherited_schema(db: GPGraph):
+    """
+    Test that an edge with inherited schema validates against the effective schema.
+    """
+    # Create parent edge schema
+    parent_edge_schema = {
+        "type": "object",
+        "properties": {
+            "weight": {"type": "number"},
+        },
+        "required": ["weight"],
+    }
+    await db.set_schemas([SchemaUpsert(name="parent_edge_valid", json_schema=parent_edge_schema, kind="edge")])
+
+    # Create child edge schema extending parent
+    child_edge_schema = {
+        "type": "object",
+        "properties": {
+            "label": {"type": "string"},
+        },
+    }
+    await db.set_schemas([SchemaUpsert(name="child_edge_valid", json_schema=child_edge_schema, kind="edge", extends=["parent_edge_valid"])])
+
+    # Create nodes
+    node1 = NodeUpsert(type="__default__", data={"label": "A"})
+    node2 = NodeUpsert(type="__default__", data={"label": "B"})
+    result1_list = await db.set_nodes([node1])
+    result2_list = await db.set_nodes([node2])
+    result1 = result1_list[0]
+    result2 = result2_list[0]
+
+    # Create an edge with child type - should validate against effective schema
+    edge = EdgeUpsert(
+        source_id=result1.id,
+        target_id=result2.id,
+        type="child_edge_valid",
+        data={
+            "weight": 0.5,
+            "label": "connected",
+        },
+    )
+    edge_result = (await db.set_edges([edge]))[0]
+
+    assert edge_result is not None
+    assert edge_result.type == "child_edge_valid"
+    assert edge_result.data["weight"] == 0.5
+    assert edge_result.data["label"] == "connected"
+
+
+@pytest.mark.asyncio
+async def test_validator_caching_with_inheritance(db: GPGraph):
+    """
+    Test that validators are cached for schemas with inheritance.
+    """
+    # Create parent schema
+    parent_schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+        },
+    }
+    await db.set_schemas([SchemaUpsert(name="parent_cache", json_schema=parent_schema, kind="node")])
+
+    # Create child schema extending parent
+    child_schema = {
+        "type": "object",
+        "properties": {
+            "age": {"type": "integer"},
+        },
+    }
+    await db.set_schemas([SchemaUpsert(name="child_cache", json_schema=child_schema, kind="node", extends=["parent_cache"])])
+
+    # Create multiple nodes with the child schema
+    node1 = NodeUpsert(
+        type="child_cache",
+        data={"name": "Alice", "age": 30},
+    )
+    node2 = NodeUpsert(
+        type="child_cache",
+        data={"name": "Bob", "age": 25},
+    )
+
+    await db.set_nodes([node1])
+    await db.set_nodes([node2])
+
+    # Check that validators are cached for the child schema
+    assert hasattr(db, "_validators")
+    assert ("child_cache", "node") in db._validators

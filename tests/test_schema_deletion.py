@@ -254,3 +254,41 @@ async def test_update_node_preserves_schema(db: GPGraph):
     invalid_node = NodeUpsert(id=result.id, type="person_preserve", data={"age": 32})
     with pytest.raises(SchemaValidationError):
         await db.set_nodes([invalid_node])
+
+
+@pytest.mark.asyncio
+async def test_delete_schemas_blocked_when_extended(db: GPGraph):
+    """
+    Test that deleting schemas fails if another schema extends the target.
+    """
+    from gpdb import SchemaInheritanceError
+
+    # Register parent schema
+    parent_schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+        },
+    }
+    await db.set_schemas([SchemaUpsert(name="parent_extended", json_schema=parent_schema, kind="node")])
+
+    # Register child schema extending parent
+    child_schema = {
+        "type": "object",
+        "properties": {
+            "age": {"type": "integer"},
+        },
+    }
+    await db.set_schemas([SchemaUpsert(name="child_extends", json_schema=child_schema, kind="node", extends=["parent_extended"])])
+
+    # Try to delete parent schema (should fail because child extends it)
+    with pytest.raises(SchemaInheritanceError) as exc_info:
+        await db.delete_schemas([SchemaRef(name="parent_extended", kind="node")])
+
+    error_msg = str(exc_info.value)
+    assert "parent_extended" in error_msg
+    assert "child_extends" in error_msg
+
+    # Verify parent schema still exists
+    schemas = await db.get_schemas([SchemaRef(name="parent_extended", kind="node")])
+    assert len(schemas) == 1

@@ -670,3 +670,63 @@ async def test_cache_invalidated_on_schema_delete(db: GPGraph):
     # Cache should be cleared
     cache_key = ("person", "node")
     assert cache_key not in db._schema_display_cache
+
+
+# --- Schema Inheritance Tests (extends and effective_json_schema) ---
+
+
+@pytest.mark.asyncio
+async def test_schema_extends_column_default(db: GPGraph):
+    """Test that extends column defaults to empty list for new schemas."""
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+
+    result = await db.set_schemas([SchemaUpsert(name="test_extends", json_schema=schema, kind="node")])
+
+    assert len(result) == 1
+    assert result[0].extends == []
+
+
+@pytest.mark.asyncio
+async def test_schema_effective_json_schema_default(db: GPGraph):
+    """Test that effective_json_schema is None for schemas without extends."""
+    schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+
+    result = await db.set_schemas([SchemaUpsert(name="test_effective", json_schema=schema, kind="node")])
+
+    assert len(result) == 1
+    assert result[0].effective_json_schema is None
+
+
+@pytest.mark.asyncio
+async def test_schema_with_extends(db: GPGraph):
+    """Test creating a schema with extends field."""
+    parent_schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+    await db.set_schemas([SchemaUpsert(name="parent_test", json_schema=parent_schema, kind="node")])
+
+    child_schema = {"type": "object", "properties": {"age": {"type": "integer"}}}
+    result = await db.set_schemas([SchemaUpsert(name="child_test", json_schema=child_schema, kind="node", extends=["parent_test"])])
+
+    assert len(result) == 1
+    assert result[0].extends == ["parent_test"]
+    assert result[0].effective_json_schema is not None
+    assert "name" in result[0].effective_json_schema["properties"]
+    assert "age" in result[0].effective_json_schema["properties"]
+
+
+@pytest.mark.asyncio
+async def test_retrieve_schema_with_extends(db: GPGraph):
+    """Test that retrieved schemas include extends and effective_json_schema."""
+    parent_schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+    await db.set_schemas([SchemaUpsert(name="parent_retrieve", json_schema=parent_schema, kind="node")])
+
+    child_schema = {"type": "object", "properties": {"age": {"type": "integer"}}}
+    await db.set_schemas([SchemaUpsert(name="child_retrieve", json_schema=child_schema, kind="node", extends=["parent_retrieve"])])
+
+    # Retrieve the child schema
+    retrieved = await db.get_schemas([SchemaRef(name="child_retrieve", kind="node")])
+
+    assert len(retrieved) == 1
+    assert retrieved[0].extends == ["parent_retrieve"]
+    assert retrieved[0].effective_json_schema is not None
+    assert "name" in retrieved[0].effective_json_schema["properties"]
+    assert "age" in retrieved[0].effective_json_schema["properties"]

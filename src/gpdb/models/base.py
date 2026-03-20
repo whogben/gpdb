@@ -47,6 +47,12 @@ class SchemaProtectedError(Exception):
     pass
 
 
+class SchemaInheritanceError(Exception):
+    """Raised when schema inheritance validation fails."""
+
+    pass
+
+
 SchemaKind = Literal["node", "edge"]
 _SCHEMA_KIND_FIELD = "x-gpdb-kind"
 _SCHEMA_KIND_VALUES = {"node", "edge"}
