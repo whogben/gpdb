@@ -8,6 +8,12 @@
             data-profile-link="api-keys">
             🔑 API Keys
         </a>
+        <a class="profile-link" href="{{ api_docs_url }}"
+            data-profile-link="api-docs"
+            target="_blank"
+            rel="noopener noreferrer">
+            📄 API Docs
+        </a>
         <a class="profile-link profile-link--danger" href="{{ mount_prefix }}{{ web_app.url_path_for('logout') }}"
             data-profile-link="logout">
             ✖︎ Sign Out
