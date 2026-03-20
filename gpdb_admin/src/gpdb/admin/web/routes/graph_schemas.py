@@ -137,6 +137,7 @@ async def graph_schemas_create(
     json_schema: str = Form(...),
     alias: str = Form(""),
     svg_icon: str = Form(""),
+    extends: str = Form(""),
 ):
     """Create one schema in a managed graph (wraps into a one-item batch)."""
     current_user = await require_authenticated_user(request)
@@ -149,6 +150,7 @@ async def graph_schemas_create(
         "json_schema": json_schema.strip(),
         "alias": alias.strip() or None,
         "svg_icon": svg_icon.strip() or None,
+        "extends": extends.strip(),
     }
     try:
         parsed_schema = _parse_schema_json_text(form_data["json_schema"])
@@ -171,6 +173,7 @@ async def graph_schemas_create(
                     json_schema=parsed_schema,
                     alias=form_data["alias"],
                     svg_icon=form_data["svg_icon"],
+                    extends=_parse_extends_list(form_data["extends"]),
                 )
             ],
             current_user=current_user,
@@ -252,6 +255,7 @@ async def graph_schema_edit_page(
             ),
             "alias": detail.schema.alias or "",
             "svg_icon": detail.schema.svg_icon or "",
+            "extends": ", ".join(detail.schema.extends) if detail.schema.extends else "",
         },
         schema_name=detail.schema.name,
         schema_kind=detail.schema.kind,
@@ -268,6 +272,7 @@ async def graph_schemas_update(
     json_schema: str = Form(...),
     alias: str = Form(""),
     svg_icon: str = Form(""),
+    extends: str = Form(""),
 ):
     """Update one schema in a managed graph."""
     current_user = await require_authenticated_user(request)
@@ -291,6 +296,7 @@ async def graph_schemas_update(
         "json_schema": json_schema.strip(),
         "alias": alias.strip() or None,
         "svg_icon": svg_icon.strip() or None,
+        "extends": extends.strip(),
     }
     try:
         parsed_schema = _parse_schema_json_text(form_data["json_schema"])
@@ -315,6 +321,7 @@ async def graph_schemas_update(
                     json_schema=parsed_schema,
                     alias=form_data["alias"],
                     svg_icon=form_data["svg_icon"],
+                    extends=_parse_extends_list(form_data["extends"]),
                 )
             ],
             current_user=current_user,
@@ -531,3 +538,13 @@ def _parse_schema_json_text(json_text: str) -> dict[str, object]:
     if not isinstance(parsed, dict):
         raise ValueError("Schema JSON must be a JSON object.")
     return parsed
+
+
+def _parse_extends_list(extends_text: str) -> list[str]:
+    """Parse comma-separated parent schema names from the web form.
+
+    Empty or whitespace-only input yields ``[]`` (no parents on create; clear
+    parents on update). This matches full-form POST semantics: the field is
+    always explicit, unlike JSON APIs where ``null`` means leave unchanged.
+    """
+    return [item.strip() for item in extends_text.split(",") if item.strip()]

@@ -629,9 +629,9 @@ async def _render_graph_node_form(
         form_data=form_data,
         schema_names=[item.name for item in schema_list.items],
         schema_json_map={
-            item.name: item.json_schema
+            item.name: item.effective_json_schema if item.effective_json_schema is not None else item.json_schema
             for item in schema_list.items
-            if item.json_schema is not None
+            if item.json_schema is not None or item.effective_json_schema is not None
         },
         is_edit=is_edit,
         submit_url=(

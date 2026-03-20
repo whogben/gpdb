@@ -9,8 +9,6 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-logger = logging.getLogger(__name__)
-
 from fastapi import HTTPException, Request
 from fastmcp import FastMCP
 from fastmcp.server.auth import AccessToken, TokenVerifier
@@ -37,6 +35,7 @@ from toolaccess.pipeline import (
 
 from gpdb.admin.graph_content import (
     GraphContentConflictError,
+    GraphContentValidationError,
     GraphContentNotFoundError,
     GraphContentNotReadyError,
     GraphDetail,
@@ -118,6 +117,8 @@ class OpenAPIServer(ToolaccessOpenAPIServer):
             except GraphContentNotFoundError as exc:
                 raise HTTPException(status_code=404, detail=str(exc)) from exc
             except GraphContentConflictError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            except GraphContentValidationError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
             except GraphContentNotReadyError as exc:
                 raise HTTPException(status_code=503, detail=str(exc)) from exc

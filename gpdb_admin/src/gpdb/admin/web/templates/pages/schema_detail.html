@@ -44,6 +44,12 @@
           <dt>Alias</dt>
           <dd>{{ schema_detail.schema.alias or 'Not set' }}</dd>
         </div>
+        {% if schema_detail.schema.extends %}
+        <div>
+          <dt>Extends</dt>
+          <dd>{{ schema_detail.schema.extends | join(", ") }}</dd>
+        </div>
+        {% endif %}
         <div>
           <dt>Nodes</dt>
           <dd>{{ schema_detail.schema.usage.node_count }} node{{ "" if schema_detail.schema.usage.node_count == 1 else
@@ -171,6 +177,21 @@
         <p class="schema-editor-card__status" data-jsonjoy-status></p>
       </section>
     </article>
+
+    {% if schema_detail.schema.effective_json_schema %}
+    <article class="resource-card schema-detail-json-card">
+      <div class="resource-header">
+        <div>
+          <h3>Effective JSON Schema</h3>
+          <p class="resource-subtitle">Computed schema including all inherited fields</p>
+        </div>
+      </div>
+      <section class="schema-editor-card" data-jsonjoy-root data-mode="readonly">
+        <div class="schema-editor-card__body" id="jsonjoy-effective-viewer-mount"></div>
+        <p class="schema-editor-card__status" data-jsonjoy-status></p>
+      </section>
+    </article>
+    {% endif %}
   </div>
 </section>
 {% endblock %}
@@ -182,27 +203,34 @@
     {% if success_message %} window.showInfoStrap && showInfoStrap('{{ success_message }}', 'success'); {% endif %}
   });
 </script>
-{% if schema_json %}
+{% if schema_json or schema_detail.schema.effective_json_schema %}
 <script src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/jsonjoy-builder.bundle.js') }}"></script>
 <script src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/jsonjoy-wrapper.js') }}"></script>
 <script>
   (function () {
-    const VIEWER_ID = 'jsonjoy-viewer-mount';
+    const STORED_VIEWER_ID = 'jsonjoy-viewer-mount';
+    const EFFECTIVE_VIEWER_ID = 'jsonjoy-effective-viewer-mount';
 
-    // Schema is passed via template variable
-    const schema = {{ schema_json | safe
-  }};
+    {% if schema_json %}
+    window.JsonJoyEditor.mount(STORED_VIEWER_ID, {{ schema_json | safe }}, {
+      readOnly: true,
+    });
+    {% endif %}
+    {% if schema_detail.schema.effective_json_schema %}
+    window.JsonJoyEditor.mount(EFFECTIVE_VIEWER_ID, {{ schema_detail.schema.effective_json_schema | tojson | safe }}, {
+      readOnly: true,
+    });
+    {% endif %}
 
-  // Mount read-only viewer
-  window.JsonJoyEditor.mount(VIEWER_ID, schema, {
-    readOnly: true,
-  });
-
-  // Cleanup on page unload
-  window.addEventListener('beforeunload', function () {
-    window.JsonJoyEditor.destroy(VIEWER_ID);
-  });
-  }) ();
+    window.addEventListener('beforeunload', function () {
+      {% if schema_json %}
+      window.JsonJoyEditor.destroy(STORED_VIEWER_ID);
+      {% endif %}
+      {% if schema_detail.schema.effective_json_schema %}
+      window.JsonJoyEditor.destroy(EFFECTIVE_VIEWER_ID);
+      {% endif %}
+    });
+  })();
 </script>
 {% endif %}
 {% endblock %}

@@ -113,8 +113,14 @@ def serialize_schema_record(
     include_json_schema: bool,
     usage: GraphSchemaUsage | None = None,
 ) -> dict[str, object]:
-    """Project one core schema record into a stable admin response."""
-    return {
+    """Project one core schema record into a stable admin response.
+
+    ``effective_json_schema`` is omitted from this dict when unset so callers
+    constructing ``GraphSchemaRecord`` get a missing key (model default ``None``)
+    rather than pushing ``None`` through explicitly; JSON tools may still emit
+    ``null`` for that field on the wire.
+    """
+    result = {
         "name": str(schema.name),
         "kind": schema_kind_from_record(schema),
         "version": str(schema.version),
@@ -122,7 +128,15 @@ def serialize_schema_record(
         "usage": usage or GraphSchemaUsage(),
         "alias": getattr(schema, "alias", None),
         "svg_icon": normalize_svg_icon_for_display(getattr(schema, "svg_icon", None)),
+        "extends": list(getattr(schema, "extends", []) or []),
     }
+    
+    # Include effective_json_schema only when non-null
+    effective_json_schema = getattr(schema, "effective_json_schema", None)
+    if effective_json_schema is not None:
+        result["effective_json_schema"] = effective_json_schema
+    
+    return result
 
 
 def serialize_node_record(node: Any) -> GraphNodeRecord:

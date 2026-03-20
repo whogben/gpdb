@@ -28,6 +28,9 @@ class GraphSchemaCreateParams(BaseModel):
     name: str = Field(..., description="Schema name.")
     json_schema: dict[str, object] = Field(..., description="JSON Schema object.")
     kind: SchemaKindLiteral = Field(..., description="Schema kind: node or edge.")
+    extends: list[str] | None = Field(
+        None, description="List of parent schema names this schema extends."
+    )
 
 
 class GraphSchemasCreateParams(BaseModel):

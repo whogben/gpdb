@@ -67,6 +67,20 @@
         <small class="field-hint">Custom SVG icon to display in the graph viewer (max 20KB)</small>
       </label>
 
+      <label class="field">
+        <span>Extends (optional)</span>
+        <textarea name="extends" rows="3" placeholder="parent_schema_1, parent_schema_2">{{ (form_data or {}).get('extends', '') }}</textarea>
+        <small class="field-hint">Comma-separated parent schema names (additive inheritance only). When editing, leave empty to clear inheritance.</small>
+      </label>
+
+      {% if is_edit and schema_detail and schema_detail.schema.effective_json_schema %}
+      <label class="field">
+        <span>Effective JSON Schema (read-only)</span>
+        <textarea readonly rows="10">{{ schema_detail.schema.effective_json_schema | tojson(indent=2) }}</textarea>
+        <small class="field-hint">Computed schema including all inherited fields from parent schemas</small>
+      </label>
+      {% endif %}
+
       <!-- JSONJoy Builder Editor Container -->
       <section class="schema-editor-card" data-jsonjoy-root>
         <div class="schema-editor-card__header">

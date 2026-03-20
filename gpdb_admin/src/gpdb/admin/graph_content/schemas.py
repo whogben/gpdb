@@ -7,9 +7,11 @@ import logging
 from gpdb import (
     GPGraph,
     SchemaBreakingChangeError,
+    SchemaInheritanceError,
     SchemaInUseError,
     SchemaNotFoundError,
     SchemaProtectedError,
+    SchemaRef,
     SchemaUpsert,
     SchemaValidationError,
     sanitize_svg,
@@ -184,7 +186,6 @@ async def get_graph_schemas(
         captive_url_factory=self._captive_url_factory,
     )
     try:
-        from gpdb import SchemaRef
         refs = [SchemaRef(name=name, kind=clean_kind) for name in clean_names]
         try:
             schemas = await db.get_schemas(refs)
@@ -243,9 +244,9 @@ async def create_graph_schemas(
             sanitized_svg_icon = sanitize_svg(schema_param.svg_icon)
         
         validated_schemas.append(
-            (clean_name, schema_param.json_schema, clean_kind, schema_param.alias, sanitized_svg_icon)
+            (clean_name, schema_param.json_schema, clean_kind, schema_param.alias, sanitized_svg_icon, schema_param.extends)
         )
-    clean_names = [clean_name for clean_name, _, _, _, _ in validated_schemas]
+    clean_names = [clean_name for clean_name, _, _, _, _, _ in validated_schemas]
 
     graph, instance, db = await open_graph(
         graph_id=graph_id,
@@ -258,10 +259,9 @@ async def create_graph_schemas(
     try:
         # Check for existing schemas
         try:
-            from gpdb import SchemaRef
             refs = [
                 SchemaRef(name=clean_name, kind=clean_kind)
-                for clean_name, _, clean_kind, _, _ in validated_schemas
+                for clean_name, _, clean_kind, _, _, _ in validated_schemas
             ]
             existing = await db.get_schemas(refs)
             existing_names = [s.name for s in existing]
@@ -279,12 +279,15 @@ async def create_graph_schemas(
                     kind=kind,
                     alias=alias,
                     svg_icon=svg_icon,
+                    extends=extends,
                 )
-                for name, json_schema, kind, alias, svg_icon in validated_schemas
+                for name, json_schema, kind, alias, svg_icon, extends in validated_schemas
             ]
             created_schemas = await db.set_schemas(schema_upserts)
         except SchemaProtectedError as exc:
             raise GraphContentConflictError(str(exc)) from exc
+        except SchemaInheritanceError as exc:
+            raise GraphContentValidationError(str(exc)) from exc
         except (SchemaBreakingChangeError, ValueError) as exc:
             raise GraphContentValidationError(str(exc)) from exc
 
@@ -344,9 +347,9 @@ async def update_graph_schemas(
             sanitized_svg_icon = sanitize_svg(schema_param.svg_icon)
         
         validated_schemas.append(
-            (clean_name, schema_param.json_schema, clean_kind, schema_param.alias, sanitized_svg_icon)
+            (clean_name, schema_param.json_schema, clean_kind, schema_param.alias, sanitized_svg_icon, schema_param.extends)
         )
-    clean_names = [clean_name for clean_name, _, _, _, _ in validated_schemas]
+    clean_names = [clean_name for clean_name, _, _, _, _, _ in validated_schemas]
 
     graph, instance, db = await open_graph(
         graph_id=graph_id,
@@ -359,7 +362,6 @@ async def update_graph_schemas(
     try:
         # Check existing schemas
         try:
-            from gpdb import SchemaRef
             # For schemas where kind is not specified, we need to find the existing kind
             # For schemas where kind is specified, we use that kind
             existing_by_name = {}
@@ -367,7 +369,7 @@ async def update_graph_schemas(
             # First, handle schemas with explicit kind
             refs_with_kind = [
                 SchemaRef(name=clean_name, kind=clean_kind)
-                for clean_name, _, clean_kind, _, _ in validated_schemas
+                for clean_name, _, clean_kind, _, _, _ in validated_schemas
                 if clean_kind is not None
             ]
             
@@ -379,7 +381,7 @@ async def update_graph_schemas(
             # Now handle schemas without explicit kind - need to look up existing kind
             refs_without_kind = [
                 clean_name
-                for clean_name, _, clean_kind, _, _ in validated_schemas
+                for clean_name, _, clean_kind, _, _, _ in validated_schemas
                 if clean_kind is None and clean_name not in existing_by_name
             ]
             
@@ -412,7 +414,7 @@ async def update_graph_schemas(
             # Verify all schemas exist
             missing = [
                 name
-                for name, _, _, _, _ in validated_schemas
+                for name, _, _, _, _, _ in validated_schemas
                 if name not in existing_by_name
             ]
             if missing:
@@ -424,7 +426,7 @@ async def update_graph_schemas(
 
         # Build upserts with preserved values for omitted fields
         schema_upserts = []
-        for clean_name, json_schema, clean_kind, alias, svg_icon in validated_schemas:
+        for clean_name, json_schema, clean_kind, alias, svg_icon, extends in validated_schemas:
             existing = existing_by_name[clean_name]
             json_schema_ = (
                 json_schema if json_schema is not None else existing.json_schema
@@ -436,6 +438,8 @@ async def update_graph_schemas(
             )
             alias_ = alias if alias is not None else getattr(existing, "alias", None)
             svg_icon_ = svg_icon if svg_icon is not None else getattr(existing, "svg_icon", None)
+            # None from the client means leave parents unchanged (SchemaUpsert semantics).
+            extends_ = extends if extends is not None else getattr(existing, "extends", None)
             schema_upserts.append(
                 SchemaUpsert(
                     name=clean_name,
@@ -443,6 +447,7 @@ async def update_graph_schemas(
                     kind=kind_,
                     alias=alias_,
                     svg_icon=svg_icon_,
+                    extends=extends_,
                 )
             )
 
@@ -450,6 +455,8 @@ async def update_graph_schemas(
             updated_schemas = await db.set_schemas(schema_upserts)
         except SchemaProtectedError as exc:
             raise GraphContentConflictError(str(exc)) from exc
+        except SchemaInheritanceError as exc:
+            raise GraphContentValidationError(str(exc)) from exc
         except SchemaBreakingChangeError as exc:
             raise GraphContentValidationError(
                 f"Breaking schema changes are not supported yet. Use a migration workflow."
@@ -497,7 +504,6 @@ async def delete_graph_schemas(
         captive_url_factory=self._captive_url_factory,
     )
     try:
-        from gpdb import SchemaRef
         refs = [SchemaRef(name=name, kind=clean_kind) for name in clean_names]
         try:
             schemas = await db.get_schemas(refs)

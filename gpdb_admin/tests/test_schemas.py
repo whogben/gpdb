@@ -860,11 +860,12 @@ def _schema_definition(
     *,
     include_optional_status: bool = False,
     require_status: bool = False,
+    property_name: str = "name",
 ) -> dict[str, object]:
     properties = {
-        "name": {"type": "string"},
+        property_name: {"type": "string"},
     }
-    required = ["name"]
+    required = [property_name]
     if include_optional_status or require_status:
         properties["status"] = {"type": "string"}
     if require_status:
@@ -875,3 +876,1168 @@ def _schema_definition(
         "properties": properties,
         "required": required,
     }
+
+
+def test_create_schema_with_extends_via_rest(admin_test_env):
+    """Test creating a schema with extends via REST API."""
+    manager = admin_test_env.manager
+    client = admin_test_env.client
+
+    _bootstrap_owner(client)
+    _login(client)
+
+    response = client.get("/graphs/new")
+    assert response.status_code == 200
+    default_instance_id = _extract_instance_option_value(
+        response.text, "Default instance"
+    )
+
+    response = client.post(
+        "/graphs",
+        data={
+            "instance_id": default_instance_id,
+            "table_prefix": "extends_rest",
+            "display_name": "Extends REST",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    graph = _read_graph_by_prefix(manager, table_prefix="extends_rest")
+    assert graph is not None
+    graph_id = graph.id
+
+    response = client.post(
+        "/apikeys",
+        data={"label": "Extends REST key"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    response = client.get(response.headers["location"])
+    assert response.status_code == 200
+    api_key_value = _extract_revealed_api_key(response.text)
+
+    # Create parent schema with parent_field
+    parent_schema = {
+        "type": "object",
+        "description": "parent schema",
+        "properties": {
+            "parent_field": {"type": "string"},
+        },
+        "required": ["parent_field"],
+    }
+
+    response = client.post(
+        "/api/graph_schemas_create",
+        json={
+            "graph_id": graph_id,
+            "schemas": [
+                {
+                    "name": "parent_schema",
+                    "json_schema": parent_schema,
+                    "kind": "node",
+                }
+            ],
+        },
+        headers={"Authorization": f"Bearer {api_key_value}"},
+    )
+    assert response.status_code == 200
+    parent_created = response.json()[0]
+    assert parent_created["schema"]["name"] == "parent_schema"
+
+    # Create child schema extending parent with child_field
+    child_schema = {
+        "type": "object",
+        "description": "child schema",
+        "properties": {
+            "child_field": {"type": "string"},
+        },
+        "required": ["child_field"],
+    }
+
+    response = client.post(
+        "/api/graph_schemas_create",
+        json={
+            "graph_id": graph_id,
+            "schemas": [
+                {
+                    "name": "child_schema",
+                    "json_schema": child_schema,
+                    "kind": "node",
+                    "extends": ["parent_schema"],
+                }
+            ],
+        },
+        headers={"Authorization": f"Bearer {api_key_value}"},
+    )
+    assert response.status_code == 200
+    child_created = response.json()[0]
+    assert child_created["schema"]["name"] == "child_schema"
+    assert child_created["schema"]["extends"] == ["parent_schema"]
+    assert child_created["schema"]["effective_json_schema"] is not None
+    assert "parent_field" in child_created["schema"]["effective_json_schema"]["properties"]
+    assert "child_field" in child_created["schema"]["effective_json_schema"]["properties"]
+
+
+def test_create_schema_with_extends_via_mcp(admin_test_env):
+    """Test creating a schema with extends via MCP."""
+    manager = admin_test_env.manager
+    client = admin_test_env.client
+
+    _bootstrap_owner(client)
+    _login(client)
+
+    response = client.get("/graphs/new")
+    assert response.status_code == 200
+    default_instance_id = _extract_instance_option_value(
+        response.text, "Default instance"
+    )
+
+    response = client.post(
+        "/graphs",
+        data={
+            "instance_id": default_instance_id,
+            "table_prefix": "extends_mcp",
+            "display_name": "Extends MCP",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    graph = _read_graph_by_prefix(manager, table_prefix="extends_mcp")
+    assert graph is not None
+    graph_id = graph.id
+
+    response = client.post(
+        "/apikeys",
+        data={"label": "Extends MCP key"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    response = client.get(response.headers["location"])
+    assert response.status_code == 200
+    api_key_value = _extract_revealed_api_key(response.text)
+
+    # Create parent schema via MCP with parent_field
+    parent_schema = {
+        "type": "object",
+        "description": "mcp parent",
+        "properties": {
+            "parent_field": {"type": "string"},
+        },
+        "required": ["parent_field"],
+    }
+
+    mcp_parent = _call_persisted_authenticated_mcp_tool(
+        manager,
+        api_key_value,
+        "graph_schemas_create",
+        {
+            "graph_id": graph_id,
+            "schemas": [
+                {
+                    "name": "mcp_parent",
+                    "json_schema": parent_schema,
+                    "kind": "node",
+                }
+            ],
+        },
+    )
+    mcp_parent = mcp_parent[0]
+    assert mcp_parent.schema.name == "mcp_parent"
+
+    # Create child schema extending parent via MCP with child_field
+    child_schema = {
+        "type": "object",
+        "description": "mcp child",
+        "properties": {
+            "child_field": {"type": "string"},
+        },
+        "required": ["child_field"],
+    }
+
+    mcp_child = _call_persisted_authenticated_mcp_tool(
+        manager,
+        api_key_value,
+        "graph_schemas_create",
+        {
+            "graph_id": graph_id,
+            "schemas": [
+                {
+                    "name": "mcp_child",
+                    "json_schema": child_schema,
+                    "kind": "node",
+                    "extends": ["mcp_parent"],
+                }
+            ],
+        },
+    )
+    mcp_child = mcp_child[0]
+    assert mcp_child.schema.name == "mcp_child"
+    assert mcp_child.schema.extends == ["mcp_parent"]
+    eff = mcp_child.schema.effective_json_schema
+    assert eff is not None
+    assert "parent_field" in eff["properties"]
+    assert "child_field" in eff["properties"]
+
+
+def test_create_schema_with_extends_via_web(admin_test_env):
+    """Test creating a schema with extends via web UI."""
+    manager = admin_test_env.manager
+    client = admin_test_env.client
+
+    _bootstrap_owner(client)
+    _login(client)
+
+    response = client.get("/graphs/new")
+    assert response.status_code == 200
+    default_instance_id = _extract_instance_option_value(
+        response.text, "Default instance"
+    )
+
+    response = client.post(
+        "/graphs",
+        data={
+            "instance_id": default_instance_id,
+            "table_prefix": "extends_web",
+            "display_name": "Extends Web",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    graph = _read_graph_by_prefix(manager, table_prefix="extends_web")
+    assert graph is not None
+    graph_id = graph.id
+
+    # Create parent schema via web with parent_field
+    parent_schema = {
+        "type": "object",
+        "description": "web parent",
+        "properties": {
+            "parent_field": {"type": "string"},
+        },
+        "required": ["parent_field"],
+    }
+
+    response = client.post(
+        f"/graphs/{graph_id}/schemas",
+        data={
+            "name": "web_parent",
+            "kind": "node",
+            "json_schema": json.dumps(parent_schema),
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    # Create child schema extending parent via web with child_field
+    child_schema = {
+        "type": "object",
+        "description": "web child",
+        "properties": {
+            "child_field": {"type": "string"},
+        },
+        "required": ["child_field"],
+    }
+
+    response = client.post(
+        f"/graphs/{graph_id}/schemas",
+        data={
+            "name": "web_child",
+            "kind": "node",
+            "json_schema": json.dumps(child_schema),
+            "extends": "web_parent",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    # Verify child schema has extends field populated
+    response = client.get(f"/graphs/{graph_id}/schemas/web_child/node")
+    assert response.status_code == 200
+    assert "web_parent" in response.text
+
+
+def test_update_schema_with_extends_via_rest(admin_test_env):
+    """Test updating a schema with extends via REST API."""
+    manager = admin_test_env.manager
+    client = admin_test_env.client
+
+    _bootstrap_owner(client)
+    _login(client)
+
+    response = client.get("/graphs/new")
+    assert response.status_code == 200
+    default_instance_id = _extract_instance_option_value(
+        response.text, "Default instance"
+    )
+
+    response = client.post(
+        "/graphs",
+        data={
+            "instance_id": default_instance_id,
+            "table_prefix": "update_extends_rest",
+            "display_name": "Update Extends REST",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    graph = _read_graph_by_prefix(manager, table_prefix="update_extends_rest")
+    assert graph is not None
+    graph_id = graph.id
+
+    response = client.post(
+        "/apikeys",
+        data={"label": "Update Extends REST key"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    response = client.get(response.headers["location"])
+    assert response.status_code == 200
+    api_key_value = _extract_revealed_api_key(response.text)
+
+    # Create parent schemas with non-overlapping properties
+    parent1_schema = {
+        "type": "object",
+        "description": "parent1",
+        "properties": {
+            "parent1_field": {"type": "string"},
+        },
+        "required": ["parent1_field"],
+    }
+
+    parent2_schema = {
+        "type": "object",
+        "description": "parent2",
+        "properties": {
+            "parent2_field": {"type": "string"},
+        },
+        "required": ["parent2_field"],
+    }
+
+    response = client.post(
+        "/api/graph_schemas_create",
+        json={
+            "graph_id": graph_id,
+            "schemas": [
+                {
+                    "name": "parent1",
+                    "json_schema": parent1_schema,
+                    "kind": "node",
+                },
+                {
+                    "name": "parent2",
+                    "json_schema": parent2_schema,
+                    "kind": "node",
+                },
+            ],
+        },
+        headers={"Authorization": f"Bearer {api_key_value}"},
+    )
+    assert response.status_code == 200
+
+    # Create child schema without extends
+    child_schema = {
+        "type": "object",
+        "description": "child",
+        "properties": {
+            "child_field": {"type": "string"},
+        },
+        "required": ["child_field"],
+    }
+
+    response = client.post(
+        "/api/graph_schemas_create",
+        json={
+            "graph_id": graph_id,
+            "schemas": [
+                {
+                    "name": "child",
+                    "json_schema": child_schema,
+                    "kind": "node",
+                }
+            ],
+        },
+        headers={"Authorization": f"Bearer {api_key_value}"},
+    )
+    assert response.status_code == 200
+
+    # Update child to extend parent1
+    response = client.post(
+        "/api/graph_schemas_update",
+        json={
+            "graph_id": graph_id,
+            "schemas": [
+                {
+                    "name": "child",
+                    "extends": ["parent1"],
+                }
+            ],
+        },
+        headers={"Authorization": f"Bearer {api_key_value}"},
+    )
+    assert response.status_code == 200
+    updated = response.json()[0]
+    assert updated["schema"]["extends"] == ["parent1"]
+    assert updated["schema"]["effective_json_schema"] is not None
+
+    # Update child to extend both parents
+    response = client.post(
+        "/api/graph_schemas_update",
+        json={
+            "graph_id": graph_id,
+            "schemas": [
+                {
+                    "name": "child",
+                    "extends": ["parent1", "parent2"],
+                }
+            ],
+        },
+        headers={"Authorization": f"Bearer {api_key_value}"},
+    )
+    assert response.status_code == 200
+    updated = response.json()[0]
+    assert set(updated["schema"]["extends"]) == {"parent1", "parent2"}
+    eff = updated["schema"]["effective_json_schema"]
+    assert eff is not None
+    props = eff["properties"]
+    assert "parent1_field" in props
+    assert "parent2_field" in props
+    assert "child_field" in props
+
+    # Clear extends
+    response = client.post(
+        "/api/graph_schemas_update",
+        json={
+            "graph_id": graph_id,
+            "schemas": [
+                {
+                    "name": "child",
+                    "extends": [],
+                }
+            ],
+        },
+        headers={"Authorization": f"Bearer {api_key_value}"},
+    )
+    assert response.status_code == 200
+    updated = response.json()[0]
+    assert updated["schema"]["extends"] == []
+    assert updated["schema"]["effective_json_schema"] is None
+
+
+def test_update_schema_with_extends_via_mcp(admin_test_env):
+    """Test updating a schema with extends via MCP."""
+    manager = admin_test_env.manager
+    client = admin_test_env.client
+
+    _bootstrap_owner(client)
+    _login(client)
+
+    response = client.get("/graphs/new")
+    assert response.status_code == 200
+    default_instance_id = _extract_instance_option_value(
+        response.text, "Default instance"
+    )
+
+    response = client.post(
+        "/graphs",
+        data={
+            "instance_id": default_instance_id,
+            "table_prefix": "update_extends_mcp",
+            "display_name": "Update Extends MCP",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    graph = _read_graph_by_prefix(manager, table_prefix="update_extends_mcp")
+    assert graph is not None
+    graph_id = graph.id
+
+    response = client.post(
+        "/apikeys",
+        data={"label": "Update Extends MCP key"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    response = client.get(response.headers["location"])
+    assert response.status_code == 200
+    api_key_value = _extract_revealed_api_key(response.text)
+
+    # Create parent and child schemas with non-overlapping properties
+    parent_schema = {
+        "type": "object",
+        "description": "mcp parent",
+        "properties": {
+            "parent_field": {"type": "string"},
+        },
+        "required": ["parent_field"],
+    }
+
+    child_schema = {
+        "type": "object",
+        "description": "mcp child",
+        "properties": {
+            "child_field": {"type": "string"},
+        },
+        "required": ["child_field"],
+    }
+
+    mcp_created = _call_persisted_authenticated_mcp_tool(
+        manager,
+        api_key_value,
+        "graph_schemas_create",
+        {
+            "graph_id": graph_id,
+            "schemas": [
+                {
+                    "name": "mcp_parent",
+                    "json_schema": parent_schema,
+                    "kind": "node",
+                },
+                {
+                    "name": "mcp_child",
+                    "json_schema": child_schema,
+                    "kind": "node",
+                },
+            ],
+        },
+    )
+
+    # Update child to extend parent
+    mcp_updated = _call_persisted_authenticated_mcp_tool(
+        manager,
+        api_key_value,
+        "graph_schemas_update",
+        {
+            "graph_id": graph_id,
+            "schemas": [
+                {
+                    "name": "mcp_child",
+                    "extends": ["mcp_parent"],
+                }
+            ],
+        },
+    )
+    mcp_updated = mcp_updated[0]
+    assert mcp_updated.schema.extends == ["mcp_parent"]
+    assert mcp_updated.schema.effective_json_schema is not None
+
+
+def test_update_schema_with_extends_via_web(admin_test_env):
+    """Test updating a schema with extends via web UI."""
+    manager = admin_test_env.manager
+    client = admin_test_env.client
+
+    _bootstrap_owner(client)
+    _login(client)
+
+    response = client.get("/graphs/new")
+    assert response.status_code == 200
+    default_instance_id = _extract_instance_option_value(
+        response.text, "Default instance"
+    )
+
+    response = client.post(
+        "/graphs",
+        data={
+            "instance_id": default_instance_id,
+            "table_prefix": "update_extends_web",
+            "display_name": "Update Extends Web",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    graph = _read_graph_by_prefix(manager, table_prefix="update_extends_web")
+    assert graph is not None
+    graph_id = graph.id
+
+    # Create parent and child schemas with non-overlapping properties
+    parent_schema = {
+        "type": "object",
+        "description": "web parent",
+        "properties": {
+            "parent_field": {"type": "string"},
+        },
+        "required": ["parent_field"],
+    }
+
+    child_schema = {
+        "type": "object",
+        "description": "web child",
+        "properties": {
+            "child_field": {"type": "string"},
+        },
+        "required": ["child_field"],
+    }
+
+    response = client.post(
+        f"/graphs/{graph_id}/schemas",
+        data={
+            "name": "web_parent",
+            "kind": "node",
+            "json_schema": json.dumps(parent_schema),
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    response = client.post(
+        f"/graphs/{graph_id}/schemas",
+        data={
+            "name": "web_child",
+            "kind": "node",
+            "json_schema": json.dumps(child_schema),
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    # Update child to extend parent
+    response = client.post(
+        f"/graphs/{graph_id}/schemas/web_child/node",
+        data={
+            "kind": "node",
+            "json_schema": json.dumps(child_schema),
+            "extends": "web_parent",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    # Verify child schema has extends field populated
+    response = client.get(f"/graphs/{graph_id}/schemas/web_child/node")
+    assert response.status_code == 200
+    assert "web_parent" in response.text
+
+
+def test_clear_extends_via_web(admin_test_env):
+    """Empty extends field on edit clears inheritance (full-form POST semantics)."""
+    import re
+
+    manager = admin_test_env.manager
+    client = admin_test_env.client
+
+    _bootstrap_owner(client)
+    _login(client)
+
+    response = client.get("/graphs/new")
+    assert response.status_code == 200
+    default_instance_id = _extract_instance_option_value(
+        response.text, "Default instance"
+    )
+
+    response = client.post(
+        "/graphs",
+        data={
+            "instance_id": default_instance_id,
+            "table_prefix": "clear_extends_web",
+            "display_name": "Clear Extends Web",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    graph = _read_graph_by_prefix(manager, table_prefix="clear_extends_web")
+    assert graph is not None
+    graph_id = graph.id
+
+    parent_schema = {
+        "type": "object",
+        "properties": {"p_field": {"type": "string"}},
+        "required": ["p_field"],
+    }
+    child_schema = {
+        "type": "object",
+        "properties": {"c_field": {"type": "string"}},
+        "required": ["c_field"],
+    }
+
+    response = client.post(
+        f"/graphs/{graph_id}/schemas",
+        data={
+            "name": "ce_parent",
+            "kind": "node",
+            "json_schema": json.dumps(parent_schema),
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    response = client.post(
+        f"/graphs/{graph_id}/schemas",
+        data={
+            "name": "ce_child",
+            "kind": "node",
+            "json_schema": json.dumps(child_schema),
+            "extends": "ce_parent",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    response = client.post(
+        f"/graphs/{graph_id}/schemas/ce_child/node",
+        data={
+            "kind": "node",
+            "json_schema": json.dumps(child_schema),
+            "extends": "",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    response = client.get(f"/graphs/{graph_id}/schemas/ce_child/node/edit")
+    assert response.status_code == 200
+    match = re.search(
+        r'<textarea name="extends"[^>]*>([\s\S]*?)</textarea>',
+        response.text,
+    )
+    assert match is not None
+    assert not match.group(1).strip()
+
+
+def test_schema_list_includes_extends(admin_test_env):
+    """Test that schema list includes extends field."""
+    manager = admin_test_env.manager
+    client = admin_test_env.client
+
+    _bootstrap_owner(client)
+    _login(client)
+
+    response = client.get("/graphs/new")
+    assert response.status_code == 200
+    default_instance_id = _extract_instance_option_value(
+        response.text, "Default instance"
+    )
+
+    response = client.post(
+        "/graphs",
+        data={
+            "instance_id": default_instance_id,
+            "table_prefix": "list_extends",
+            "display_name": "List Extends",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    graph = _read_graph_by_prefix(manager, table_prefix="list_extends")
+    assert graph is not None
+    graph_id = graph.id
+
+    response = client.post(
+        "/apikeys",
+        data={"label": "List Extends key"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    response = client.get(response.headers["location"])
+    assert response.status_code == 200
+    api_key_value = _extract_revealed_api_key(response.text)
+
+    # Create schemas with and without extends, using non-overlapping properties
+    parent_schema = {
+        "type": "object",
+        "description": "parent",
+        "properties": {
+            "parent_field": {"type": "string"},
+        },
+        "required": ["parent_field"],
+    }
+
+    child_schema = {
+        "type": "object",
+        "description": "child",
+        "properties": {
+            "child_field": {"type": "string"},
+        },
+        "required": ["child_field"],
+    }
+
+    standalone_schema = {
+        "type": "object",
+        "description": "standalone",
+        "properties": {
+            "standalone_field": {"type": "string"},
+        },
+        "required": ["standalone_field"],
+    }
+
+    response = client.post(
+        "/api/graph_schemas_create",
+        json={
+            "graph_id": graph_id,
+            "schemas": [
+                {
+                    "name": "parent",
+                    "json_schema": parent_schema,
+                    "kind": "node",
+                },
+                {
+                    "name": "child",
+                    "json_schema": child_schema,
+                    "kind": "node",
+                    "extends": ["parent"],
+                },
+                {
+                    "name": "standalone",
+                    "json_schema": standalone_schema,
+                    "kind": "node",
+                },
+            ],
+        },
+        headers={"Authorization": f"Bearer {api_key_value}"},
+    )
+    assert response.status_code == 200
+
+    # List schemas and verify extends field is present
+    response = client.post(
+        "/api/graph_schema_list",
+        json={"graph_id": graph_id, "kind": "node"},
+        headers={"Authorization": f"Bearer {api_key_value}"},
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["total"] == 4  # __default__, parent, child, standalone
+
+    schemas = {item["name"]: item for item in result["items"]}
+    assert schemas["parent"]["extends"] == []
+    assert schemas["child"]["extends"] == ["parent"]
+    assert schemas["standalone"]["extends"] == []
+
+
+def test_schema_detail_includes_extends_and_effective(admin_test_env):
+    """Test that schema detail includes extends and effective_json_schema."""
+    manager = admin_test_env.manager
+    client = admin_test_env.client
+
+    _bootstrap_owner(client)
+    _login(client)
+
+    response = client.get("/graphs/new")
+    assert response.status_code == 200
+    default_instance_id = _extract_instance_option_value(
+        response.text, "Default instance"
+    )
+
+    response = client.post(
+        "/graphs",
+        data={
+            "instance_id": default_instance_id,
+            "table_prefix": "detail_extends",
+            "display_name": "Detail Extends",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    graph = _read_graph_by_prefix(manager, table_prefix="detail_extends")
+    assert graph is not None
+    graph_id = graph.id
+
+    response = client.post(
+        "/apikeys",
+        data={"label": "Detail Extends key"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    response = client.get(response.headers["location"])
+    assert response.status_code == 200
+    api_key_value = _extract_revealed_api_key(response.text)
+
+    # Create parent and child schemas with non-overlapping properties
+    parent_schema = {
+        "type": "object",
+        "description": "parent",
+        "properties": {
+            "parent_field": {"type": "string"},
+        },
+        "required": ["parent_field"],
+    }
+
+    child_schema = {
+        "type": "object",
+        "description": "child",
+        "properties": {
+            "child_field": {"type": "string"},
+        },
+        "required": ["child_field"],
+    }
+
+    response = client.post(
+        "/api/graph_schemas_create",
+        json={
+            "graph_id": graph_id,
+            "schemas": [
+                {
+                    "name": "parent",
+                    "json_schema": parent_schema,
+                    "kind": "node",
+                },
+                {
+                    "name": "child",
+                    "json_schema": child_schema,
+                    "kind": "node",
+                    "extends": ["parent"],
+                },
+            ],
+        },
+        headers={"Authorization": f"Bearer {api_key_value}"},
+    )
+    assert response.status_code == 200
+
+    # Get schema detail and verify extends and effective_json_schema are present
+    response = client.post(
+        "/api/graph_schemas_get",
+        json={"graph_id": graph_id, "names": ["child"], "kind": "node"},
+        headers={"Authorization": f"Bearer {api_key_value}"},
+    )
+    assert response.status_code == 200
+    result = response.json()[0]
+    assert result["schema"]["extends"] == ["parent"]
+    assert result["schema"]["effective_json_schema"] is not None
+    assert "parent_field" in result["schema"]["effective_json_schema"]["properties"]
+    assert "child_field" in result["schema"]["effective_json_schema"]["properties"]
+
+    # Get parent schema detail and verify effective_json_schema is omitted
+    response = client.post(
+        "/api/graph_schemas_get",
+        json={"graph_id": graph_id, "names": ["parent"], "kind": "node"},
+        headers={"Authorization": f"Bearer {api_key_value}"},
+    )
+    assert response.status_code == 200
+    result = response.json()[0]
+    assert result["schema"]["extends"] == []
+    assert result["schema"]["effective_json_schema"] is None
+
+
+def test_error_when_extending_nonexistent_parent(admin_test_env):
+    """Test error when creating child schema extending non-existent parent."""
+    manager = admin_test_env.manager
+    client = admin_test_env.client
+
+    _bootstrap_owner(client)
+    _login(client)
+
+    response = client.get("/graphs/new")
+    assert response.status_code == 200
+    default_instance_id = _extract_instance_option_value(
+        response.text, "Default instance"
+    )
+
+    response = client.post(
+        "/graphs",
+        data={
+            "instance_id": default_instance_id,
+            "table_prefix": "error_nonexistent",
+            "display_name": "Error Nonexistent",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    graph = _read_graph_by_prefix(manager, table_prefix="error_nonexistent")
+    assert graph is not None
+    graph_id = graph.id
+
+    response = client.post(
+        "/apikeys",
+        data={"label": "Error Nonexistent key"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    response = client.get(response.headers["location"])
+    assert response.status_code == 200
+    api_key_value = _extract_revealed_api_key(response.text)
+
+    # Try to create child schema extending non-existent parent via REST
+    response = client.post(
+        "/api/graph_schemas_create",
+        json={
+            "graph_id": graph_id,
+            "schemas": [
+                {
+                    "name": "child",
+                    "json_schema": _schema_definition("child"),
+                    "kind": "node",
+                    "extends": ["nonexistent_parent"],
+                }
+            ],
+        },
+        headers={"Authorization": f"Bearer {api_key_value}"},
+    )
+    assert response.status_code == 400
+    assert "non-existent" in response.json()["detail"].lower()
+
+
+def test_error_when_extending_with_overlapping_properties(admin_test_env):
+    """Test error when child schema has overlapping properties with parent."""
+    manager = admin_test_env.manager
+    client = admin_test_env.client
+
+    _bootstrap_owner(client)
+    _login(client)
+
+    response = client.get("/graphs/new")
+    assert response.status_code == 200
+    default_instance_id = _extract_instance_option_value(
+        response.text, "Default instance"
+    )
+
+    response = client.post(
+        "/graphs",
+        data={
+            "instance_id": default_instance_id,
+            "table_prefix": "error_overlap",
+            "display_name": "Error Overlap",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    graph = _read_graph_by_prefix(manager, table_prefix="error_overlap")
+    assert graph is not None
+    graph_id = graph.id
+
+    response = client.post(
+        "/apikeys",
+        data={"label": "Error Overlap key"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    response = client.get(response.headers["location"])
+    assert response.status_code == 200
+    api_key_value = _extract_revealed_api_key(response.text)
+
+    # Create parent schema with 'name' property
+    response = client.post(
+        "/api/graph_schemas_create",
+        json={
+            "graph_id": graph_id,
+            "schemas": [
+                {
+                    "name": "parent",
+                    "json_schema": _schema_definition("parent"),
+                    "kind": "node",
+                }
+            ],
+        },
+        headers={"Authorization": f"Bearer {api_key_value}"},
+    )
+    assert response.status_code == 200
+
+    # Try to create child schema with overlapping 'name' property
+    child_schema = {
+        "type": "object",
+        "description": "child schema",
+        "properties": {
+            "name": {"type": "string"},  # Overlaps with parent
+            "extra": {"type": "string"},
+        },
+        "required": ["name"],
+    }
+
+    response = client.post(
+        "/api/graph_schemas_create",
+        json={
+            "graph_id": graph_id,
+            "schemas": [
+                {
+                    "name": "child",
+                    "json_schema": child_schema,
+                    "kind": "node",
+                    "extends": ["parent"],
+                }
+            ],
+        },
+        headers={"Authorization": f"Bearer {api_key_value}"},
+    )
+    assert response.status_code == 400
+    assert "violates additive inheritance" in response.json()["detail"].lower()
+
+
+def test_node_form_receives_effective_schema(admin_test_env):
+    """Test that node create form receives effective schema in schema_json_map."""
+    manager = admin_test_env.manager
+    client = admin_test_env.client
+
+    _bootstrap_owner(client)
+    _login(client)
+
+    response = client.get("/graphs/new")
+    assert response.status_code == 200
+    default_instance_id = _extract_instance_option_value(
+        response.text, "Default instance"
+    )
+
+    response = client.post(
+        "/graphs",
+        data={
+            "instance_id": default_instance_id,
+            "table_prefix": "node_form_effective",
+            "display_name": "Node Form Effective",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    graph = _read_graph_by_prefix(manager, table_prefix="node_form_effective")
+    assert graph is not None
+    graph_id = graph.id
+
+    # Create parent schema with properties
+    parent_schema = {
+        "type": "object",
+        "description": "parent schema",
+        "properties": {
+            "name": {"type": "string"},
+            "parent_field": {"type": "string"},
+        },
+        "required": ["name"],
+    }
+
+    response = client.post(
+        f"/graphs/{graph_id}/schemas",
+        data={
+            "name": "parent",
+            "kind": "node",
+            "json_schema": json.dumps(parent_schema),
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    # Create child schema extending parent with additional properties
+    child_schema = {
+        "type": "object",
+        "description": "child schema",
+        "properties": {
+            "child_field": {"type": "string"},
+        },
+        "required": [],
+    }
+
+    response = client.post(
+        f"/graphs/{graph_id}/schemas",
+        data={
+            "name": "child",
+            "kind": "node",
+            "json_schema": json.dumps(child_schema),
+            "extends": "parent",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    # Access node create form for child type
+    response = client.get(f"/graphs/{graph_id}/nodes/new")
+    assert response.status_code == 200
+
+    # Verify schema_json_map includes effective_json_schema with all properties
+    # The form should include both parent_field and child_field
+    assert "parent_field" in response.text
+    assert "child_field" in response.text

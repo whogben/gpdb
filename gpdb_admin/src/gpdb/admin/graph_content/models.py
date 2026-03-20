@@ -44,6 +44,8 @@ class GraphSchemaRecord(BaseModel):
     usage: GraphSchemaUsage = Field(default_factory=GraphSchemaUsage)
     alias: str | None = None
     svg_icon: str | None = None
+    extends: list[str] = Field(default_factory=list)
+    effective_json_schema: dict[str, Any] | None = None
 
 
 class GraphSchemaList(BaseModel):
@@ -74,6 +76,9 @@ class GraphSchemaUpdateParam(BaseModel):
     kind: str | None = Field(None, description="Schema kind: node or edge.")
     alias: str | None = Field(None, description="Display alias for the schema.")
     svg_icon: str | None = Field(None, description="SVG icon for the schema.")
+    extends: list[str] | None = Field(
+        None, description="List of parent schema names this schema extends. None = unchanged, [] = clear."
+    )
 
 
 class GraphSchemaCreateParam(BaseModel):
@@ -88,6 +93,9 @@ class GraphSchemaCreateParam(BaseModel):
     )
     alias: str | None = Field(None, description="Display alias for the schema.")
     svg_icon: str | None = Field(None, description="SVG icon for the schema.")
+    extends: list[str] | None = Field(
+        None, description="List of parent schema names this schema extends."
+    )
 
 
 class GraphNodeCreateParam(BaseModel):
