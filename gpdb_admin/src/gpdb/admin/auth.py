@@ -61,6 +61,23 @@ def parse_api_key(token: str) -> "ParsedAPIKey | None":
     return ParsedAPIKey(key_id=key_id, secret=secret)
 
 
+def parse_provided_api_key(token: str) -> "GeneratedAPIKey | None":
+    """Parse a provided API key into its components for storage.
+    
+    Returns None if the token is not a valid GPDB API key format.
+    """
+    parsed = parse_api_key(token)
+    if parsed is None:
+        return None
+    preview = f"{API_KEY_PREFIX}_{parsed.key_id}_{parsed.secret[:4]}..."
+    return GeneratedAPIKey(
+        key_id=parsed.key_id,
+        secret=parsed.secret,
+        token=token,
+        preview=preview,
+    )
+
+
 def extract_bearer_token(header_value: str | None) -> str | None:
     """Return a bearer token from an Authorization header if present."""
     if not header_value:

@@ -8,7 +8,12 @@ from fastapi.testclient import TestClient
 from mcp.server.auth.middleware.auth_context import auth_context_var
 
 from gpdb.admin import entry
-from gpdb.admin.auth import generate_api_key, hash_api_key_secret, hash_password
+from gpdb.admin.auth import (
+    generate_api_key,
+    hash_api_key_secret,
+    hash_password,
+    parse_provided_api_key,
+)
 from gpdb.admin.config import ConfigStore
 from gpdb.admin.store import AdminStore
 
@@ -368,3 +373,65 @@ def test_cli_api_key_tools_fallback_to_owner_user(tmp_path):
 
     asyncio.run(_run_with_owner(manager.app.state.services))
     asyncio.run(_run_without_owner(manager_no_owner.app.state.services))
+
+
+def test_api_key_create_with_provided_value(tmp_path):
+    """Test creating an API key with a provided value vs auto-generation."""
+
+    manager = _create_test_manager(tmp_path)
+
+    async def _run():
+        services = manager.app.state.services
+        admin_lifespan = entry.create_admin_lifespan(services)
+        async with admin_lifespan(manager.app):
+            assert services.admin_store is not None
+
+            owner = await services.admin_store.create_initial_owner(
+                username="owner",
+                password_hash=hash_password("secret-pass"),
+                display_name="Primary Owner",
+            )
+
+            # Test 1: Create with auto-generated key (default behavior)
+            bootstrap_generated = generate_api_key()
+            bootstrap_key = await services.admin_store.create_api_key(
+                user_id=owner.id,
+                label="Auto-generated key",
+                key_id=bootstrap_generated.key_id,
+                preview=bootstrap_generated.preview,
+                secret_hash=hash_api_key_secret(bootstrap_generated.secret),
+                key_value=bootstrap_generated.token,
+            )
+            assert bootstrap_key.key_id == bootstrap_generated.key_id
+            assert bootstrap_key.preview == bootstrap_generated.preview
+
+            # Test 2: Create with a provided API key value
+            provided_key_value = "gpdb_abc123def456_ghi789jkl012mno345pqr678stu901vwx234yz"
+            parsed_provided = parse_provided_api_key(provided_key_value)
+            assert parsed_provided is not None
+            assert parsed_provided.key_id == "abc123def456"
+            assert parsed_provided.secret == "ghi789jkl012mno345pqr678stu901vwx234yz"
+
+            provided_key = await services.admin_store.create_api_key(
+                user_id=owner.id,
+                label="Provided key",
+                key_id=parsed_provided.key_id,
+                preview=parsed_provided.preview,
+                secret_hash=hash_api_key_secret(parsed_provided.secret),
+                key_value=parsed_provided.token,
+            )
+            assert provided_key.key_id == "abc123def456"
+            assert provided_key.preview == "gpdb_abc123def456_ghi7..."
+
+            # Test 3: Verify the provided key can be revealed and used
+            revealed = await services.admin_store.reveal_api_key(provided_key.id)
+            assert revealed == provided_key_value
+
+            # Test 4: Verify invalid format returns None
+            invalid_key = parse_provided_api_key("invalid_format")
+            assert invalid_key is None
+
+            invalid_key2 = parse_provided_api_key("wrongprefix_abc123_def456")
+            assert invalid_key2 is None
+
+    asyncio.run(_run())

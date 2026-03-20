@@ -10,7 +10,11 @@ from toolaccess import (
     inject_context,
 )
 
-from gpdb.admin.auth import generate_api_key, hash_api_key_secret
+from gpdb.admin.auth import (
+    generate_api_key,
+    hash_api_key_secret,
+    parse_provided_api_key,
+)
 from gpdb.admin.context import _require_context_user
 from gpdb.admin.tools.base import (
     API_KEY_TOOL_ACCESS,
@@ -37,6 +41,9 @@ class ApiKeyCreateParams(BaseModel):
         None, description="Username of the admin user (omit for self)."
     )
     label: str = Field(..., description="Label for the API key.")
+    api_key: str | None = Field(
+        None, description="API key value (omit to auto-generate)."
+    )
 
 
 class ApiKeyRevealParams(BaseModel):
@@ -93,7 +100,7 @@ def _build_api_key_service(services: AdminServices) -> ToolService:
             services, ctx, username=params.username
         )
         return await _create_api_key_for_user(
-            services, user_id=user.id, label=params.label
+            services, user_id=user.id, label=params.label, api_key=params.api_key
         )
 
     @service.tool(
@@ -177,6 +184,7 @@ async def _create_api_key_for_user(
     *,
     user_id: str,
     label: str,
+    api_key: str | None = None,
 ) -> dict[str, object]:
     """Create one API key for a target user and return revealable metadata."""
     admin_store = services.admin_store
@@ -185,8 +193,19 @@ async def _create_api_key_for_user(
     clean_label = label.strip()
     if not clean_label:
         raise ValueError("API key label is required.")
-    generated = generate_api_key()
-    api_key = await admin_store.create_api_key(
+    
+    if api_key:
+        clean_api_key = api_key.strip()
+        if not clean_api_key:
+            raise ValueError("API key value cannot be empty if provided.")
+        parsed = parse_provided_api_key(clean_api_key)
+        if parsed is None:
+            raise ValueError("Invalid API key format. Must be in format: gpdb_<key_id>_<secret>")
+        generated = parsed
+    else:
+        generated = generate_api_key()
+    
+    api_key_record = await admin_store.create_api_key(
         user_id=user_id,
         label=clean_label,
         key_id=generated.key_id,
@@ -194,7 +213,7 @@ async def _create_api_key_for_user(
         secret_hash=hash_api_key_secret(generated.secret),
         key_value=generated.token,
     )
-    result = _serialize_api_key(api_key)
+    result = _serialize_api_key(api_key_record)
     result["api_key"] = generated.token
     return result
 

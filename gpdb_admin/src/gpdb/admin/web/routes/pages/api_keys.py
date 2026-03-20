@@ -5,7 +5,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse
 
-from gpdb.admin.auth import generate_api_key, hash_api_key_secret
+from gpdb.admin.auth import (
+    generate_api_key,
+    hash_api_key_secret,
+    parse_provided_api_key,
+)
 from gpdb.admin.web.routes.common import (
     get_admin_store,
     redirect_with_message,
@@ -72,6 +76,7 @@ async def api_key_detail_page(request: Request, api_key_id: str) -> HTMLResponse
 async def api_key_create(
     request: Request,
     label: str = Form(...),
+    api_key: str = Form(""),
 ):
     """Create one API key for the current user."""
     admin_store = get_admin_store(request)
@@ -94,8 +99,38 @@ async def api_key_create(
             success_message=None,
         )
 
-    generated = generate_api_key()
-    api_key = await admin_store.create_api_key(
+    if api_key:
+        clean_api_key = api_key.strip()
+        if not clean_api_key:
+            return render(
+                request,
+                "pages/api_keys.html",
+                page_title="API Keys",
+                current_user=current_user,
+                api_keys=await admin_store.list_api_keys_for_user(current_user.id),
+                revealed_api_key=None,
+                selected_api_key_id=None,
+                error_message="API key value cannot be empty if provided.",
+                success_message=None,
+            )
+        parsed = parse_provided_api_key(clean_api_key)
+        if parsed is None:
+            return render(
+                request,
+                "pages/api_keys.html",
+                page_title="API Keys",
+                current_user=current_user,
+                api_keys=await admin_store.list_api_keys_for_user(current_user.id),
+                revealed_api_key=None,
+                selected_api_key_id=None,
+                error_message="Invalid API key format. Must be in format: gpdb_<key_id>_<secret>",
+                success_message=None,
+            )
+        generated = parsed
+    else:
+        generated = generate_api_key()
+
+    api_key_record = await admin_store.create_api_key(
         user_id=current_user.id,
         label=label,
         key_id=generated.key_id,
@@ -106,7 +141,7 @@ async def api_key_create(
     return redirect_with_message(
         request,
         "api_key_detail_page",
-        api_key_id=api_key.id,
+        api_key_id=api_key_record.id,
         success="API key created.",
     )
 

@@ -26,6 +26,11 @@
           <span>Label</span>
           <input name="label" placeholder="Laptop, CI smoke tests, local script" required>
         </label>
+        <label class="field">
+          <span>API key (optional)</span>
+          <input name="api_key" placeholder="gpdb_abc123_xyz789 (leave empty to auto-generate)">
+          <p class="field-hint">Provide an existing API key to recreate it exactly. Leave empty to generate a new key.</p>
+        </label>
         <div class="button-row">
           <button class="button" type="submit">Create API key</button>
           <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('home') }}">Back home</a>
