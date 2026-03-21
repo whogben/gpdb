@@ -156,6 +156,10 @@ class GraphNodesGetParams(BaseModel):
 
     graph_id: str = Field(..., description="Graph ID.")
     node_ids: list[str] = Field(..., description="List of node IDs.")
+    include_delete_preflight: bool = Field(
+        False,
+        description="When true, include delete_blockers (child/edge summary) per node.",
+    )
 
 
 class GraphNodesCreateParams(BaseModel):

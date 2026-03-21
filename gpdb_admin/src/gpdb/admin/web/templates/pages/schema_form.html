@@ -15,8 +15,8 @@
       <li>Name: {{ schema_detail.schema.name }}.</li>
       <li>Kind: {{ schema_detail.schema.kind }}.</li>
       <li>Current version: {{ schema_detail.schema.version }}.</li>
-      <li>Usage: {{ schema_detail.schema.usage.node_count }} node{{ "" if schema_detail.schema.usage.node_count == 1
-        else "s" }}, {{ schema_detail.schema.usage.edge_count }} edge{{ "" if schema_detail.schema.usage.edge_count == 1
+      <li>Usage: {{ schema_detail.usage.node_count }} node{{ "" if schema_detail.usage.node_count == 1
+        else "s" }}, {{ schema_detail.usage.edge_count }} edge{{ "" if schema_detail.usage.edge_count == 1
         else "s" }}.</li>
     </ul>
     {% endif %}

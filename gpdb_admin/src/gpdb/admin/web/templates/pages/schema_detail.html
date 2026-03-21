@@ -52,12 +52,12 @@
         {% endif %}
         <div>
           <dt>Nodes</dt>
-          <dd>{{ schema_detail.schema.usage.node_count }} node{{ "" if schema_detail.schema.usage.node_count == 1 else
+          <dd>{{ schema_detail.usage.node_count }} node{{ "" if schema_detail.usage.node_count == 1 else
             "s" }}</dd>
         </div>
         <div>
           <dt>Edges</dt>
-          <dd>{{ schema_detail.schema.usage.edge_count }} edge{{ "" if schema_detail.schema.usage.edge_count == 1 else
+          <dd>{{ schema_detail.usage.edge_count }} edge{{ "" if schema_detail.usage.edge_count == 1 else
             "s" }}</dd>
         </div>
         <div>
@@ -67,11 +67,11 @@
           <dd>{{ current_instance.display_name }}</dd>
         </div>
       </dl>
-      {% if schema_detail.schema.usage.node_count is not none %}
-      <p class="resource-note">{{ schema_detail.schema.usage.node_count }} node{{ "" if schema_detail.schema.usage.node_count == 1 else "s" }} reference this schema.</p>
+      {% if schema_detail.usage.node_count is not none %}
+      <p class="resource-note">{{ schema_detail.usage.node_count }} node{{ "" if schema_detail.usage.node_count == 1 else "s" }} reference this schema.</p>
       {% endif %}
-      {% if schema_detail.schema.usage.edge_count is not none %}
-      <p class="resource-note">{{ schema_detail.schema.usage.edge_count }} edge{{ "" if schema_detail.schema.usage.edge_count == 1 else "s" }} reference this schema.</p>
+      {% if schema_detail.usage.edge_count is not none %}
+      <p class="resource-note">{{ schema_detail.usage.edge_count }} edge{{ "" if schema_detail.usage.edge_count == 1 else "s" }} reference this schema.</p>
       {% endif %}
     </article>
   </div>
@@ -101,18 +101,18 @@
         </div>
         <div>
           <dt>Nodes</dt>
-          <dd>{{ schema_detail.schema.usage.node_count }}</dd>
+          <dd>{{ schema_detail.usage.node_count }}</dd>
         </div>
         <div>
           <dt>Edges</dt>
-          <dd>{{ schema_detail.schema.usage.edge_count }}</dd>
+          <dd>{{ schema_detail.usage.edge_count }}</dd>
         </div>
       </dl>
-      {% if schema_detail.schema.usage.sample_node_ids %}
-      <p class="resource-note">Sample node IDs: {{ schema_detail.schema.usage.sample_node_ids | join(", ") }}</p>
+      {% if schema_detail.usage.sample_node_ids %}
+      <p class="resource-note">Sample node IDs: {{ schema_detail.usage.sample_node_ids | join(", ") }}</p>
       {% endif %}
-      {% if schema_detail.schema.usage.sample_edge_ids %}
-      <p class="resource-note">Sample edge IDs: {{ schema_detail.schema.usage.sample_edge_ids | join(", ") }}</p>
+      {% if schema_detail.usage.sample_edge_ids %}
+      <p class="resource-note">Sample edge IDs: {{ schema_detail.usage.sample_edge_ids | join(", ") }}</p>
       {% endif %}
       {% if current_user.is_owner %}
       <div class="button-row">
@@ -124,14 +124,14 @@
         <form class="inline-form"
           action="{{ mount_prefix }}{{ web_app.url_path_for('graph_schemas_delete', graph_id=current_graph.id, schema_name=schema_detail.schema.name, kind=schema_detail.schema.kind) }}"
           method="post">
-          <button class="button button-danger" type="submit" {% if schema_detail.schema.usage.node_count or
-            schema_detail.schema.usage.edge_count or schema_detail.schema.name == "__default__" %}disabled{% endif %}>Delete schema</button>
+          <button class="button button-danger" type="submit" {% if schema_detail.usage.node_count or
+            schema_detail.usage.edge_count or schema_detail.schema.name == "__default__" %}disabled{% endif %}>Delete schema</button>
         </form>
       </div>
       <p class="resource-note">
         {% if schema_detail.schema.name == "__default__" %}
         This is a protected default schema and cannot be modified or deleted.
-        {% elif schema_detail.schema.usage.node_count or schema_detail.schema.usage.edge_count %}
+        {% elif schema_detail.usage.node_count or schema_detail.usage.edge_count %}
         Delete is blocked until all node and edge references are removed.
         {% else %}
         Delete is available because this schema is currently unused.

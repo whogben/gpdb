@@ -111,26 +111,28 @@
       <div class="button-row">
         <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_edit_page', graph_id=current_graph.id, node_id=node_detail.node.id) }}">Edit node</a>
         <form class="inline-form" action="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_delete', graph_id=current_graph.id, node_id=node_detail.node.id) }}" method="post">
-          <button class="button button-danger" type="submit" {% if not node_detail.delete_blockers.can_delete %}disabled{% endif %}>Delete node</button>
+          <button class="button button-danger" type="submit" {% if not node_detail.delete_blockers or not node_detail.delete_blockers.can_delete %}disabled{% endif %}>Delete node</button>
         </form>
       </div>
       <p class="resource-note">
-        {% if node_detail.delete_blockers.can_delete %}
+        {% if not node_detail.delete_blockers %}
+        Delete preflight is not available for this view.
+        {% elif node_detail.delete_blockers.can_delete %}
         Delete is available because this node has no child or edge blockers.
         {% else %}
         Delete is blocked until child nodes and incident edges are removed.
         {% endif %}
       </p>
-      {% if node_detail.delete_blockers.child_count %}
+      {% if node_detail.delete_blockers and node_detail.delete_blockers.child_count %}
       <p class="resource-note">Child nodes: {{ node_detail.delete_blockers.child_count }}.</p>
       {% endif %}
-      {% if node_detail.delete_blockers.incident_edge_count %}
+      {% if node_detail.delete_blockers and node_detail.delete_blockers.incident_edge_count %}
       <p class="resource-note">Incident edges: {{ node_detail.delete_blockers.incident_edge_count }}.</p>
       {% endif %}
-      {% if node_detail.delete_blockers.sample_child_ids %}
+      {% if node_detail.delete_blockers and node_detail.delete_blockers.sample_child_ids %}
       <p class="resource-note">Sample child IDs: {{ node_detail.delete_blockers.sample_child_ids | join(", ") }}</p>
       {% endif %}
-      {% if node_detail.delete_blockers.sample_edge_ids %}
+      {% if node_detail.delete_blockers and node_detail.delete_blockers.sample_edge_ids %}
       <p class="resource-note">Sample edge IDs: {{ node_detail.delete_blockers.sample_edge_ids | join(", ") }}</p>
       {% endif %}
       {% endif %}

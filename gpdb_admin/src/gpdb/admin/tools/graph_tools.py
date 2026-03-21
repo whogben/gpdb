@@ -416,6 +416,7 @@ def _build_graph_content_service(services: AdminServices) -> ToolService:
             ctx,
             graph_id=params.graph_id,
             node_ids=params.node_ids,
+            include_delete_preflight=params.include_delete_preflight,
         )
 
     @service.tool(

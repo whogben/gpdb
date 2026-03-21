@@ -153,11 +153,11 @@ def test_graph_schema_registry_across_surfaces(admin_test_env):
     web_detail_list = response.json()
     web_detail = web_detail_list[0]
     assert web_detail["schema"]["kind"] == "node"
-    assert web_detail["schema"]["usage"] == {
+    assert web_detail["usage"] == {
         "node_count": 1,
         "edge_count": 0,
         "sample_node_ids": [
-            web_detail["schema"]["usage"]["sample_node_ids"][0]
+            web_detail["usage"]["sample_node_ids"][0]
         ],
         "sample_edge_ids": [],
     }
@@ -177,8 +177,8 @@ def test_graph_schema_registry_across_surfaces(admin_test_env):
         {"graph_id": graph_id, "names": ["web_schema"], "kind": "node"},
     )
     mcp_get = mcp_get[0]
-    assert mcp_get.schema.usage.node_count == 1
-    assert mcp_get.schema.usage.edge_count == 0
+    assert mcp_get.usage.node_count == 1
+    assert mcp_get.usage.edge_count == 0
 
 
 def test_graph_schema_list_tolerates_toctou_delete(admin_test_env, monkeypatch):

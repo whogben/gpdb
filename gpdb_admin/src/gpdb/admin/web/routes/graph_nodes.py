@@ -404,6 +404,7 @@ async def graph_node_detail_page(
             graph_id=graph_id,
             node_ids=[node_id],
             current_user=current_user,
+            include_delete_preflight=True,
         )
         detail = detail_list[0]
         overview = await graph_content.get_graph_overview(

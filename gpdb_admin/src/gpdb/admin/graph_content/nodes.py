@@ -119,6 +119,7 @@ async def get_graph_nodes(
     node_ids: list[str],
     current_user: AdminUser | None,
     allow_local_system: bool = False,
+    include_delete_preflight: bool = False,
 ) -> list[GraphNodeDetail]:
     """Return multiple graph nodes plus metadata."""
     if not node_ids:
@@ -155,12 +156,13 @@ async def get_graph_nodes(
 
         results = []
         for node in nodes:
+            blockers = None
+            if include_delete_preflight:
+                blockers = await inspect_node_delete_blockers(db, node.id)
             results.append(
                 GraphNodeDetail(
                     node_record=serialize_node_record(node),
-                    delete_blockers=await inspect_node_delete_blockers(
-                        db, node.id
-                    ),
+                    delete_blockers=blockers,
                 )
             )
         return results
@@ -245,7 +247,6 @@ async def create_graph_nodes(
         return [
             GraphNodeDetail(
                 node_record=serialize_node_record(node),
-                delete_blockers=GraphNodeDeleteBlockers(),
             )
             for node in created_nodes
         ]
@@ -416,9 +417,6 @@ async def update_graph_nodes(
         return [
             GraphNodeDetail(
                 node_record=serialize_node_record(node_by_id[clean_node_id]),
-                delete_blockers=await inspect_node_delete_blockers(
-                    db, clean_node_id
-                ),
             )
             for clean_node_id in clean_node_ids
         ]
@@ -572,9 +570,6 @@ async def set_graph_node_payloads(
             results.append(
                 GraphNodeDetail(
                     node_record=serialize_node_record(node),
-                    delete_blockers=await inspect_node_delete_blockers(
-                        db, clean_node_id
-                    ),
                 )
             )
         return results

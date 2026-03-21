@@ -41,7 +41,6 @@ class GraphSchemaRecord(BaseModel):
     kind: str
     version: str
     json_schema: dict[str, Any] | None = None
-    usage: GraphSchemaUsage = Field(default_factory=GraphSchemaUsage)
     alias: str | None = None
     svg_icon: str | None = None
     extends: list[str] = Field(default_factory=list)
@@ -59,6 +58,7 @@ class GraphSchemaDetail(BaseModel):
     """Detail response for one graph schema."""
 
     schema_record: GraphSchemaRecord = Field(serialization_alias="schema")
+    usage: GraphSchemaUsage = Field(default_factory=GraphSchemaUsage)
 
     @property
     def schema(self) -> GraphSchemaRecord:
@@ -227,20 +227,6 @@ class GraphNodeList(BaseModel):
     filters: GraphNodeFilters = Field(default_factory=GraphNodeFilters)
 
 
-class GraphNodeDetail(BaseModel):
-    """Detail response for one graph node."""
-
-    node_record: GraphNodeRecord = Field(serialization_alias="node")
-    delete_blockers: "GraphNodeDeleteBlockers" = Field(
-        default_factory=lambda: GraphNodeDeleteBlockers()
-    )
-
-    @property
-    def node(self) -> GraphNodeRecord:
-        """Backwards-compatible accessor for the node payload."""
-        return self.node_record
-
-
 class GraphNodeDeleteBlockers(BaseModel):
     """Delete preflight summary for one graph node."""
 
@@ -249,6 +235,18 @@ class GraphNodeDeleteBlockers(BaseModel):
     sample_child_ids: list[str] = Field(default_factory=list)
     sample_edge_ids: list[str] = Field(default_factory=list)
     can_delete: bool = True
+
+
+class GraphNodeDetail(BaseModel):
+    """Detail response for one graph node."""
+
+    node_record: GraphNodeRecord = Field(serialization_alias="node")
+    delete_blockers: GraphNodeDeleteBlockers | None = None
+
+    @property
+    def node(self) -> GraphNodeRecord:
+        """Backwards-compatible accessor for the node payload."""
+        return self.node_record
 
 
 class GraphNodePayload(BaseModel):

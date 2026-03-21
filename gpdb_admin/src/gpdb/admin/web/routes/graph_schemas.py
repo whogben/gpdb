@@ -10,9 +10,11 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from gpdb.admin.graph_content import (
     GraphContentError,
+    GraphContentNotFoundError,
     GraphSchemaCreateParam,
     GraphSchemaList,
     GraphSchemaUpdateParam,
+    GraphSchemaUsage,
 )
 from gpdb.admin.web.routes.common import (
     get_admin_store,
@@ -81,6 +83,35 @@ async def graph_schema_list_page(
         kept = [it for it in schema_list.items if needle in it.name.lower()]
         schema_list = GraphSchemaList(items=kept, total=len(kept))
 
+    graph_content = require_graph_content_service(request)
+    schema_list_payload: dict[str, object]
+    if schema_list.items:
+        empty_usage = GraphSchemaUsage().model_dump(mode="json")
+        try:
+            details = await graph_content.get_graph_schemas(
+                graph_id=graph_id,
+                names=[item.name for item in schema_list.items],
+                kind=list_kind,
+                current_user=current_user,
+            )
+        except GraphContentNotFoundError:
+            # TOCTOU: a schema can disappear between list_graph_schemas and get_graph_schemas.
+            # Still render the list; usage counts are unknown until refresh.
+            merged_items = [
+                {**rec.model_dump(mode="json"), "usage": empty_usage}
+                for rec in schema_list.items
+            ]
+            schema_list_payload = {"items": merged_items, "total": len(merged_items)}
+        else:
+            usage_by_name = {detail.schema.name: detail.usage for detail in details}
+            merged_items = []
+            for rec in schema_list.items:
+                usage = usage_by_name[rec.name].model_dump(mode="json")
+                merged_items.append({**rec.model_dump(mode="json"), "usage": usage})
+            schema_list_payload = {"items": merged_items, "total": len(merged_items)}
+    else:
+        schema_list_payload = schema_list.model_dump(mode="json")
+
     def _listing_qs(k: str) -> str:
         params: dict[str, str] = {"kind": k}
         if name_query:
@@ -93,7 +124,7 @@ async def graph_schema_list_page(
         "pages/graph_schemas.html",
         page_title=f"{overview_payload['graph']['display_name']} Schemas",
         current_user=current_user,
-        schema_list=schema_list.model_dump(mode="json"),
+        schema_list=schema_list_payload,
         current_graph=overview_payload["graph"],
         graphs=await get_admin_store(request).list_graphs(),
         error_message=request.query_params.get("error"),

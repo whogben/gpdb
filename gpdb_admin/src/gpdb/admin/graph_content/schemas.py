@@ -123,7 +123,6 @@ async def list_graph_schemas(
                         serialize_schema_record(
                             schema,
                             include_json_schema=include_json_schema,
-                            usage=GraphSchemaUsage(),
                         )
                     )
             except SchemaNotFoundError:
@@ -138,7 +137,6 @@ async def list_graph_schemas(
                                 serialize_schema_record(
                                     schema,
                                     include_json_schema=include_json_schema,
-                                    usage=GraphSchemaUsage(),
                                 )
                             )
                     except SchemaNotFoundError:
@@ -201,9 +199,9 @@ async def get_graph_schemas(
                         **serialize_schema_record(
                             schema,
                             include_json_schema=True,
-                            usage=await inspect_schema_usage(db, schema.name),
                         )
                     ),
+                    usage=await inspect_schema_usage(db, schema.name),
                 )
             )
         return results
@@ -299,9 +297,9 @@ async def create_graph_schemas(
                         **serialize_schema_record(
                             schema,
                             include_json_schema=True,
-                            usage=GraphSchemaUsage(),
                         )
                     ),
+                    usage=GraphSchemaUsage(),
                 )
             )
         return results
@@ -472,9 +470,9 @@ async def update_graph_schemas(
                         **serialize_schema_record(
                             schema,
                             include_json_schema=True,
-                            usage=await inspect_schema_usage(db, schema.name),
                         )
                     ),
+                    usage=await inspect_schema_usage(db, schema.name),
                 )
             )
         return results

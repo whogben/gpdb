@@ -111,7 +111,6 @@ def serialize_schema_record(
     schema: Any,
     *,
     include_json_schema: bool,
-    usage: GraphSchemaUsage | None = None,
 ) -> dict[str, object]:
     """Project one core schema record into a stable admin response.
 
@@ -125,7 +124,6 @@ def serialize_schema_record(
         "kind": schema_kind_from_record(schema),
         "version": str(schema.version),
         "json_schema": schema.json_schema if include_json_schema else None,
-        "usage": usage or GraphSchemaUsage(),
         "alias": getattr(schema, "alias", None),
         "svg_icon": normalize_svg_icon_for_display(getattr(schema, "svg_icon", None)),
         "extends": list(getattr(schema, "extends", []) or []),
