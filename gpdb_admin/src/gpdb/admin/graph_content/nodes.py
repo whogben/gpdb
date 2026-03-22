@@ -9,6 +9,7 @@ from gpdb import (
     FilterGroup,
     GPGraph,
     NodeUpsert,
+    RecordTypeImmutableError,
     SchemaNotFoundError,
     SchemaValidationError,
     SearchQuery,
@@ -291,8 +292,6 @@ async def update_graph_nodes(
             raise GraphContentValidationError(
                 "Provide either payload bytes or clear_payload, not both."
             )
-        if update_param.type is not None:
-            validate_node_type(update_param.type)
         if update_param.data is not None:
             validate_json_object(
                 update_param.data, object_name="Node data"
@@ -323,11 +322,6 @@ async def update_graph_nodes(
         for update_param, clean_node_id in zip(updates, clean_node_ids):
             existing = existing_by_id[clean_node_id]
 
-            type_ = (
-                validate_node_type(update_param.type)
-                if update_param.type is not None
-                else existing.type
-            )
             name_ = (
                 normalize_optional_text(update_param.name)
                 if update_param.name is not None
@@ -388,7 +382,6 @@ async def update_graph_nodes(
             node_upserts.append(
                 NodeUpsert(
                     id=clean_node_id,
-                    type=type_,
                     name=name_,
                     owner_id=owner_id_,
                     parent_id=parent_id_,
@@ -411,7 +404,12 @@ async def update_graph_nodes(
                     node_by_id[clean_node_id] = (
                         await db.clear_node_payload(clean_node_id)
                     )
-        except (SchemaNotFoundError, SchemaValidationError, ValueError) as exc:
+        except (
+            RecordTypeImmutableError,
+            SchemaNotFoundError,
+            SchemaValidationError,
+            ValueError,
+        ) as exc:
             raise GraphContentValidationError(str(exc)) from exc
 
         return [

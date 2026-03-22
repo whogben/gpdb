@@ -289,7 +289,6 @@ async def graph_node_update(
     request: Request,
     graph_id: str,
     node_id: str,
-    type: str = Form(...),
     name: str = Form(""),
     owner_id: str = Form(""),
     parent_id: str = Form(""),
@@ -305,7 +304,6 @@ async def graph_node_update(
         return current_user
 
     form_data = {
-        "type": type.strip() or "__default__",
         "name": name.strip(),
         "owner_id": owner_id.strip(),
         "parent_id": parent_id.strip(),
@@ -349,7 +347,6 @@ async def graph_node_update(
             updates=[
                 GraphNodeUpdateParam(
                     node_id=node_id,
-                    type=form_data["type"],
                     name=form_data["name"],
                     owner_id=form_data["owner_id"],
                     parent_id=form_data["parent_id"],

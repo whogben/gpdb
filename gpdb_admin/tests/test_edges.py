@@ -696,7 +696,6 @@ def test_graph_edge_update_and_delete_across_surfaces(admin_test_env):
     response = client.post(
         f"/graphs/{graph_id}/edges/{web_edit_id}",
         data={
-            "type": "edge_schema",
             "source_id": web_new_source_id,
             "target_id": web_new_target_id,
             "tags": "alpha, beta",
@@ -898,6 +897,12 @@ def test_edge_partial_update_preserves_omitted_fields(admin_test_env):
     assert data["edge"]["target_id"] == tgt_id
     assert data["edge"]["tags"] == ["keep", "me"]
     assert data["edge"]["data"] == {"new": True, "updated": True}
+
+
+def test_graph_edge_update_param_has_no_type_field():
+    from gpdb.admin.graph_content.models import GraphEdgeUpdateParam
+
+    assert "type" not in GraphEdgeUpdateParam.model_fields
 
 
 def _bootstrap_owner(client: TestClient) -> None:

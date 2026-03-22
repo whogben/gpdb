@@ -28,6 +28,18 @@
       </label>
       {% endif %}
 
+      {% if is_edit and node_detail %}
+      <label class="field">
+        <span>Type</span>
+        <select id="node-type-name" disabled required aria-readonly="true">
+          <option value="__default__">__default__</option>
+          {% for schema_name in schema_names %}
+          <option value="{{ schema_name }}" {% if (node_detail.node.type or '__default__') == schema_name %}selected{% endif %}>{{ schema_name }}</option>
+          {% endfor %}
+        </select>
+        <small class="resource-note">Type is fixed when the node is created.</small>
+      </label>
+      {% else %}
       <label class="field">
         <span>Type</span>
         <select id="node-type-name" name="type" required>
@@ -37,6 +49,7 @@
           {% endfor %}
         </select>
       </label>
+      {% endif %}
  
       <label class="field">
         <span>Name</span>

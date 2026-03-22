@@ -26,6 +26,7 @@ from gpdb.graph import (
     Sort,
     TombstoneAlreadyDeletedError,
     TombstoneDeleteBlockedError,
+    RecordTypeImmutableError,
 )
 from gpdb.query_docs import (
     EDGE_LIST_SORT_DESCRIPTION,
@@ -64,6 +65,7 @@ __all__ = [
     "Sort",
     "TombstoneAlreadyDeletedError",
     "TombstoneDeleteBlockedError",
+    "RecordTypeImmutableError",
     "FILTER_DSL_DESCRIPTION",
     "NODE_LIST_SORT_DESCRIPTION",
     "EDGE_LIST_SORT_DESCRIPTION",

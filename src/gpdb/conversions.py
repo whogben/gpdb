@@ -6,7 +6,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from gpdb.models.dto import NodeUpsert, NodeRead, EdgeUpsert, EdgeRead
+from gpdb.models.base import RecordTypeImmutableError
+from gpdb.models.dto import EdgeRead, EdgeUpsert, NodeRead, NodeUpsert
 from gpdb.models.records import _GPNode, _GPEdge
 
 __all__ = [
@@ -27,9 +28,13 @@ def _node_upsert_to_orm(
         # `dto.data` is never None even when the caller omitted them.
         # Use `model_fields_set` to detect what the caller explicitly provided.
         fields_set = dto.model_fields_set
-        # Update existing
-        if dto.type is not None:
-            existing.type = dto.type
+        # Sole immutability check for node upserts (graph mixins always validate
+        # update ``data`` against ``existing.type``). Omit ``type`` or re-send the same value.
+        if "type" in fields_set and dto.type != existing.type:
+            raise RecordTypeImmutableError(
+                f"Cannot change node type for id={existing.id!r}: "
+                f"stored {existing.type!r}, requested {dto.type!r}"
+            )
         if dto.name is not None:
             existing.name = dto.name
         if dto.owner_id is not None:
@@ -89,8 +94,12 @@ def _edge_upsert_to_orm(
         # `dto.data` is never None even when the caller omitted them.
         # Use `model_fields_set` to detect what the caller explicitly provided.
         fields_set = dto.model_fields_set
-        if dto.type is not None:
-            existing.type = dto.type
+        # Sole immutability check for edge upserts (see node branch above).
+        if "type" in fields_set and dto.type != existing.type:
+            raise RecordTypeImmutableError(
+                f"Cannot change edge type for id={existing.id!r}: "
+                f"stored {existing.type!r}, requested {dto.type!r}"
+            )
         if dto.source_id is not None:
             existing.source_id = dto.source_id
         if dto.target_id is not None:

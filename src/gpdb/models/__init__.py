@@ -15,6 +15,7 @@ from gpdb.models.base import (
     SchemaInheritanceError,
     TombstoneDeleteBlockedError,
     TombstoneAlreadyDeletedError,
+    RecordTypeImmutableError,
     _Base,
     _normalize_schema_kind,
     _SCHEMA_KIND_VALUES,
@@ -60,6 +61,7 @@ __all__ = [
     "SchemaInheritanceError",
     "TombstoneDeleteBlockedError",
     "TombstoneAlreadyDeletedError",
+    "RecordTypeImmutableError",
     # Base classes
     "_Base",
     "_GPRecord",

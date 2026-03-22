@@ -65,6 +65,12 @@ class TombstoneAlreadyDeletedError(Exception):
     pass
 
 
+class RecordTypeImmutableError(Exception):
+    """Raised when an upsert attempts to change a node or edge ``type`` after creation."""
+
+    pass
+
+
 SchemaKind = Literal["node", "edge"]
 _SCHEMA_KIND_FIELD = "x-gpdb-kind"
 _SCHEMA_KIND_VALUES = {"node", "edge"}

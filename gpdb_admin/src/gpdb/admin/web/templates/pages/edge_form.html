@@ -29,6 +29,18 @@
       </label>
       {% endif %}
 
+      {% if is_edit and edge_detail %}
+      <label class="field">
+        <span>Type</span>
+        <select id="edge-type-name" disabled required aria-readonly="true">
+          <option value="__default__">__default__</option>
+          {% for schema_name in schema_names %}
+          <option value="{{ schema_name }}" {% if (edge_detail.edge.type or '__default__') == schema_name %}selected{% endif %}>{{ schema_name }}</option>
+          {% endfor %}
+        </select>
+        <small class="resource-note">Type is fixed when the edge is created.</small>
+      </label>
+      {% else %}
       <label class="field">
         <span>Type</span>
         <select id="edge-type-name" name="type" required>
@@ -38,6 +50,7 @@
           {% endfor %}
         </select>
       </label>
+      {% endif %}
  
       <label class="field">
         <span>Source ID</span>

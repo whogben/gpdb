@@ -30,23 +30,33 @@ class EdgeMixin:
         Upsert multiple Edges.
         Creates if new, updates if existing (matched by id).
         All operations are performed atomically in a single transaction.
+
+        On update, ``type`` is immutable: omit it or re-send the same value; a
+        different type raises ``RecordTypeImmutableError`` from the conversion
+        layer. Update data is always validated against the stored type.
         """
         # Reject duplicate ids in the input before doing any database writes
         edge_ids = [edge.id for edge in edges if edge.id is not None]
         if len(edge_ids) != len(set(edge_ids)):
             raise ValueError("Duplicate edge ids provided")
 
-        # Preserve existing types and validate all edges before any writes
+        update_edge_ids = [e.id for e in edges if e.id is not None]
+        existing_by_id: dict[str, Any] = {}
+        if update_edge_ids:
+            async with self._get_session() as session:
+                er = await session.execute(
+                    select(self._Edge).where(self._Edge.id.in_(update_edge_ids))
+                )
+                for row in er.scalars().all():
+                    existing_by_id[row.id] = row
+
         edges_to_process = []
         for edge in edges:
-            schema_to_validate = edge.type
-            if edge.id and edge.type is None:
-                async with self._get_session() as session:
-                    existing = await session.get(self._Edge, edge.id)
-                    if existing and existing.type:
-                        schema_to_validate = existing.type
-                        # Update DTO to ensure type persistence
-                        edge.type = schema_to_validate
+            ex_orm = existing_by_id.get(edge.id) if edge.id else None
+            if edge.id and ex_orm is not None:
+                schema_to_validate = ex_orm.type
+            else:
+                schema_to_validate = edge.type
 
             # Validate schema exists (except for __default__)
             if schema_to_validate and schema_to_validate != "__default__":

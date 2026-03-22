@@ -266,7 +266,6 @@ async def graph_edges_update(
     request: Request,
     graph_id: str,
     edge_id: str,
-    type: str = Form(...),
     source_id: str = Form(...),
     target_id: str = Form(...),
     tags: str = Form(""),
@@ -278,7 +277,6 @@ async def graph_edges_update(
         return current_user
 
     form_data = {
-        "type": type.strip() or "__default__",
         "source_id": source_id.strip(),
         "target_id": target_id.strip(),
         "tags": tags.strip(),
@@ -302,7 +300,6 @@ async def graph_edges_update(
             updates=[
                 GraphEdgeUpdateParam(
                     edge_id=edge_id,
-                    type=form_data["type"],
                     source_id=form_data["source_id"],
                     target_id=form_data["target_id"],
                     tags=_parse_tags_text(form_data["tags"]),

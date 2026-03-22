@@ -128,7 +128,6 @@ class GraphNodeUpdateParam(BaseModel):
     """
 
     node_id: str = Field(..., description="Node ID (identity field).")
-    type: str | None = Field(None, description="Node type.")
     data: dict[str, Any] | None = Field(
         None, description="Node data as a JSON object."
     )
@@ -168,7 +167,6 @@ class GraphEdgeUpdateParam(BaseModel):
     """
 
     edge_id: str = Field(..., description="Edge ID (identity field).")
-    type: str | None = Field(None, description="Edge type.")
     source_id: str | None = Field(None, description="Source node ID.")
     target_id: str | None = Field(None, description="Target node ID.")
     tags: list[str] | None = Field(None, description="Edge tags.")

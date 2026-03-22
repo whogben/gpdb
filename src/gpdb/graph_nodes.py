@@ -41,6 +41,11 @@ class NodeMixin:
         Rejects duplicate ids in the input before any database writes.
         Performs the entire batch atomically in a single transaction.
         Preserves the existing semantics of omitted fields on update paths.
+
+        On update, ``type`` is immutable: omit it or re-send the same value; a
+        different type raises ``RecordTypeImmutableError`` from the conversion
+        layer. Update data is always validated against the stored type, not a
+        client-supplied type name.
         """
         if not nodes:
             return []
@@ -108,15 +113,12 @@ class NodeMixin:
                             node_for_attempt = node.model_copy(update={"id": generate_id()})
                             existing = None  # Treat as create even if it collides.
 
-                        # Use type as the schema name
-                        schema_to_validate = node_for_attempt.type
-                        if explicit_id and existing is not None and node_for_attempt.type is None and existing.type:
-                            # Preserve type on omitted type updates, while still validating
-                            # the provided data against the existing schema.
+                        if explicit_id and existing is not None:
+                            # Stored type is the schema key; immutability is enforced in
+                            # ``_node_upsert_to_orm`` (single place).
                             schema_to_validate = existing.type
-                            node_for_attempt = node_for_attempt.model_copy(
-                                update={"type": schema_to_validate}
-                            )
+                        else:
+                            schema_to_validate = node_for_attempt.type
 
                         # Validate schema exists (except for __default__)
                         if schema_to_validate and schema_to_validate != "__default__":

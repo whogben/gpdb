@@ -7,6 +7,7 @@ from gpdb import (
     Filter,
     FilterGroup,
     GPGraph,
+    RecordTypeImmutableError,
     SchemaNotFoundError,
     SchemaRef,
     SchemaValidationError,
@@ -379,8 +380,6 @@ async def update_graph_edges(
 
     # Validate fields up-front so failures happen before any writes.
     for update_param in updates:
-        if update_param.type is not None:
-            validate_edge_type(update_param.type)
         if update_param.source_id is not None:
             validate_related_node_id(
                 update_param.source_id, field_name="Source"
@@ -418,11 +417,6 @@ async def update_graph_edges(
         for update_param, clean_edge_id in zip(updates, clean_edge_ids):
             existing = existing_by_id[clean_edge_id]
 
-            type_ = (
-                validate_edge_type(update_param.type)
-                if update_param.type is not None
-                else existing.type
-            )
             source_id_ = (
                 validate_related_node_id(
                     update_param.source_id, field_name="Source"
@@ -451,7 +445,6 @@ async def update_graph_edges(
             edge_upserts.append(
                 EdgeUpsert(
                     id=clean_edge_id,
-                    type=type_,
                     source_id=source_id_,
                     target_id=target_id_,
                     data=data_,
@@ -465,7 +458,12 @@ async def update_graph_edges(
             raise GraphContentValidationError(
                 "Source and target nodes must exist before updating an edge."
             ) from exc
-        except (SchemaNotFoundError, SchemaValidationError, ValueError) as exc:
+        except (
+            RecordTypeImmutableError,
+            SchemaNotFoundError,
+            SchemaValidationError,
+            ValueError,
+        ) as exc:
             raise GraphContentValidationError(str(exc)) from exc
 
         return [

@@ -26,6 +26,7 @@ from gpdb.models import (
     SchemaInheritanceError,
     TombstoneAlreadyDeletedError,
     TombstoneDeleteBlockedError,
+    RecordTypeImmutableError,
     _Base,
     _GPRecord,
     _GPNodeBase,
@@ -265,6 +266,7 @@ __all__ = [
     "SchemaInheritanceError",
     "TombstoneAlreadyDeletedError",
     "TombstoneDeleteBlockedError",
+    "RecordTypeImmutableError",
     # Pydantic models
     "Op",
     "Logic",

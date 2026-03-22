@@ -493,7 +493,6 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
     response = client.post(
         f"/graphs/{graph_id}/nodes/{web_edit_id}",
         data={
-            "type": "task",
             "name": "web-edit-renamed",
             "owner_id": "owner-1",
             "parent_id": "",
@@ -525,7 +524,6 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
     response = client.post(
         f"/graphs/{graph_id}/nodes/{web_edit_id}",
         data={
-            "type": "task",
             "name": "web-edit-renamed",
             "owner_id": "owner-1",
             "parent_id": "",
@@ -566,7 +564,6 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
             "nodes": [
                 {
                     "node_id": rest_node_id,
-                    "type": "task",
                     "name": "rest-edit-renamed",
                     "tags": ["rest", "updated"],
                     "payload_base64": base64.b64encode(b"rest payload").decode(
@@ -609,7 +606,6 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
             "nodes": [
                 {
                     "node_id": rest_node_id,
-                    "type": "task",
                     "name": "rest-edit-renamed",
                     "tags": ["rest", "updated"],
                     "clear_payload": True,
@@ -643,7 +639,6 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
             "nodes": [
                 {
                     "node_id": mcp_node_id,
-                    "type": "task",
                     "name": "mcp-edit-renamed",
                     "tags": ["mcp", "updated"],
                     "data": {"name": "MCP edit updated", "status": "active"},
@@ -685,7 +680,6 @@ def test_graph_node_update_delete_and_payload_across_surfaces(
             "nodes": [
                 {
                     "node_id": mcp_node_id,
-                    "type": "task",
                     "name": "mcp-edit-renamed",
                     "tags": ["mcp", "updated"],
                     "data": {"name": "MCP edit updated", "status": "active"},
@@ -782,6 +776,13 @@ def test_node_partial_update_preserves_omitted_fields(admin_test_env):
         data["node"]["data"] == {"name": "partial-a", "x": 1, "label": "original"}
     )
     assert data["node"]["type"] == "task"
+
+
+def test_graph_node_update_param_has_no_type_field():
+    """Bulk node update params must not include ``type`` (immutable after create)."""
+    from gpdb.admin.graph_content.models import GraphNodeUpdateParam
+
+    assert "type" not in GraphNodeUpdateParam.model_fields
 
 
 def _bootstrap_owner(client: TestClient) -> None:
