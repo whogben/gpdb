@@ -7,6 +7,7 @@ from typing import Final
 from urllib.parse import quote
 
 import bleach
+from bleach.css_sanitizer import ALLOWED_SVG_PROPERTIES, CSSSanitizer
 
 # Default SVG namespace so ET.tostring() emits <svg xmlns="..."> not <ns0:svg>.
 _SVG_NS = "http://www.w3.org/2000/svg"
@@ -86,6 +87,24 @@ _ALLOWED_ATTRIBUTES: Final = {
     "viewBox",
     "preserveAspectRatio",
 }
+
+# Inline `style` is allowed on SVG elements; Bleach requires a CSS sanitizer for that.
+# Extend bleach's default SVG property set with gradient/presentation tokens used in icons.
+_EXTRA_SVG_STYLE_PROPERTIES: Final = frozenset(
+    {
+        "clip-rule",
+        "opacity",
+        "stop-color",
+        "stop-opacity",
+        "stroke-dasharray",
+        "stroke-dashoffset",
+        "transform",
+    }
+)
+
+_SVG_CSS_SANITIZER: Final = CSSSanitizer(
+    allowed_svg_properties=ALLOWED_SVG_PROPERTIES | _EXTRA_SVG_STYLE_PROPERTIES,
+)
 
 
 def _local_tag(tag: str) -> str:
@@ -253,6 +272,7 @@ def sanitize_svg(svg: str | None, max_size_kb: int = 20) -> str:
         tags=list(_ALLOWED_ELEMENTS),
         attributes={tag: list(_ALLOWED_ATTRIBUTES) for tag in _ALLOWED_ELEMENTS},
         strip=True,
+        css_sanitizer=_SVG_CSS_SANITIZER,
     )
 
     # Validate, normalize for embedding in fixed-size UI slots, re-serialize

@@ -104,71 +104,68 @@ def test_api_key_lifecycle_for_web_rest_and_mcp(admin_test_env):
 # which delegate to the same underlying methods
 
 
-def test_mcp_api_key_management_tools(tmp_path):
+@pytest.mark.asyncio
+async def test_mcp_api_key_management_tools(tmp_path):
     """Test authenticated MCP API key management tools."""
     manager = _create_test_manager(tmp_path)
+    services = manager.app.state.services
+    admin_lifespan = entry.create_admin_lifespan(services)
+    async with admin_lifespan(manager.app):
+        assert services.admin_store is not None
 
-    async def _run():
-        services = manager.app.state.services
-        admin_lifespan = entry.create_admin_lifespan(services)
-        async with admin_lifespan(manager.app):
-            assert services.admin_store is not None
+        owner = await services.admin_store.create_initial_owner(
+            username="owner",
+            password_hash=hash_password("secret-pass"),
+            display_name="Primary Owner",
+        )
+        bootstrap_generated = generate_api_key()
+        bootstrap_key = await services.admin_store.create_api_key(
+            user_id=owner.id,
+            label="MCP bootstrap",
+            key_id=bootstrap_generated.key_id,
+            preview=bootstrap_generated.preview,
+            secret_hash=hash_api_key_secret(bootstrap_generated.secret),
+            key_value=bootstrap_generated.token,
+        )
 
-            owner = await services.admin_store.create_initial_owner(
-                username="owner",
-                password_hash=hash_password("secret-pass"),
-                display_name="Primary Owner",
-            )
-            bootstrap_generated = generate_api_key()
-            bootstrap_key = await services.admin_store.create_api_key(
-                user_id=owner.id,
-                label="MCP bootstrap",
-                key_id=bootstrap_generated.key_id,
-                preview=bootstrap_generated.preview,
-                secret_hash=hash_api_key_secret(bootstrap_generated.secret),
-                key_value=bootstrap_generated.token,
-            )
+        verified_token = await entry._AdminAPIKeyTokenVerifier(
+            SimpleNamespace(admin_store=services.admin_store)
+        ).verify_token(bootstrap_generated.token)
+        assert verified_token is not None
 
-            verified_token = await entry._AdminAPIKeyTokenVerifier(
-                SimpleNamespace(admin_store=services.admin_store)
-            ).verify_token(bootstrap_generated.token)
-            assert verified_token is not None
+        listed = await _call_authenticated_mcp_tool_in_loop(
+            manager,
+            verified_token,
+            "api_key_list",
+            {"params": {}},
+        )
+        assert any(item["key_id"] == bootstrap_key.key_id for item in listed)
 
-            listed = await _call_authenticated_mcp_tool_in_loop(
-                manager,
-                verified_token,
-                "api_key_list",
-                {"params": {}},
-            )
-            assert any(item["key_id"] == bootstrap_key.key_id for item in listed)
+        created = await _call_authenticated_mcp_tool_in_loop(
+            manager,
+            verified_token,
+            "api_key_create",
+            {"params": {"label": "MCP managed"}},
+        )
+        assert created["label"] == "MCP managed"
+        assert str(created["api_key"]).startswith("gpdb_")
+        created_key_id = str(created["key_id"])
 
-            created = await _call_authenticated_mcp_tool_in_loop(
-                manager,
-                verified_token,
-                "api_key_create",
-                {"params": {"label": "MCP managed"}},
-            )
-            assert created["label"] == "MCP managed"
-            assert str(created["api_key"]).startswith("gpdb_")
-            created_key_id = str(created["key_id"])
+        revealed = await _call_authenticated_mcp_tool_in_loop(
+            manager,
+            verified_token,
+            "api_key_reveal",
+            {"params": {"key_id": created_key_id}},
+        )
+        assert revealed["api_key"] == created["api_key"]
 
-            revealed = await _call_authenticated_mcp_tool_in_loop(
-                manager,
-                verified_token,
-                "api_key_reveal",
-                {"params": {"key_id": created_key_id}},
-            )
-            assert revealed["api_key"] == created["api_key"]
-
-            revoked = await _call_authenticated_mcp_tool_in_loop(
-                manager,
-                verified_token,
-                "api_key_revoke",
-                {"params": {"key_id": created_key_id}},
-            )
-            assert revoked["is_active"] is False
-
-    asyncio.run(_run())
+        revoked = await _call_authenticated_mcp_tool_in_loop(
+            manager,
+            verified_token,
+            "api_key_revoke",
+            {"params": {"key_id": created_key_id}},
+        )
+        assert revoked["is_active"] is False
 
 
 def _create_test_manager(tmp_path: Path):
@@ -338,100 +335,95 @@ async def _call_authenticated_mcp_tool_in_loop(
     return result
 
 
-def test_cli_api_key_tools_fallback_to_owner_user(tmp_path):
+@pytest.mark.asyncio
+async def test_cli_api_key_tools_fallback_to_owner_user(tmp_path):
     """CLI API-key tools should resolve the active owner when username is omitted."""
 
     from toolaccess import InvocationContext
     from gpdb.admin.tools.api_keys import _require_target_user_for_api_key_operation
 
-    async def _run_with_owner(services):
-        admin_lifespan = entry.create_admin_lifespan(services)
-        async with admin_lifespan(manager.app):
-            owner = await services.admin_store.create_initial_owner(
-                username="owner",
-                password_hash=hash_password("secret-pass"),
-                display_name="Primary Owner",
-            )
-            ctx = InvocationContext(surface="cli", principal=None)
-            user = await _require_target_user_for_api_key_operation(
-                services, ctx, username=None
-            )
-            assert user.id == owner.id
-            assert user.username == "owner"
-
-    async def _run_without_owner(services):
-        admin_lifespan = entry.create_admin_lifespan(services)
-        async with admin_lifespan(manager_no_owner.app):
-            ctx = InvocationContext(surface="cli", principal=None)
-            with pytest.raises(RuntimeError, match=r"Owner user required"):
-                await _require_target_user_for_api_key_operation(
-                    services, ctx, username=None
-                )
-
     manager = _create_test_manager(tmp_path / "with-owner")
     manager_no_owner = _create_test_manager(tmp_path / "no-owner")
 
-    asyncio.run(_run_with_owner(manager.app.state.services))
-    asyncio.run(_run_without_owner(manager_no_owner.app.state.services))
+    services = manager.app.state.services
+    admin_lifespan = entry.create_admin_lifespan(services)
+    async with admin_lifespan(manager.app):
+        owner = await services.admin_store.create_initial_owner(
+            username="owner",
+            password_hash=hash_password("secret-pass"),
+            display_name="Primary Owner",
+        )
+        ctx = InvocationContext(surface="cli", principal=None)
+        user = await _require_target_user_for_api_key_operation(
+            services, ctx, username=None
+        )
+        assert user.id == owner.id
+        assert user.username == "owner"
+
+    services_no = manager_no_owner.app.state.services
+    admin_lifespan_no = entry.create_admin_lifespan(services_no)
+    async with admin_lifespan_no(manager_no_owner.app):
+        ctx = InvocationContext(surface="cli", principal=None)
+        with pytest.raises(RuntimeError, match=r"Owner user required"):
+            await _require_target_user_for_api_key_operation(
+                services_no, ctx, username=None
+            )
 
 
-def test_api_key_create_with_provided_value(tmp_path):
+@pytest.mark.asyncio
+async def test_api_key_create_with_provided_value(tmp_path):
     """Test creating an API key with a provided value vs auto-generation."""
 
     manager = _create_test_manager(tmp_path)
+    services = manager.app.state.services
+    admin_lifespan = entry.create_admin_lifespan(services)
+    async with admin_lifespan(manager.app):
+        assert services.admin_store is not None
 
-    async def _run():
-        services = manager.app.state.services
-        admin_lifespan = entry.create_admin_lifespan(services)
-        async with admin_lifespan(manager.app):
-            assert services.admin_store is not None
+        owner = await services.admin_store.create_initial_owner(
+            username="owner",
+            password_hash=hash_password("secret-pass"),
+            display_name="Primary Owner",
+        )
 
-            owner = await services.admin_store.create_initial_owner(
-                username="owner",
-                password_hash=hash_password("secret-pass"),
-                display_name="Primary Owner",
-            )
+        # Test 1: Create with auto-generated key (default behavior)
+        bootstrap_generated = generate_api_key()
+        bootstrap_key = await services.admin_store.create_api_key(
+            user_id=owner.id,
+            label="Auto-generated key",
+            key_id=bootstrap_generated.key_id,
+            preview=bootstrap_generated.preview,
+            secret_hash=hash_api_key_secret(bootstrap_generated.secret),
+            key_value=bootstrap_generated.token,
+        )
+        assert bootstrap_key.key_id == bootstrap_generated.key_id
+        assert bootstrap_key.preview == bootstrap_generated.preview
 
-            # Test 1: Create with auto-generated key (default behavior)
-            bootstrap_generated = generate_api_key()
-            bootstrap_key = await services.admin_store.create_api_key(
-                user_id=owner.id,
-                label="Auto-generated key",
-                key_id=bootstrap_generated.key_id,
-                preview=bootstrap_generated.preview,
-                secret_hash=hash_api_key_secret(bootstrap_generated.secret),
-                key_value=bootstrap_generated.token,
-            )
-            assert bootstrap_key.key_id == bootstrap_generated.key_id
-            assert bootstrap_key.preview == bootstrap_generated.preview
+        # Test 2: Create with a provided API key value
+        provided_key_value = "gpdb_abc123def456_ghi789jkl012mno345pqr678stu901vwx234yz"
+        parsed_provided = parse_provided_api_key(provided_key_value)
+        assert parsed_provided is not None
+        assert parsed_provided.key_id == "abc123def456"
+        assert parsed_provided.secret == "ghi789jkl012mno345pqr678stu901vwx234yz"
 
-            # Test 2: Create with a provided API key value
-            provided_key_value = "gpdb_abc123def456_ghi789jkl012mno345pqr678stu901vwx234yz"
-            parsed_provided = parse_provided_api_key(provided_key_value)
-            assert parsed_provided is not None
-            assert parsed_provided.key_id == "abc123def456"
-            assert parsed_provided.secret == "ghi789jkl012mno345pqr678stu901vwx234yz"
+        provided_key = await services.admin_store.create_api_key(
+            user_id=owner.id,
+            label="Provided key",
+            key_id=parsed_provided.key_id,
+            preview=parsed_provided.preview,
+            secret_hash=hash_api_key_secret(parsed_provided.secret),
+            key_value=parsed_provided.token,
+        )
+        assert provided_key.key_id == "abc123def456"
+        assert provided_key.preview == "gpdb_abc123def456_ghi7..."
 
-            provided_key = await services.admin_store.create_api_key(
-                user_id=owner.id,
-                label="Provided key",
-                key_id=parsed_provided.key_id,
-                preview=parsed_provided.preview,
-                secret_hash=hash_api_key_secret(parsed_provided.secret),
-                key_value=parsed_provided.token,
-            )
-            assert provided_key.key_id == "abc123def456"
-            assert provided_key.preview == "gpdb_abc123def456_ghi7..."
+        # Test 3: Verify the provided key can be revealed and used
+        revealed = await services.admin_store.reveal_api_key(provided_key.id)
+        assert revealed == provided_key_value
 
-            # Test 3: Verify the provided key can be revealed and used
-            revealed = await services.admin_store.reveal_api_key(provided_key.id)
-            assert revealed == provided_key_value
+        # Test 4: Verify invalid format returns None
+        invalid_key = parse_provided_api_key("invalid_format")
+        assert invalid_key is None
 
-            # Test 4: Verify invalid format returns None
-            invalid_key = parse_provided_api_key("invalid_format")
-            assert invalid_key is None
-
-            invalid_key2 = parse_provided_api_key("wrongprefix_abc123_def456")
-            assert invalid_key2 is None
-
-    asyncio.run(_run())
+        invalid_key2 = parse_provided_api_key("wrongprefix_abc123_def456")
+        assert invalid_key2 is None
