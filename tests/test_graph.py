@@ -3,19 +3,26 @@ import pytest_asyncio
 from unittest.mock import patch
 
 from sqlalchemy.exc import IntegrityError
+
 from sqlalchemy.orm.exc import StaleDataError
 
 from gpdb import (
     GPGraph,
     EdgeRead,
     EdgeUpsert,
+    Filter,
     NodeRead,
     NodeReadWithPayload,
     NodeUpsert,
-    SearchQuery,
-    Filter,
     Op,
+    SchemaRef,
+    SchemaUpsert,
+    SearchQuery,
+    TombstoneAlreadyDeletedError,
+    TombstoneDeleteBlockedError,
 )
+
+from test_helpers import schema_with_kind
 
 
 @pytest_asyncio.fixture
@@ -368,11 +375,11 @@ async def test_referential_integrity(db: GPGraph):
     edge = (await db.set_edges([EdgeUpsert(source_id=n1.id, target_id=n2.id, type="__default__")]))[0]
 
     # Try to delete source
-    with pytest.raises(IntegrityError):
+    with pytest.raises(TombstoneDeleteBlockedError):
         await db.delete_nodes([n1.id])
 
     # Try to delete target
-    with pytest.raises(IntegrityError):
+    with pytest.raises(TombstoneDeleteBlockedError):
         await db.delete_nodes([n2.id])
 
     # Delete edge first
@@ -543,7 +550,7 @@ async def test_node_hierarchy(db: GPGraph):
     assert child2.id != child3.id
 
     # 3. Test Delete Restriction (cannot delete parent with children)
-    with pytest.raises(IntegrityError):
+    with pytest.raises(TombstoneDeleteBlockedError):
         await db.delete_nodes([parent.id])
 
     # Cleanup children
@@ -1035,7 +1042,7 @@ async def test_delete_nodes_atomic_failure(db: GPGraph):
     edge = (await db.set_edges([EdgeUpsert(type="__default__", source_id=n1.id, target_id=n2.id)]))[0]
 
     # Try to delete all three nodes - should fail because n1 and n2 have an edge
-    with pytest.raises(IntegrityError):
+    with pytest.raises(TombstoneDeleteBlockedError):
         await db.delete_nodes([n1.id, n2.id, n3.id])
 
     # Verify all nodes still exist (atomic failure)
@@ -1045,3 +1052,165 @@ async def test_delete_nodes_atomic_failure(db: GPGraph):
     # Clean up
     await db.delete_edges([edge.id])
     await db.delete_nodes([n1.id, n2.id, n3.id])
+
+
+@pytest.mark.asyncio
+async def test_tombstone_hidden_from_default_get_and_search(db: GPGraph):
+    n = (await db.set_nodes([NodeUpsert(type="__default__", data={"a": 1})]))[0]
+    await db.delete_nodes([n.id])
+    with pytest.raises(ValueError, match="not found"):
+        await db.get_nodes([n.id])
+    page = await db.search_nodes(SearchQuery(limit=10))
+    assert all(x.id != n.id for x in page.items)
+
+
+@pytest.mark.asyncio
+async def test_tombstone_include_deleted_get(db: GPGraph):
+    n = (await db.set_nodes([NodeUpsert(type="__default__", data={"a": 1})]))[0]
+    uid = n.id
+    await db.delete_nodes([uid])
+    rows = await db.get_nodes([uid], include_deleted=True)
+    assert len(rows) == 1
+    r = rows[0]
+    assert r.deleted_at is not None
+    assert r.type is None
+    assert r.data == {}
+    assert "deleted_at" in r.model_dump()
+
+
+@pytest.mark.asyncio
+async def test_live_node_model_dump_omits_deleted_at(db: GPGraph):
+    n = (await db.set_nodes([NodeUpsert(type="__default__")]))[0]
+    d = n.model_dump()
+    assert "deleted_at" not in d
+
+
+@pytest.mark.asyncio
+async def test_tombstone_delete_twice_strict(db: GPGraph):
+    n = (await db.set_nodes([NodeUpsert(type="__default__")]))[0]
+    await db.delete_nodes([n.id])
+    with pytest.raises(TombstoneAlreadyDeletedError):
+        await db.delete_nodes([n.id])
+
+
+@pytest.mark.asyncio
+async def test_tombstone_partial_unique_allows_same_child_name(db: GPGraph):
+    parent = (await db.set_nodes([NodeUpsert(type="__default__", name="root")]))[0]
+    child = (
+        await db.set_nodes(
+            [NodeUpsert(type="__default__", name="cfg", parent_id=parent.id)]
+        )
+    )[0]
+    await db.delete_nodes([child.id])
+    child2 = (
+        await db.set_nodes(
+            [NodeUpsert(type="__default__", name="cfg", parent_id=parent.id)]
+        )
+    )[0]
+    assert child2.id != child.id
+    assert child2.name == "cfg"
+
+
+@pytest.mark.asyncio
+async def test_tombstone_frees_schema_for_delete(db: GPGraph):
+    await db.set_schemas(
+        [
+            SchemaUpsert(
+                name="tomb_x",
+                kind="node",
+                json_schema=schema_with_kind({"type": "object"}, "node"),
+            ),
+        ]
+    )
+    n = (await db.set_nodes([NodeUpsert(type="tomb_x", data={})]))[0]
+    await db.delete_nodes([n.id])
+    await db.delete_schemas([SchemaRef(name="tomb_x", kind="node")])
+
+
+@pytest.mark.asyncio
+async def test_tombstone_edge_then_delete_nodes(db: GPGraph):
+    n1 = (await db.set_nodes([NodeUpsert(type="__default__")]))[0]
+    n2 = (await db.set_nodes([NodeUpsert(type="__default__")]))[0]
+    e = (
+        await db.set_edges(
+            [EdgeUpsert(type="__default__", source_id=n1.id, target_id=n2.id)]
+        )
+    )[0]
+    await db.delete_edges([e.id])
+    await db.delete_nodes([n1.id, n2.id])
+    with pytest.raises(ValueError, match="not found"):
+        await db.get_nodes([n1.id])
+
+
+@pytest.mark.asyncio
+async def test_search_include_deleted_and_updated_since(db: GPGraph):
+    from datetime import timedelta
+
+    n = (await db.set_nodes([NodeUpsert(type="__default__", data={"k": 1})]))[0]
+    await db.delete_nodes([n.id])
+    tomb = (await db.get_nodes([n.id], include_deleted=True))[0]
+    page_live = await db.search_nodes(SearchQuery(limit=20, include_deleted=False))
+    assert all(x.id != n.id for x in page_live.items)
+    page_all = await db.search_nodes(SearchQuery(limit=20, include_deleted=True))
+    assert any(x.id == n.id for x in page_all.items)
+    page_since = await db.search_nodes(
+        SearchQuery(
+            filter=Filter(
+                field="updated_at",
+                op=Op.GTE,
+                value=tomb.updated_at - timedelta(seconds=2),
+            ),
+            limit=20,
+            include_deleted=True,
+        )
+    )
+    assert any(x.id == n.id for x in page_since.items)
+
+
+@pytest.mark.asyncio
+async def test_tombstone_delete_edges_twice(db: GPGraph):
+    n1 = (await db.set_nodes([NodeUpsert(type="__default__")]))[0]
+    n2 = (await db.set_nodes([NodeUpsert(type="__default__")]))[0]
+    e = (
+        await db.set_edges(
+            [EdgeUpsert(type="__default__", source_id=n1.id, target_id=n2.id)]
+        )
+    )[0]
+    await db.delete_edges([e.id])
+    with pytest.raises(TombstoneAlreadyDeletedError):
+        await db.delete_edges([e.id])
+
+
+@pytest.mark.asyncio
+async def test_cannot_upsert_deleted_node(db: GPGraph):
+    n = (await db.set_nodes([NodeUpsert(type="__default__", data={"x": 1})]))[0]
+    await db.delete_nodes([n.id])
+    with pytest.raises(ValueError, match="deleted"):
+        await db.set_nodes(
+            [NodeUpsert(id=n.id, type="__default__", data={"x": 2})]
+        )
+
+
+@pytest.mark.asyncio
+async def test_cannot_point_edge_at_deleted_node(db: GPGraph):
+    n1 = (await db.set_nodes([NodeUpsert(type="__default__")]))[0]
+    n2 = (await db.set_nodes([NodeUpsert(type="__default__")]))[0]
+    await db.delete_nodes([n2.id])
+    with pytest.raises(ValueError, match="deleted node"):
+        await db.set_edges(
+            [EdgeUpsert(type="__default__", source_id=n1.id, target_id=n2.id)]
+        )
+
+
+@pytest.mark.asyncio
+async def test_tombstone_table_prefix(db_factory):
+    db = await db_factory("t_prefix_tm")
+    try:
+        n = (await db.set_nodes([NodeUpsert(type="__default__")]))[0]
+        await db.delete_nodes([n.id])
+        rows = await db.get_nodes([n.id], include_deleted=True)
+        assert len(rows) == 1
+        assert rows[0].deleted_at is not None
+    finally:
+        await db.drop_tables()
+        await db.sqla_engine.dispose()

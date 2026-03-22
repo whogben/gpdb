@@ -144,16 +144,23 @@ async def _search(
     else:
         stmt = select(model)
 
-    # 1. Apply Filters
+    # 1. Apply Filters (live rows only unless include_deleted)
+    where_parts: List[Any] = []
+    if hasattr(model, "deleted_at") and not query.include_deleted:
+        where_parts.append(model.deleted_at.is_(None))
+
     if query.filter:
         cond = _build_condition(model, query.filter)
 
         # Check if condition is valid (not True/False literals unless supported by DB)
         if cond is not True and cond is not False:
-            stmt = stmt.where(cond)
+            where_parts.append(cond)
         elif cond is False:
             # If condition resolved to False, return empty result immediately
             return Page(items=[], total=0, limit=query.limit, offset=query.offset)
+
+    if where_parts:
+        stmt = stmt.where(and_(*where_parts))
 
     # 2. Apply Sorts
     for s in query.sort:

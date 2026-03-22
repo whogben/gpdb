@@ -24,7 +24,7 @@ class NodeModel(BaseModel):
     # System fields are prefixed with 'node_' to avoid collisions
     # with user-defined fields in subclasses.
     node_id: str | None = None
-    node_type: str = "node"
+    node_type: str | None = None
     node_name: str | None = None
     node_owner_id: str | None = None
     node_parent_id: str | None = None
@@ -49,7 +49,7 @@ class NodeModel(BaseModel):
         # Map system fields to DTO fields
         upsert_data = {
             "id": self.node_id,
-            "type": self.node_type,
+            "type": self.node_type if self.node_type is not None else "__default__",
             "name": self.node_name,
             "owner_id": self.node_owner_id,
             "parent_id": self.node_parent_id,
@@ -120,9 +120,9 @@ class EdgeModel(BaseModel):
 
     # System fields are prefixed with 'edge_'
     edge_id: str | None = None
-    edge_type: str = "edge"
-    edge_source_id: str
-    edge_target_id: str
+    edge_type: str | None = None
+    edge_source_id: str | None = None
+    edge_target_id: str | None = None
     edge_tags: List[str] = Field(default_factory=list)
 
     # Read-only metadata
@@ -134,9 +134,13 @@ class EdgeModel(BaseModel):
 
     def to_upsert(self) -> EdgeUpsert:
         """Convert this domain model to a DB-ready Upsert DTO."""
+        if self.edge_source_id is None or self.edge_target_id is None:
+            raise ValueError(
+                "Cannot build EdgeUpsert from a model without source_id and target_id"
+            )
         upsert_data = {
             "id": self.edge_id,
-            "type": self.edge_type,
+            "type": self.edge_type if self.edge_type is not None else "__default__",
             "source_id": self.edge_source_id,
             "target_id": self.edge_target_id,
             "tags": self.edge_tags,

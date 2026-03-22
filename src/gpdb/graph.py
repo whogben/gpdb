@@ -24,6 +24,8 @@ from gpdb.models import (
     SchemaInUseError,
     SchemaProtectedError,
     SchemaInheritanceError,
+    TombstoneAlreadyDeletedError,
+    TombstoneDeleteBlockedError,
     _Base,
     _GPRecord,
     _GPNodeBase,
@@ -261,6 +263,8 @@ __all__ = [
     "SchemaInUseError",
     "SchemaProtectedError",
     "SchemaInheritanceError",
+    "TombstoneAlreadyDeletedError",
+    "TombstoneDeleteBlockedError",
     # Pydantic models
     "Op",
     "Logic",

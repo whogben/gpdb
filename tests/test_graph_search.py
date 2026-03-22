@@ -348,3 +348,24 @@ async def test_search_dsl_integration(db: GPGraph):
     result = await db.search_nodes(query)
     assert result.total == 1
     assert result.items[0].id == n1.id
+
+
+@pytest.mark.asyncio
+async def test_search_projection_respects_include_deleted(db: GPGraph):
+    n = (await db.set_nodes([NodeUpsert(type="__default__", name="gone")]))[0]
+    await db.delete_nodes([n.id])
+    q_proj = SearchQuery(
+        select=["id", "deleted_at"],
+        limit=10,
+        include_deleted=False,
+    )
+    live = await db.search_nodes_projection(q_proj)
+    assert all(r["id"] != n.id for r in live.items)
+    q_all = SearchQuery(
+        select=["id", "deleted_at"],
+        limit=10,
+        include_deleted=True,
+    )
+    all_rows = await db.search_nodes_projection(q_all)
+    row = next(r for r in all_rows.items if r["id"] == n.id)
+    assert row["deleted_at"] is not None

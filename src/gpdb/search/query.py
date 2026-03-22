@@ -81,6 +81,7 @@ class SearchQuery(BaseModel):
     limit: int = 50
     offset: int = 0
     select: Optional[List[str]] = None
+    include_deleted: bool = False
 
     @field_validator("filter", mode="before")
     @classmethod

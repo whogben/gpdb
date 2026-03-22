@@ -4,9 +4,10 @@ Edge-related methods for GPGraph.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import and_, select
 
 from gpdb.conversions import (
     _edge_upsert_to_orm,
@@ -15,6 +16,7 @@ from gpdb.conversions import (
 from gpdb.models import (
     EdgeRead,
     EdgeUpsert,
+    TombstoneAlreadyDeletedError,
     _ID_MAX_COLLISION_ATTEMPTS,
     generate_id,
 )
@@ -71,11 +73,34 @@ class EdgeMixin:
         for attempt in range(_ID_MAX_COLLISION_ATTEMPTS):
             try:
                 async with self._get_session() as session:
+                    all_nt_ids: set[str] = set()
+                    for edge in edges_to_process:
+                        all_nt_ids.add(edge.source_id)
+                        all_nt_ids.add(edge.target_id)
+                    if all_nt_ids:
+                        nd_res = await session.execute(
+                            select(self._Node).where(self._Node.id.in_(all_nt_ids))
+                        )
+                        live_nodes = {n.id: n for n in nd_res.scalars().all()}
+                        for edge in edges_to_process:
+                            for label, nid in (
+                                ("source", edge.source_id),
+                                ("target", edge.target_id),
+                            ):
+                                nn = live_nodes.get(nid)
+                                if nn is None or nn.deleted_at is not None:
+                                    raise ValueError(
+                                        f"Edge {label}_id refers to missing or deleted node: {nid}"
+                                    )
+
                     results = []
                     for edge in edges_to_process:
                         existing = None
                         if edge.id:
                             existing = await session.get(self._Edge, edge.id)
+
+                        if existing is not None and existing.deleted_at is not None:
+                            raise ValueError(f"Cannot update deleted edge: {edge.id}")
 
                         orm = _edge_upsert_to_orm(edge, existing, self._Edge)
 
@@ -123,21 +148,24 @@ class EdgeMixin:
             f"{_ID_MAX_COLLISION_ATTEMPTS} attempts."
         )
 
-    async def get_edges(self, ids: list[str]) -> list[EdgeRead]:
+    async def get_edges(
+        self, ids: list[str], *, include_deleted: bool = False
+    ) -> list[EdgeRead]:
         """
         Get multiple Edges.
         Returns list of EdgeRead objects.
         Fails if any requested id is missing or if duplicate ids are provided.
+        Tombstoned edges are excluded unless include_deleted is True.
         """
         # Reject duplicate ids before doing any work
         if len(ids) != len(set(ids)):
             raise ValueError("Duplicate edge ids provided")
 
         async with self._get_session() as session:
-            # Fetch all edges in a single query
-            result = await session.execute(
-                select(self._Edge).where(self._Edge.id.in_(ids))
-            )
+            conds = [self._Edge.id.in_(ids)]
+            if not include_deleted:
+                conds.append(self._Edge.deleted_at.is_(None))
+            result = await session.execute(select(self._Edge).where(and_(*conds)))
             orms = result.scalars().all()
 
             # Check if all requested ids were found
@@ -152,13 +180,11 @@ class EdgeMixin:
 
     async def delete_edges(self, ids: list[str]):
         """
-        Hard delete Edges in bulk.
-
-        Args:
-            ids: List of edge IDs to delete.
+        Tombstone edges in bulk: clear data, type, source_id, target_id; set deleted_at.
 
         Raises:
             ValueError: If duplicate IDs are provided or if any edge ID is not found.
+            TombstoneAlreadyDeletedError: If any edge is already tombstoned.
         """
         # Reject duplicate ids before doing any work
         if len(ids) != len(set(ids)):
@@ -166,17 +192,29 @@ class EdgeMixin:
             raise ValueError(f"Duplicate edge ids provided: {set(duplicates)}")
 
         async with self._get_session() as session:
-            # Check if all requested ids exist before deleting (all-or-nothing)
             result = await session.execute(
-                select(self._Edge.id).where(self._Edge.id.in_(ids))
+                select(self._Edge).where(self._Edge.id.in_(ids))
             )
-            found_ids = {row[0] for row in result.all()}
+            orms = list(result.scalars().all())
+            found_ids = {orm.id for orm in orms}
             missing_ids = set(ids) - found_ids
             if missing_ids:
                 raise ValueError(f"Edge ids not found: {missing_ids}")
 
-            # Delete all edges in one operation (atomic)
-            await session.execute(delete(self._Edge).where(self._Edge.id.in_(ids)))
+            already = [o.id for o in orms if o.deleted_at is not None]
+            if already:
+                raise TombstoneAlreadyDeletedError(
+                    f"Edge id(s) already deleted: {already}"
+                )
+
+            now = datetime.now(timezone.utc)
+            for orm in orms:
+                orm.deleted_at = now
+                orm.type = None
+                orm.data = {}
+                orm.source_id = None
+                orm.target_id = None
+            await session.flush()
 
     async def search_edges(self, query: Any) -> Any:
         """

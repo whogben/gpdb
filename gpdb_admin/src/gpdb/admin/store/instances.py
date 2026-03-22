@@ -220,7 +220,10 @@ async def delete_instance(store, instance_id: str) -> None:
 
     graphs = await list_graphs_for_instance(store, instance_id)
     graph_ids = [graph.id for graph in graphs]
-    await store.db.delete_nodes(graph_ids + [instance_id])
+    # Graph metadata nodes are children of the instance node; tombstone children first.
+    if graph_ids:
+        await store.db.delete_nodes(graph_ids)
+    await store.db.delete_nodes([instance_id])
 
 
 async def update_instance_status(

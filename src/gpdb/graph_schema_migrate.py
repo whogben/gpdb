@@ -83,7 +83,8 @@ async def run_migrate_schema(
             all_affected_names = {name} | descendant_names
 
             node_stmt = select(graph._Node).where(
-                graph._Node.type.in_(all_affected_names)
+                graph._Node.type.in_(all_affected_names),
+                graph._Node.deleted_at.is_(None),
             )
             node_result = await session.execute(node_stmt)
             nodes = node_result.scalars().all()
@@ -93,7 +94,8 @@ async def run_migrate_schema(
                 node.data = new_data
 
             edge_stmt = select(graph._Edge).where(
-                graph._Edge.type.in_(all_affected_names)
+                graph._Edge.type.in_(all_affected_names),
+                graph._Edge.deleted_at.is_(None),
             )
             edge_result = await session.execute(edge_stmt)
             edges = edge_result.scalars().all()

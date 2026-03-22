@@ -53,6 +53,18 @@ class SchemaInheritanceError(Exception):
     pass
 
 
+class TombstoneDeleteBlockedError(Exception):
+    """Raised when a node cannot be tombstoned due to live edges or child nodes."""
+
+    pass
+
+
+class TombstoneAlreadyDeletedError(Exception):
+    """Raised when delete_nodes/delete_edges targets an id that is already tombstoned."""
+
+    pass
+
+
 SchemaKind = Literal["node", "edge"]
 _SCHEMA_KIND_FIELD = "x-gpdb-kind"
 _SCHEMA_KIND_VALUES = {"node", "edge"}

@@ -24,6 +24,8 @@ from gpdb.graph import (
     SchemaValidationError,
     SearchQuery,
     Sort,
+    TombstoneAlreadyDeletedError,
+    TombstoneDeleteBlockedError,
 )
 from gpdb.query_docs import (
     EDGE_LIST_SORT_DESCRIPTION,
@@ -60,6 +62,8 @@ __all__ = [
     "SchemaValidationError",
     "SearchQuery",
     "Sort",
+    "TombstoneAlreadyDeletedError",
+    "TombstoneDeleteBlockedError",
     "FILTER_DSL_DESCRIPTION",
     "NODE_LIST_SORT_DESCRIPTION",
     "EDGE_LIST_SORT_DESCRIPTION",

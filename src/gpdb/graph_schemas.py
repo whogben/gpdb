@@ -422,7 +422,10 @@ class SchemaMixin:
             # Check all schemas for usage before deleting any
             for ref in refs:
                 # Check if any nodes use this schema
-                node_stmt = select(self._Node).where(self._Node.type == ref.name)
+                node_stmt = select(self._Node).where(
+                    self._Node.type == ref.name,
+                    self._Node.deleted_at.is_(None),
+                )
                 node_result = await session.execute(node_stmt)
                 if node_result.scalars().first() is not None:
                     raise SchemaInUseError(
@@ -430,7 +433,10 @@ class SchemaMixin:
                     )
 
                 # Check if any edges use this schema
-                edge_stmt = select(self._Edge).where(self._Edge.type == ref.name)
+                edge_stmt = select(self._Edge).where(
+                    self._Edge.type == ref.name,
+                    self._Edge.deleted_at.is_(None),
+                )
                 edge_result = await session.execute(edge_stmt)
                 if edge_result.scalars().first() is not None:
                     raise SchemaInUseError(

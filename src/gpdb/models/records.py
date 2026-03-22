@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, LargeBinary, String, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, LargeBinary, String, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column
 
@@ -25,7 +25,7 @@ class _GPRecord(_Base):
     id: Mapped[str] = mapped_column(String, primary_key=True)
 
     # -- User-defined Content --
-    type: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    type: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
     data: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict)
     tags: Mapped[List[str]] = mapped_column(JSONB, default=list)
 
@@ -37,6 +37,9 @@ class _GPRecord(_Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
 
     # Validate and increment version numbers on update
     __mapper_args__ = {"version_id_col": version}
@@ -77,12 +80,18 @@ class _GPNodeBase(_GPRecord):
 
     @declared_attr.directive
     def __table_args__(cls):
-        """GIN indexes plus unique constraint on (parent_id, name)."""
-        uq_name = f"uq_{cls.__tablename__}_parent_name"
+        """GIN indexes plus partial unique index on (parent_id, name) for live rows."""
+        uq_name = f"uq_{cls.__tablename__}_parent_name_live"
         return (
             Index(f"ix_{cls.__tablename__}_data_gin", "data", postgresql_using="gin"),
             Index(f"ix_{cls.__tablename__}_tags_gin", "tags", postgresql_using="gin"),
-            UniqueConstraint("parent_id", "name", name=uq_name),
+            Index(
+                uq_name,
+                "parent_id",
+                "name",
+                unique=True,
+                postgresql_where=text("deleted_at IS NULL"),
+            ),
         )
 
 
@@ -99,13 +108,17 @@ class _GPEdgeBase(_GPRecord):
     @declared_attr
     def source_id(cls):
         return mapped_column(
-            ForeignKey(f"{cls._node_table}.id", ondelete="RESTRICT"), index=True
+            ForeignKey(f"{cls._node_table}.id", ondelete="RESTRICT"),
+            index=True,
+            nullable=True,
         )
 
     @declared_attr
     def target_id(cls):
         return mapped_column(
-            ForeignKey(f"{cls._node_table}.id", ondelete="RESTRICT"), index=True
+            ForeignKey(f"{cls._node_table}.id", ondelete="RESTRICT"),
+            index=True,
+            nullable=True,
         )
 
 

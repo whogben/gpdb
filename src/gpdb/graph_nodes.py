@@ -4,9 +4,10 @@ Node-related methods for GPGraph.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-from sqlalchemy import delete, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import undefer
 
 from gpdb.conversions import (
@@ -18,6 +19,8 @@ from gpdb.models import (
     NodeRead,
     NodeReadWithPayload,
     NodeUpsert,
+    TombstoneAlreadyDeletedError,
+    TombstoneDeleteBlockedError,
     _ID_MAX_COLLISION_ATTEMPTS,
     generate_id,
 )
@@ -65,12 +68,39 @@ class NodeMixin:
                         for orm in result.scalars().all():
                             existing_map[orm.id] = orm
 
+                    parent_ids_to_check: set[str] = set()
+                    for node in nodes:
+                        if node.id is not None and node.id in existing_map:
+                            ex = existing_map[node.id]
+                            if "parent_id" in node.model_fields_set:
+                                pid = node.parent_id
+                            else:
+                                pid = ex.parent_id
+                        else:
+                            pid = node.parent_id
+                        if pid is not None:
+                            parent_ids_to_check.add(pid)
+
+                    parent_map: Dict[str, Any] = {}
+                    if parent_ids_to_check:
+                        pr = await session.execute(
+                            select(self._Node).where(
+                                self._Node.id.in_(parent_ids_to_check),
+                                self._Node.deleted_at.is_(None),
+                            )
+                        )
+                        for p in pr.scalars().all():
+                            parent_map[p.id] = p
+
                     # Validate schemas and prepare ORM objects
                     orms = []
                     for node in nodes:
                         explicit_id = node.id is not None
                         node_for_attempt = node
                         existing = existing_map.get(node.id) if explicit_id else None
+
+                        if explicit_id and existing is not None and existing.deleted_at is not None:
+                            raise ValueError(f"Cannot update deleted node: {node.id}")
 
                         if not explicit_id:
                             # Generate ids in Python so tests can patch `generate_id()`.
@@ -107,6 +137,21 @@ class NodeMixin:
                                 expected_kind="node",
                             )
 
+                        if explicit_id and existing is not None:
+                            eff_parent = (
+                                node_for_attempt.parent_id
+                                if "parent_id" in node.model_fields_set
+                                else existing.parent_id
+                            )
+                        else:
+                            eff_parent = node_for_attempt.parent_id
+                        if eff_parent is not None:
+                            p_orm = parent_map.get(eff_parent)
+                            if p_orm is None or p_orm.deleted_at is not None:
+                                raise ValueError(
+                                    f"Parent node not found or deleted: {eff_parent}"
+                                )
+
                         orm = _node_upsert_to_orm(node_for_attempt, existing, self._Node)
                         orms.append(orm)
 
@@ -142,12 +187,14 @@ class NodeMixin:
             f"Failed to generate unique node ID after {_ID_MAX_COLLISION_ATTEMPTS} attempts."
         )
 
-    async def get_nodes(self, ids: list[str]) -> list[NodeRead]:
+    async def get_nodes(
+        self, ids: list[str], *, include_deleted: bool = False
+    ) -> list[NodeRead]:
         """
         Get multiple Nodes without payload.
         Returns list of NodeRead objects.
         Raises ValueError if duplicate ids are provided.
-        Raises ValueError if any requested id is not found.
+        Raises ValueError if any requested id is not found (tombstones excluded unless include_deleted).
         Preserves input order in returned results.
         """
         if not ids:
@@ -159,8 +206,10 @@ class NodeMixin:
             raise ValueError(f"Duplicate node ids provided: {set(duplicates)}")
 
         async with self._get_session() as session:
-            # Fetch all nodes in one query
-            stmt = select(self._Node).where(self._Node.id.in_(ids))
+            conds = [self._Node.id.in_(ids)]
+            if not include_deleted:
+                conds.append(self._Node.deleted_at.is_(None))
+            stmt = select(self._Node).where(and_(*conds))
             result = await session.execute(stmt)
             orms = result.scalars().all()
 
@@ -175,7 +224,9 @@ class NodeMixin:
             # Return results in input order
             return [_node_orm_to_read(orm_map[id]) for id in ids]
 
-    async def get_node_payloads(self, ids: list[str]) -> list[NodeReadWithPayload]:
+    async def get_node_payloads(
+        self, ids: list[str], *, include_deleted: bool = False
+    ) -> list[NodeReadWithPayload]:
         """
         Get multiple Nodes with payloads included.
         Returns list of NodeReadWithPayload in the same order as input ids.
@@ -187,8 +238,14 @@ class NodeMixin:
             raise ValueError("Duplicate node ids provided")
 
         async with self._get_session() as session:
-            # Fetch all nodes in one query with payload undeferred
-            stmt = select(self._Node).where(self._Node.id.in_(ids)).options(undefer(self._Node.payload))
+            conds = [self._Node.id.in_(ids)]
+            if not include_deleted:
+                conds.append(self._Node.deleted_at.is_(None))
+            stmt = (
+                select(self._Node)
+                .where(and_(*conds))
+                .options(undefer(self._Node.payload))
+            )
             result = await session.execute(stmt)
             orms = result.scalars().all()
 
@@ -203,13 +260,18 @@ class NodeMixin:
             # Return results in input order
             return [_node_orm_to_read_with_payload(orm_map[id]) for id in ids]
 
-    async def get_node_payload(self, id: str) -> bytes | None:
+    async def get_node_payload(
+        self, id: str, *, include_deleted: bool = False
+    ) -> bytes | None:
         """
         Get only the payload bytes for a Node.
-        Returns bytes if node exists and has payload, None otherwise.
+        Returns bytes if node exists and has payload, None if missing, no payload, or tombstoned (unless include_deleted).
         """
         async with self._get_session() as session:
-            stmt = select(self._Node.payload).where(self._Node.id == id)
+            conds = [self._Node.id == id]
+            if not include_deleted:
+                conds.append(self._Node.deleted_at.is_(None))
+            stmt = select(self._Node.payload).where(and_(*conds))
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
@@ -227,7 +289,7 @@ class NodeMixin:
         """
         async with self._get_session() as session:
             orm = await session.get(self._Node, id)
-            if orm is None:
+            if orm is None or orm.deleted_at is not None:
                 raise ValueError(f"Node not found: {id}")
             orm.payload = payload
             if mime is not None:  # Only update mime when explicitly provided
@@ -245,22 +307,28 @@ class NodeMixin:
         """
         async with self._get_session() as session:
             orm = await session.get(self._Node, id)
-            if orm is None:
+            if orm is None or orm.deleted_at is not None:
                 raise ValueError(f"Node not found: {id}")
             orm.payload = None
             await session.flush()
             await session.refresh(orm)
             return _node_orm_to_read(orm)
 
-    async def get_node_child(self, parent_id: str, name: str) -> NodeRead | None:
+    async def get_node_child(
+        self, parent_id: str, name: str, *, include_deleted: bool = False
+    ) -> NodeRead | None:
         """
         Get a child node by name under a specific parent.
         Returns NodeRead if found, None if not found.
         """
         async with self._get_session() as session:
-            stmt = select(self._Node).where(
-                self._Node.parent_id == parent_id, self._Node.name == name
-            )
+            conds = [
+                self._Node.parent_id == parent_id,
+                self._Node.name == name,
+            ]
+            if not include_deleted:
+                conds.append(self._Node.deleted_at.is_(None))
+            stmt = select(self._Node).where(and_(*conds))
             result = await session.execute(stmt)
             orm = result.scalar_one_or_none()
             if orm is None:
@@ -269,7 +337,8 @@ class NodeMixin:
 
     async def delete_nodes(self, ids: list[str]) -> None:
         """
-        Hard delete multiple Nodes.
+        Tombstone multiple nodes: strip content, clear type, set deleted_at.
+        Fails if live edges or child nodes reference any id, or if any id is already tombstoned.
 
         Rejects duplicate ids before doing any work.
         If any deletion would fail, fails the entire batch.
@@ -283,18 +352,54 @@ class NodeMixin:
             raise ValueError(f"Duplicate node ids: {duplicates}")
 
         async with self._get_session() as session:
-            # Ensure all requested ids exist before deleting anything.
-            # This keeps bulk deletes strictly all-or-nothing even when
-            # the caller includes a missing id.
             stmt = select(self._Node).where(self._Node.id.in_(ids))
             result = await session.execute(stmt)
-            found_ids = {orm.id for orm in result.scalars().all()}
+            orms = list(result.scalars().all())
+            found_ids = {orm.id for orm in orms}
             missing_ids = [id for id in ids if id not in found_ids]
             if missing_ids:
                 raise ValueError(f"Node ids not found: {missing_ids}")
 
-            # Delete all nodes in a single operation - atomic all-or-nothing
-            await session.execute(delete(self._Node).where(self._Node.id.in_(ids)))
+            already = [o.id for o in orms if o.deleted_at is not None]
+            if already:
+                raise TombstoneAlreadyDeletedError(
+                    f"Node id(s) already deleted: {already}"
+                )
+
+            edge_stmt = select(self._Edge.id).where(
+                self._Edge.deleted_at.is_(None),
+                or_(
+                    self._Edge.source_id.in_(ids),
+                    self._Edge.target_id.in_(ids),
+                ),
+            )
+            edge_result = await session.execute(edge_stmt)
+            if edge_result.first() is not None:
+                raise TombstoneDeleteBlockedError(
+                    "Cannot delete nodes while live edges still reference them"
+                )
+
+            child_stmt = select(self._Node.id).where(
+                self._Node.deleted_at.is_(None),
+                self._Node.parent_id.in_(ids),
+            )
+            child_result = await session.execute(child_stmt)
+            if child_result.first() is not None:
+                raise TombstoneDeleteBlockedError(
+                    "Cannot delete nodes while live child nodes still reference them as parent"
+                )
+
+            now = datetime.now(timezone.utc)
+            for orm in orms:
+                orm.deleted_at = now
+                orm.type = None
+                orm.data = {}
+                orm.payload = None
+                orm.payload_size = 0
+                orm.payload_hash = None
+                orm.payload_mime = None
+                orm.payload_filename = None
+            await session.flush()
 
     async def search_nodes(self, query: Any) -> Any:
         """

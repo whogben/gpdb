@@ -51,7 +51,8 @@ async def db_factory(pg_server):
                 )
 
             # Clear model cache and metadata
-            from gpdb.graph import _model_cache, _Base
+            from gpdb.models.base import _Base
+            from gpdb.models.factories import _model_cache
 
             _model_cache.clear()
             _Base.metadata.clear()
