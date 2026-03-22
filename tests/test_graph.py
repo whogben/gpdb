@@ -1137,9 +1137,33 @@ async def test_tombstone_edge_then_delete_nodes(db: GPGraph):
         )
     )[0]
     await db.delete_edges([e.id])
+    tomb = (await db.get_edges([e.id], include_deleted=True))[0]
+    assert tomb.source_id == n1.id
+    assert tomb.target_id == n2.id
+    assert tomb.deleted_at is not None
+    # Tombstoned edges must not block node tombstone (only live edges do).
     await db.delete_nodes([n1.id, n2.id])
     with pytest.raises(ValueError, match="not found"):
         await db.get_nodes([n1.id])
+
+
+@pytest.mark.asyncio
+async def test_tombstoned_edge_does_not_block_deleting_endpoints(db: GPGraph):
+    """Only live edges participate in delete_nodes blocking; tombstones keep endpoint ids."""
+    n1 = (await db.set_nodes([NodeUpsert(type="__default__")]))[0]
+    n2 = (await db.set_nodes([NodeUpsert(type="__default__")]))[0]
+    e = (
+        await db.set_edges(
+            [EdgeUpsert(type="__default__", source_id=n1.id, target_id=n2.id)]
+        )
+    )[0]
+    await db.delete_edges([e.id])
+    await db.delete_nodes([n1.id])
+    remaining = await db.get_nodes([n2.id])
+    assert len(remaining) == 1
+    tomb_edge = (await db.get_edges([e.id], include_deleted=True))[0]
+    assert tomb_edge.source_id == n1.id
+    assert tomb_edge.target_id == n2.id
 
 
 @pytest.mark.asyncio

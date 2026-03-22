@@ -180,7 +180,8 @@ class EdgeMixin:
 
     async def delete_edges(self, ids: list[str]):
         """
-        Tombstone edges in bulk: clear data, type, source_id, target_id; set deleted_at.
+        Tombstone edges in bulk: clear data and type; set deleted_at.
+        source_id and target_id are preserved for audit and change-history use.
 
         Raises:
             ValueError: If duplicate IDs are provided or if any edge ID is not found.
@@ -212,8 +213,6 @@ class EdgeMixin:
                 orm.deleted_at = now
                 orm.type = None
                 orm.data = {}
-                orm.source_id = None
-                orm.target_id = None
             await session.flush()
 
     async def search_edges(self, query: Any) -> Any:
