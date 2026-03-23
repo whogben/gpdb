@@ -16,6 +16,13 @@ from gpdb.models import (
     SchemaValidationError,
     _normalize_schema_kind,
 )
+from gpdb.events import (
+    GraphEvent,
+    NodeDestinationEdgeUpdatedEvent,
+    NodeOriginEdgeUpdatedEvent,
+    NodeUpdatedEvent,
+)
+from gpdb.graph_event_listeners import GPDB_EVENTS_BUFFER_KEY
 from gpdb.schema import _bump_semver, _detect_semver_change
 from gpdb.schema_inheritance import compute_effective_row, topological_sort
 
@@ -34,6 +41,7 @@ async def run_migrate_schema(
 
     async with graph.sqla_sessionmaker() as session:
         async with session.begin():
+            session.info[GPDB_EVENTS_BUFFER_KEY] = []
             resolved_kind = _normalize_schema_kind(kind)
             existing = await session.get(
                 graph._Schema, {"name": name, "kind": resolved_kind}
@@ -99,6 +107,20 @@ async def run_migrate_schema(
             )
             edge_result = await session.execute(edge_stmt)
             edges = edge_result.scalars().all()
+
+            nt_ids: set[str] = set()
+            for e in edges:
+                if e.source_id:
+                    nt_ids.add(e.source_id)
+                if e.target_id:
+                    nt_ids.add(e.target_id)
+            nt_types: dict[str, str | None] = {}
+            if nt_ids:
+                ntr = await session.execute(
+                    select(graph._Node).where(graph._Node.id.in_(nt_ids))
+                )
+                for row in ntr.scalars().all():
+                    nt_types[row.id] = row.type
 
             for edge in edges:
                 new_data = migration_func(edge.data)
@@ -180,7 +202,55 @@ async def run_migrate_schema(
                         f"(type {edge.type}): {e.message}"
                     )
 
+            await session.flush()
+            for node in nodes:
+                await session.refresh(node)
+            for edge in edges:
+                await session.refresh(edge)
+
+            prefix = graph.table_prefix
+            evs: list[GraphEvent] = []
+            for node in nodes:
+                evs.append(
+                    NodeUpdatedEvent(
+                        table_prefix=prefix,
+                        occurred_at=node.updated_at,
+                        node_id=node.id,
+                        node_type=node.type,
+                    )
+                )
+            for edge in edges:
+                st = nt_types.get(edge.source_id) if edge.source_id else None
+                tt = nt_types.get(edge.target_id) if edge.target_id else None
+                evs.append(
+                    NodeOriginEdgeUpdatedEvent(
+                        table_prefix=prefix,
+                        occurred_at=edge.updated_at,
+                        edge_id=edge.id,
+                        edge_type=edge.type,
+                        source_id=edge.source_id or "",
+                        target_id=edge.target_id or "",
+                        source_node_type=st,
+                        target_node_type=tt,
+                    )
+                )
+                evs.append(
+                    NodeDestinationEdgeUpdatedEvent(
+                        table_prefix=prefix,
+                        occurred_at=edge.updated_at,
+                        edge_id=edge.id,
+                        edge_type=edge.type,
+                        source_id=edge.source_id or "",
+                        target_id=edge.target_id or "",
+                        source_node_type=st,
+                        target_node_type=tt,
+                    )
+                )
+            graph._record_graph_events(session, evs)
+
             cache_key = (name, resolved_kind)
             graph._validators.pop(cache_key, None)
             graph._schema_kinds.pop(cache_key, None)
             graph._schema_display_cache.pop(cache_key, None)
+            graph._invalidate_event_star_sets_cache()
+        await graph._dispatch_committed_events(session)

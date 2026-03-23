@@ -1073,7 +1073,7 @@ async def test_tombstone_include_deleted_get(db: GPGraph):
     assert len(rows) == 1
     r = rows[0]
     assert r.deleted_at is not None
-    assert r.type is None
+    assert r.type == "__default__"
     assert r.data == {}
     assert "deleted_at" in r.model_dump()
 
@@ -1124,7 +1124,32 @@ async def test_tombstone_frees_schema_for_delete(db: GPGraph):
     )
     n = (await db.set_nodes([NodeUpsert(type="tomb_x", data={})]))[0]
     await db.delete_nodes([n.id])
+    tomb = (await db.get_nodes([n.id], include_deleted=True))[0]
+    assert tomb.type == "tomb_x"
     await db.delete_schemas([SchemaRef(name="tomb_x", kind="node")])
+
+
+@pytest.mark.asyncio
+async def test_tombstone_frees_edge_schema_for_delete(db: GPGraph):
+    edge_schema = schema_with_kind(
+        {"type": "object", "properties": {"k": {"type": "string"}}}, "edge"
+    )
+    await db.set_schemas(
+        [
+            SchemaUpsert(name="tomb_e", kind="edge", json_schema=edge_schema),
+        ]
+    )
+    n1 = (await db.set_nodes([NodeUpsert(type="__default__", data={})]))[0]
+    n2 = (await db.set_nodes([NodeUpsert(type="__default__", data={})]))[0]
+    e = (
+        await db.set_edges(
+            [EdgeUpsert(type="tomb_e", source_id=n1.id, target_id=n2.id, data={"k": "v"})]
+        )
+    )[0]
+    await db.delete_edges([e.id])
+    et = (await db.get_edges([e.id], include_deleted=True))[0]
+    assert et.type == "tomb_e"
+    await db.delete_schemas([SchemaRef(name="tomb_e", kind="edge")])
 
 
 @pytest.mark.asyncio

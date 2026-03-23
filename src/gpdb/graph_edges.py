@@ -13,6 +13,15 @@ from gpdb.conversions import (
     _edge_upsert_to_orm,
     _edge_orm_to_read,
 )
+from gpdb.events import (
+    GraphEvent,
+    NodeDestinationEdgeCreatedEvent,
+    NodeDestinationEdgeDeletedEvent,
+    NodeDestinationEdgeUpdatedEvent,
+    NodeOriginEdgeCreatedEvent,
+    NodeOriginEdgeDeletedEvent,
+    NodeOriginEdgeUpdatedEvent,
+)
 from gpdb.models import (
     EdgeRead,
     EdgeUpsert,
@@ -104,6 +113,7 @@ class EdgeMixin:
                                     )
 
                     results = []
+                    edge_was_create: list[bool] = []
                     for edge in edges_to_process:
                         existing = None
                         if edge.id:
@@ -119,12 +129,14 @@ class EdgeMixin:
                             await session.flush()
                             await session.refresh(orm)
                             results.append(_edge_orm_to_read(orm))
+                            edge_was_create.append(False)
                         else:
                             # Create path
                             if not orm.id:
                                 orm.id = generate_id()
                             session.add(orm)
                             results.append(orm)
+                            edge_was_create.append(True)
 
                     # Flush all creates at once
                     await session.flush()
@@ -139,6 +151,71 @@ class EdgeMixin:
                             # This was a create, need to refresh and convert
                             await session.refresh(result)
                             final_results.append(_edge_orm_to_read(result))
+
+                    prefix = self.table_prefix
+                    evs: list[GraphEvent] = []
+                    for er, was_create in zip(final_results, edge_was_create):
+                        st = (
+                            live_nodes[er.source_id].type
+                            if er.source_id and er.source_id in live_nodes
+                            else None
+                        )
+                        tt = (
+                            live_nodes[er.target_id].type
+                            if er.target_id and er.target_id in live_nodes
+                            else None
+                        )
+                        if was_create:
+                            evs.append(
+                                NodeOriginEdgeCreatedEvent(
+                                    table_prefix=prefix,
+                                    occurred_at=er.created_at,
+                                    edge_id=er.id,
+                                    edge_type=er.type,
+                                    source_id=er.source_id or "",
+                                    target_id=er.target_id or "",
+                                    source_node_type=st,
+                                    target_node_type=tt,
+                                )
+                            )
+                            evs.append(
+                                NodeDestinationEdgeCreatedEvent(
+                                    table_prefix=prefix,
+                                    occurred_at=er.created_at,
+                                    edge_id=er.id,
+                                    edge_type=er.type,
+                                    source_id=er.source_id or "",
+                                    target_id=er.target_id or "",
+                                    source_node_type=st,
+                                    target_node_type=tt,
+                                )
+                            )
+                        else:
+                            evs.append(
+                                NodeOriginEdgeUpdatedEvent(
+                                    table_prefix=prefix,
+                                    occurred_at=er.updated_at,
+                                    edge_id=er.id,
+                                    edge_type=er.type,
+                                    source_id=er.source_id or "",
+                                    target_id=er.target_id or "",
+                                    source_node_type=st,
+                                    target_node_type=tt,
+                                )
+                            )
+                            evs.append(
+                                NodeDestinationEdgeUpdatedEvent(
+                                    table_prefix=prefix,
+                                    occurred_at=er.updated_at,
+                                    edge_id=er.id,
+                                    edge_type=er.type,
+                                    source_id=er.source_id or "",
+                                    target_id=er.target_id or "",
+                                    source_node_type=st,
+                                    target_node_type=tt,
+                                )
+                            )
+                    self._record_graph_events(session, evs)
 
                     return final_results
             except Exception as e:
@@ -190,8 +267,10 @@ class EdgeMixin:
 
     async def delete_edges(self, ids: list[str]):
         """
-        Tombstone edges in bulk: clear data and type; set deleted_at.
-        source_id and target_id are preserved for audit and change-history use.
+        Tombstone edges in bulk: clear data; set deleted_at.
+
+        ``type``, ``source_id``, and ``target_id`` are preserved for audit, event filters,
+        and schema lifecycle (schema delete only counts *live* rows; see ``delete_schemas``).
 
         Raises:
             ValueError: If duplicate IDs are provided or if any edge ID is not found.
@@ -218,12 +297,58 @@ class EdgeMixin:
                     f"Edge id(s) already deleted: {already}"
                 )
 
+            nt_ids: set[str] = set()
+            for o in orms:
+                if o.source_id:
+                    nt_ids.add(o.source_id)
+                if o.target_id:
+                    nt_ids.add(o.target_id)
+            nt_types: dict[str, str | None] = {}
+            if nt_ids:
+                nres = await session.execute(
+                    select(self._Node).where(self._Node.id.in_(nt_ids))
+                )
+                for row in nres.scalars().all():
+                    nt_types[row.id] = row.type
+
             now = datetime.now(timezone.utc)
             for orm in orms:
                 orm.deleted_at = now
-                orm.type = None
                 orm.data = {}
             await session.flush()
+            for orm in orms:
+                await session.refresh(orm)
+
+            prefix = self.table_prefix
+            evs: list[GraphEvent] = []
+            for orm in orms:
+                st = nt_types.get(orm.source_id) if orm.source_id else None
+                tt = nt_types.get(orm.target_id) if orm.target_id else None
+                evs.append(
+                    NodeOriginEdgeDeletedEvent(
+                        table_prefix=prefix,
+                        occurred_at=orm.deleted_at,
+                        edge_id=orm.id,
+                        edge_type=orm.type,
+                        source_id=orm.source_id or "",
+                        target_id=orm.target_id or "",
+                        source_node_type=st,
+                        target_node_type=tt,
+                    )
+                )
+                evs.append(
+                    NodeDestinationEdgeDeletedEvent(
+                        table_prefix=prefix,
+                        occurred_at=orm.deleted_at,
+                        edge_id=orm.id,
+                        edge_type=orm.type,
+                        source_id=orm.source_id or "",
+                        target_id=orm.target_id or "",
+                        source_node_type=st,
+                        target_node_type=tt,
+                    )
+                )
+            self._record_graph_events(session, evs)
 
     async def search_edges(self, query: Any) -> Any:
         """

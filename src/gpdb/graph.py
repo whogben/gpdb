@@ -56,12 +56,26 @@ from gpdb.search import (
     SearchQuery,
     Page,
 )
+from gpdb.events import (
+    EventFilter,
+    GraphEvent,
+    NodeCreatedEvent,
+    NodeDeletedEvent,
+    NodeDestinationEdgeCreatedEvent,
+    NodeDestinationEdgeDeletedEvent,
+    NodeDestinationEdgeUpdatedEvent,
+    NodeOriginEdgeCreatedEvent,
+    NodeOriginEdgeDeletedEvent,
+    NodeOriginEdgeUpdatedEvent,
+    NodeUpdatedEvent,
+)
+from gpdb.graph_event_listeners import EventListenersMixin, GPDB_EVENTS_BUFFER_KEY
 from gpdb.graph_schemas import SchemaMixin
 from gpdb.graph_nodes import NodeMixin
 from gpdb.graph_edges import EdgeMixin
 
 
-class GPGraph(SchemaMixin, NodeMixin, EdgeMixin):
+class GPGraph(SchemaMixin, NodeMixin, EdgeMixin, EventListenersMixin):
     """
     Generic database utility for storing/retrieving/searching graph records.
     Uses SQLAlchemy for ORM and asyncpg for PostgreSQL client.
@@ -85,6 +99,10 @@ class GPGraph(SchemaMixin, NodeMixin, EdgeMixin):
         self._validators: Dict[tuple[str, str], Any] = {}
         self._schema_kinds: Dict[tuple[str, str], SchemaKind] = {}
         self._schema_display_cache: Dict[tuple[str, str], Dict[str, str | None]] = {}
+        self.table_prefix = table_prefix if table_prefix is not None else ""
+        self._event_listeners = []
+        self._event_listener_seq = 0
+        self._event_star_sets_cache = None
 
         # Create dynamic models if prefix specified, else use defaults
         if table_prefix:
@@ -114,14 +132,22 @@ class GPGraph(SchemaMixin, NodeMixin, EdgeMixin):
                 await db.set_nodes([NodeUpsert(...)])
                 await db.set_edges([EdgeUpsert(...)])
                 # Both committed together, or both rolled back on error
+
+        Do not nest overlapping ``transaction()`` calls on the same ``GPGraph``
+        instance; a single context-managed session is active at a time.
+
+        After a successful commit, registered event listeners run (see
+        ``register_event_listener``).
         """
         async with self.sqla_sessionmaker() as session:
             async with session.begin():
+                session.info[GPDB_EVENTS_BUFFER_KEY] = []
                 token = self._session_ctx.set(session)
                 try:
                     yield  # Yield nothing — callers use self.set_nodes() etc.
                 finally:
                     self._session_ctx.reset(token)
+            await self._dispatch_committed_events(session)
 
     @asynccontextmanager
     async def _get_session(self):
@@ -131,7 +157,9 @@ class GPGraph(SchemaMixin, NodeMixin, EdgeMixin):
         else:
             async with self.sqla_sessionmaker() as new_session:
                 async with new_session.begin():
+                    new_session.info[GPDB_EVENTS_BUFFER_KEY] = []
                     yield new_session
+                await self._dispatch_committed_events(new_session)
 
     async def create_tables(self):
         """
@@ -255,6 +283,17 @@ def _update_payload_metadata(mapper, connection, target):
 # -----------------------------------------------------------------------------
 
 __all__ = [
+    "EventFilter",
+    "GraphEvent",
+    "NodeCreatedEvent",
+    "NodeDeletedEvent",
+    "NodeDestinationEdgeCreatedEvent",
+    "NodeDestinationEdgeDeletedEvent",
+    "NodeDestinationEdgeUpdatedEvent",
+    "NodeOriginEdgeCreatedEvent",
+    "NodeOriginEdgeDeletedEvent",
+    "NodeOriginEdgeUpdatedEvent",
+    "NodeUpdatedEvent",
     # Exceptions
     "SchemaKind",
     "SchemaNotFoundError",

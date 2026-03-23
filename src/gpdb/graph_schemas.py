@@ -317,7 +317,8 @@ class SchemaMixin:
             self._validators.clear()
             self._schema_kinds.clear()
             self._schema_display_cache.clear()
-            
+            self._invalidate_event_star_sets_cache()
+
             for result in results:
                 await session.refresh(result)
             return results
@@ -419,9 +420,10 @@ class SchemaMixin:
             if missing:
                 raise SchemaNotFoundError(f"Schemas not found: {missing}")
 
-            # Check all schemas for usage before deleting any
+            # Check all schemas for usage before deleting any (live rows only; tombstones
+            # may still carry type for audit but must not block schema removal).
             for ref in refs:
-                # Check if any nodes use this schema
+                # Check if any live nodes use this schema
                 node_stmt = select(self._Node).where(
                     self._Node.type == ref.name,
                     self._Node.deleted_at.is_(None),
@@ -432,7 +434,7 @@ class SchemaMixin:
                         f"Cannot delete schema '{ref.name}': it is referenced by one or more nodes"
                     )
 
-                # Check if any edges use this schema
+                # Check if any live edges use this schema
                 edge_stmt = select(self._Edge).where(
                     self._Edge.type == ref.name,
                     self._Edge.deleted_at.is_(None),
@@ -468,6 +470,8 @@ class SchemaMixin:
                     self._validators.pop(cache_key, None)
                     self._schema_kinds.pop(cache_key, None)
                     self._schema_display_cache.pop(cache_key, None)
+
+            self._invalidate_event_star_sets_cache()
 
     async def list_schemas(self, kind: str | None = None) -> List[SchemaRef]:
         """

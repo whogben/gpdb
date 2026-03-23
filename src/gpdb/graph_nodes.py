@@ -15,6 +15,7 @@ from gpdb.conversions import (
     _node_orm_to_read,
     _node_orm_to_read_with_payload,
 )
+from gpdb.events import GraphEvent, NodeCreatedEvent, NodeDeletedEvent, NodeUpdatedEvent
 from gpdb.models import (
     NodeRead,
     NodeReadWithPayload,
@@ -99,6 +100,7 @@ class NodeMixin:
 
                     # Validate schemas and prepare ORM objects
                     orms = []
+                    node_was_create: list[bool] = []
                     for node in nodes:
                         explicit_id = node.id is not None
                         node_for_attempt = node
@@ -156,6 +158,7 @@ class NodeMixin:
 
                         orm = _node_upsert_to_orm(node_for_attempt, existing, self._Node)
                         orms.append(orm)
+                        node_was_create.append(existing is None)
 
                     # Add all ORM objects to session
                     for orm in orms:
@@ -167,6 +170,29 @@ class NodeMixin:
                     # Refresh all ORM objects to get generated IDs and timestamps
                     for orm in orms:
                         await session.refresh(orm)
+
+                    prefix = self.table_prefix
+                    evs: list[GraphEvent] = []
+                    for orm, was_create in zip(orms, node_was_create):
+                        if was_create:
+                            evs.append(
+                                NodeCreatedEvent(
+                                    table_prefix=prefix,
+                                    occurred_at=orm.created_at,
+                                    node_id=orm.id,
+                                    node_type=orm.type,
+                                )
+                            )
+                        else:
+                            evs.append(
+                                NodeUpdatedEvent(
+                                    table_prefix=prefix,
+                                    occurred_at=orm.updated_at,
+                                    node_id=orm.id,
+                                    node_type=orm.type,
+                                )
+                            )
+                    self._record_graph_events(session, evs)
 
                     # Return results in input order
                     return [_node_orm_to_read(orm) for orm in orms]
@@ -300,6 +326,17 @@ class NodeMixin:
                 orm.payload_filename = filename
             await session.flush()
             await session.refresh(orm)
+            self._record_graph_events(
+                session,
+                [
+                    NodeUpdatedEvent(
+                        table_prefix=self.table_prefix,
+                        occurred_at=orm.updated_at,
+                        node_id=orm.id,
+                        node_type=orm.type,
+                    )
+                ],
+            )
             return _node_orm_to_read(orm)
 
     async def clear_node_payload(self, id: str) -> NodeRead:
@@ -314,6 +351,17 @@ class NodeMixin:
             orm.payload = None
             await session.flush()
             await session.refresh(orm)
+            self._record_graph_events(
+                session,
+                [
+                    NodeUpdatedEvent(
+                        table_prefix=self.table_prefix,
+                        occurred_at=orm.updated_at,
+                        node_id=orm.id,
+                        node_type=orm.type,
+                    )
+                ],
+            )
             return _node_orm_to_read(orm)
 
     async def get_node_child(
@@ -339,7 +387,11 @@ class NodeMixin:
 
     async def delete_nodes(self, ids: list[str]) -> None:
         """
-        Tombstone multiple nodes: strip content, clear type, set deleted_at.
+        Tombstone multiple nodes: strip payload and data, set deleted_at.
+
+        The node's ``type`` is preserved for auditing, event filters, and schema lifecycle
+        (schema delete only counts *live* rows; see ``delete_schemas``).
+
         Fails if live edges or child nodes reference any id, or if any id is already tombstoned.
 
         Rejects duplicate ids before doing any work.
@@ -394,7 +446,6 @@ class NodeMixin:
             now = datetime.now(timezone.utc)
             for orm in orms:
                 orm.deleted_at = now
-                orm.type = None
                 orm.data = {}
                 orm.payload = None
                 orm.payload_size = 0
@@ -402,6 +453,21 @@ class NodeMixin:
                 orm.payload_mime = None
                 orm.payload_filename = None
             await session.flush()
+            for orm in orms:
+                await session.refresh(orm)
+            prefix = self.table_prefix
+            self._record_graph_events(
+                session,
+                [
+                    NodeDeletedEvent(
+                        table_prefix=prefix,
+                        occurred_at=orm.deleted_at,
+                        node_id=orm.id,
+                        node_type=orm.type,
+                    )
+                    for orm in orms
+                ],
+            )
 
     async def search_nodes(self, query: Any) -> Any:
         """
