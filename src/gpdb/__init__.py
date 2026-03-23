@@ -10,6 +10,7 @@ from gpdb.events import (
     NodeOriginEdgeDeletedEvent,
     NodeOriginEdgeUpdatedEvent,
     NodeUpdatedEvent,
+    graph_event_stable_sort_key,
 )
 from gpdb.graph import (
     GPGraph,
@@ -48,7 +49,7 @@ from gpdb.query_docs import (
 )
 from gpdb.svg_sanitizer import normalize_svg_icon_for_display, sanitize_svg
 
-__version__ = "0.1.0"
+__version__ = "0.4.1"
 
 __all__ = [
     "EventFilter",
@@ -62,6 +63,7 @@ __all__ = [
     "NodeOriginEdgeDeletedEvent",
     "NodeOriginEdgeUpdatedEvent",
     "NodeUpdatedEvent",
+    "graph_event_stable_sort_key",
     "GPGraph",
     "EdgeModel",
     "EdgeRead",

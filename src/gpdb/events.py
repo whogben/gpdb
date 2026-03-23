@@ -4,7 +4,7 @@ Graph change events, filters, and type-matching for event listeners.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -303,3 +303,20 @@ def filter_events(
             e, filter, node_star_sets=node_star_sets, edge_star_sets=edge_star_sets
         )
     ]
+
+
+def graph_event_stable_sort_key(event: GraphEvent) -> tuple[datetime, str, str]:
+    """
+    Total-order key for change events (ascending).
+
+    Orders by ``occurred_at`` (naive values are treated as UTC), then ``kind``
+    (lexicographic), then the row id: ``edge_id`` when ``kind`` contains
+    ``_edge_``, otherwise ``node_id``. This disambiguates bulk writes that share
+    the same timestamp and fixes ordering between paired origin/destination
+    edge events.
+    """
+    occurred = event.occurred_at
+    if occurred.tzinfo is None:
+        occurred = occurred.replace(tzinfo=timezone.utc)
+    entity = event.edge_id if "_edge_" in event.kind else event.node_id
+    return (occurred, event.kind, entity)

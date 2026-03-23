@@ -24,8 +24,10 @@ from gpdb.events import (
     NodeUpdatedEvent,
     build_star_expansion_sets,
     filter_events,
+    graph_event_stable_sort_key,
 )
 from gpdb.models.base import _normalize_schema_kind
+from gpdb.search.query import Page
 
 GPDB_EVENTS_BUFFER_KEY = "_gpdb_events"
 
@@ -156,22 +158,36 @@ class EventListenersMixin:
         self,
         since_time: datetime,
         filter: EventFilter,
-    ) -> list[GraphEvent]:
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Page[GraphEvent]:
         """
-        Return change events for rows with ``updated_at > since_time``, sorted by each event's
-        ``occurred_at`` ascending (create → row ``created_at``, update → ``updated_at``,
-        delete → ``deleted_at``).
+        Return a page of change events for rows with ``updated_at > since_time``.
+
+        Events are sorted by a stable total order: ``occurred_at`` ascending (create → row
+        ``created_at``, update → ``updated_at``, delete → ``deleted_at``), then ``kind``,
+        then the row identifier: ``edge_id`` when ``kind`` contains ``_edge_``, otherwise
+        ``node_id`` (see ``graph_event_stable_sort_key``). Filtering uses the same rules as
+        live listeners.
 
         Rows are classified from timestamps only (payload vs data updates are not distinguished).
         Tombstoned rows produce delete events. Edge rows produce paired origin and destination
-        events. Classification uses the same rules as live listeners for filtering.
+        events.
 
         Node rows are loaded in one query: ``updated_at > since_time`` plus any node id that
         appears as an edge endpoint among changed edges (so endpoint types are available even
         when those nodes did not change in the window).
+
+        Raises:
+            ValueError: If ``limit < 1`` or ``offset < 0``.
         """
         if since_time.tzinfo is None:
             since_time = since_time.replace(tzinfo=timezone.utc)
+        if limit < 1:
+            raise ValueError("limit must be at least 1")
+        if offset < 0:
+            raise ValueError("offset cannot be negative")
 
         async with self.sqla_sessionmaker() as session:
             async with session.begin():
@@ -205,7 +221,7 @@ class EventListenersMixin:
             n.id: n.type for n in all_node_rows
         }
 
-        raw: list[tuple[datetime, GraphEvent]] = []
+        merged: list[GraphEvent] = []
 
         prefix = self.table_prefix
         for orm in node_orms:
@@ -230,7 +246,7 @@ class EventListenersMixin:
                     node_id=orm.id,
                     node_type=orm.type,
                 )
-            raw.append((ev.occurred_at, ev))
+            merged.append(ev)
 
         for eorm in edge_orms:
             st = node_types_map.get(eorm.source_id) if eorm.source_id else None
@@ -256,8 +272,8 @@ class EventListenersMixin:
                     source_node_type=st,
                     target_node_type=tt,
                 )
-                raw.append((o.occurred_at, o))
-                raw.append((d.occurred_at, d))
+                merged.append(o)
+                merged.append(d)
             elif eorm.created_at > since_time:
                 o = NodeOriginEdgeCreatedEvent(
                     table_prefix=prefix,
@@ -279,8 +295,8 @@ class EventListenersMixin:
                     source_node_type=st,
                     target_node_type=tt,
                 )
-                raw.append((o.occurred_at, o))
-                raw.append((d.occurred_at, d))
+                merged.append(o)
+                merged.append(d)
             else:
                 o = NodeOriginEdgeUpdatedEvent(
                     table_prefix=prefix,
@@ -302,15 +318,22 @@ class EventListenersMixin:
                     source_node_type=st,
                     target_node_type=tt,
                 )
-                raw.append((o.occurred_at, o))
-                raw.append((d.occurred_at, d))
+                merged.append(o)
+                merged.append(d)
 
-        raw.sort(key=lambda t: t[0])
-        merged = [t[1] for t in raw]
+        merged.sort(key=graph_event_stable_sort_key)
         node_sets, edge_sets = await self._ensure_event_star_sets()
-        return filter_events(
+        filtered = filter_events(
             merged,
             filter,
             node_star_sets=node_sets,
             edge_star_sets=edge_sets,
+        )
+        total = len(filtered)
+        page_items = filtered[offset : offset + limit]
+        return Page(
+            items=page_items,
+            total=total,
+            limit=limit,
+            offset=offset,
         )

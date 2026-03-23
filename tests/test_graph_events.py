@@ -19,6 +19,7 @@ from gpdb import (
     SchemaRef,
     SchemaUpsert,
     SchemaValidationError,
+    graph_event_stable_sort_key,
 )
 
 
@@ -386,13 +387,73 @@ async def test_register_duplicate_listener_id(db: GPGraph):
 @pytest.mark.asyncio
 async def test_list_change_events_since_sorted(db: GPGraph):
     t0 = datetime.now(timezone.utc) - timedelta(seconds=1)
-    a = (await db.set_nodes([NodeUpsert(type="__default__", data={"k": "a"})]))[0]
-    b = (await db.set_nodes([NodeUpsert(type="__default__", data={"k": "b"})]))[0]
-    evs = await db.list_change_events_since(t0, EventFilter())
-    kinds = [e.kind for e in evs]
+    await db.set_nodes([NodeUpsert(type="__default__", data={"k": "a"})])
+    await db.set_nodes([NodeUpsert(type="__default__", data={"k": "b"})])
+    page = await db.list_change_events_since(t0, EventFilter(), limit=500, offset=0)
+    kinds = [e.kind for e in page.items]
     assert kinds.count("node_created") >= 2
-    ts = [e.occurred_at for e in evs if e.kind == "node_created"]
-    assert ts == sorted(ts)
+    assert page.total >= 2
+    keys = [graph_event_stable_sort_key(e) for e in page.items]
+    assert keys == sorted(keys)
+
+
+@pytest.mark.asyncio
+async def test_list_change_events_since_pagination(db: GPGraph):
+    t0 = datetime.now(timezone.utc) - timedelta(seconds=1)
+    for i in range(5):
+        await db.set_nodes([NodeUpsert(type="__default__", data={"i": i})])
+
+    collected = []
+    offset = 0
+    limit = 2
+    while True:
+        page = await db.list_change_events_since(
+            t0, EventFilter(), limit=limit, offset=offset
+        )
+        assert page.limit == limit
+        assert page.offset == offset
+        collected.extend(page.items)
+        if len(page.items) < limit:
+            break
+        offset += limit
+
+    assert page.total == len(collected)
+    mono = await db.list_change_events_since(
+        t0, EventFilter(), limit=500, offset=0
+    )
+    assert [graph_event_stable_sort_key(e) for e in collected] == [
+        graph_event_stable_sort_key(e) for e in mono.items
+    ]
+
+
+@pytest.mark.asyncio
+async def test_list_change_events_since_edge_pair_stable_order(db: GPGraph):
+    t0 = datetime.now(timezone.utc) - timedelta(seconds=1)
+    a = (await db.set_nodes([NodeUpsert(type="__default__", data={})]))[0]
+    b = (await db.set_nodes([NodeUpsert(type="__default__", data={})]))[0]
+    edges = await db.set_edges(
+        [EdgeUpsert(type="__default__", source_id=a.id, target_id=b.id, data={})]
+    )
+    page = await db.list_change_events_since(t0, EventFilter(), limit=50, offset=0)
+    eid = edges[0].id
+    edge_evs = [
+        e for e in page.items if "_edge_" in e.kind and getattr(e, "edge_id", "") == eid
+    ]
+    assert len(edge_evs) == 2
+    assert edge_evs[0].occurred_at == edge_evs[1].occurred_at
+    keys = [graph_event_stable_sort_key(e) for e in edge_evs]
+    assert keys == sorted(keys)
+    assert keys[0][1] == "node_destination_edge_created"
+    assert keys[1][1] == "node_origin_edge_created"
+
+
+@pytest.mark.asyncio
+async def test_list_change_events_since_limit_offset_validation(db: GPGraph):
+    t0 = datetime.now(timezone.utc)
+    with pytest.raises(ValueError, match="limit"):
+        await db.list_change_events_since(t0, EventFilter(), limit=0)
+    with pytest.raises(ValueError, match="offset"):
+        await db.list_change_events_since(t0, EventFilter(), offset=-1)
 
 
 @pytest.mark.asyncio
