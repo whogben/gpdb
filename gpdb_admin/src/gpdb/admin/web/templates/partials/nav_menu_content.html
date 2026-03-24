@@ -30,6 +30,11 @@
             data-nav-link="schemas">
             ☑︎ Schemas
         </a>
+        <a class="nav-link"
+            href="{{ mount_prefix }}{{ web_app.url_path_for('graph_events_page', graph_id=active_graph.id) }}"
+            data-nav-link="events">
+            𐄖 Events
+        </a>
     </div>
     {% endif %}
     <div class="nav-section" data-nav-section="system">

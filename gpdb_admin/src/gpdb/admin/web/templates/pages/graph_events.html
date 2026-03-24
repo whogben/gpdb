@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="dashboard-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Events</p>
+      <h2>{{ current_graph.display_name }}</h2>
+    </div>
+  </div>
+
+  <p class="resource-note">
+    Browse change events in this graph, filter by event kind and type, and navigate
+    to related nodes and edges.
+  </p>
+
+  <ul class="feature-list">
+    <li>{{ events_list.total }} event{{ "" if events_list.total == 1 else "s" }} matched.</li>
+    {% if events_list.total > 0 %}
+    <li>Showing {{ events_list.offset + 1 }}-{{ [events_list.offset + events_list.limit,
+      events_list.total] | min }}.</li>
+    {% endif %}
+  </ul>
+</section>
+
+<section class="dashboard-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Browse</p>
+      <h2>Filters</h2>
+    </div>
+    <button class="button button-secondary" type="button" data-filters-toggle>
+      Show filters
+    </button>
+  </div>
+
+  <article class="resource-card" data-filters-panel hidden>
+    <form class="auth-form" action="{{ web_app.url_path_for('graph_events_page', graph_id=current_graph.id) }}" method="get">
+      <label class="field">
+        <span>Since time (ISO 8601)</span>
+        <input name="since_time" value="{{ filter_form.since_time }}" placeholder="2024-01-01T00:00:00+00:00">
+        <small class="field-hint">Only events after this timestamp are included. Defaults to all-time (earliest events).</small>
+      </label>
+
+      <label class="field">
+        <span>Event kinds</span>
+        <div class="checkbox-group">
+          <label><input type="checkbox" name="node_created" {% if filter_form.node_created %}checked{% endif %}> Node created</label>
+          <label><input type="checkbox" name="node_updated" {% if filter_form.node_updated %}checked{% endif %}> Node updated</label>
+          <label><input type="checkbox" name="node_deleted" {% if filter_form.node_deleted %}checked{% endif %}> Node deleted</label>
+          <label><input type="checkbox" name="node_origin_edge_created" {% if filter_form.node_origin_edge_created %}checked{% endif %}> Origin edge created</label>
+          <label><input type="checkbox" name="node_origin_edge_updated" {% if filter_form.node_origin_edge_updated %}checked{% endif %}> Origin edge updated</label>
+          <label><input type="checkbox" name="node_origin_edge_deleted" {% if filter_form.node_origin_edge_deleted %}checked{% endif %}> Origin edge deleted</label>
+          <label><input type="checkbox" name="node_destination_edge_created" {% if filter_form.node_destination_edge_created %}checked{% endif %}> Destination edge created</label>
+          <label><input type="checkbox" name="node_destination_edge_updated" {% if filter_form.node_destination_edge_updated %}checked{% endif %}> Destination edge updated</label>
+          <label><input type="checkbox" name="node_destination_edge_deleted" {% if filter_form.node_destination_edge_deleted %}checked{% endif %}> Destination edge deleted</label>
+        </div>
+      </label>
+
+      <label class="field">
+        <span>Node types (comma-separated)</span>
+        <input name="node_types" value="{{ filter_form.node_types | join(', ') }}" placeholder="e.g. user, task*">
+        <small class="field-hint">Optional. Use * for wildcard matching.</small>
+      </label>
+
+      <label class="field">
+        <span>Edge types (comma-separated)</span>
+        <input name="edge_types" value="{{ filter_form.edge_types | join(', ') }}" placeholder="e.g. follows, related*">
+        <small class="field-hint">Optional. Use * for wildcard matching.</small>
+      </label>
+
+      <label class="field">
+        <span>Origin types (comma-separated)</span>
+        <input name="origin_types" value="{{ filter_form.origin_types | join(', ') }}" placeholder="e.g. user, task*">
+        <small class="field-hint">Optional. Use * for wildcard matching.</small>
+      </label>
+
+      <label class="field">
+        <span>Destination types (comma-separated)</span>
+        <input name="destination_types" value="{{ filter_form.destination_types | join(', ') }}" placeholder="e.g. user, task*">
+        <small class="field-hint">Optional. Use * for wildcard matching.</small>
+      </label>
+
+      <label class="field">
+        <span>Page size</span>
+        <select name="limit">
+          {% for option in (10, 20, 50, 100) %}
+          <option value="{{ option }}" {% if filter_form.limit == option %}selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <input type="hidden" name="offset" value="0">
+      <div class="button-row">
+        <button class="button" type="submit">Apply filters</button>
+        <a class="button button-secondary" href="{{ clear_filters_url }}">Clear</a>
+      </div>
+    </form>
+  </article>
+</section>
+
+<section class="dashboard-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">Results</p>
+      <h2>Event list</h2>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    {% for event in events_list["items"] %}
+    <article class="resource-card">
+      <div class="resource-header">
+        <div>
+          <h3>{{ event.kind }}</h3>
+          <p class="resource-subtitle">{{ event.occurred_at }}</p>
+        </div>
+      </div>
+      <dl class="resource-meta">
+        {% if event.node_id %}
+        <div>
+          <dt>Node</dt>
+          <dd>
+            <a href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_detail_page', graph_id=current_graph.id, node_id=event.node_id) }}">
+              {{ event.node_id }}
+            </a>
+            {% if event.node_type %}({{ event.node_type }}){% endif %}
+          </dd>
+        </div>
+        {% endif %}
+        {% if event.edge_id %}
+        <div>
+          <dt>Edge</dt>
+          <dd>
+            <a href="{{ mount_prefix }}{{ web_app.url_path_for('graph_edge_detail_page', graph_id=current_graph.id, edge_id=event.edge_id) }}">
+              {{ event.edge_id }}
+            </a>
+            {% if event.edge_type %}({{ event.edge_type }}){% endif %}
+          </dd>
+        </div>
+        {% endif %}
+        {% if event.source_id %}
+        <div>
+          <dt>Source</dt>
+          <dd>
+            <a href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_detail_page', graph_id=current_graph.id, node_id=event.source_id) }}">
+              {{ event.source_id }}
+            </a>
+            {% if event.source_node_type %}({{ event.source_node_type }}){% endif %}
+          </dd>
+        </div>
+        {% endif %}
+        {% if event.target_id %}
+        <div>
+          <dt>Target</dt>
+          <dd>
+            <a href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_detail_page', graph_id=current_graph.id, node_id=event.target_id) }}">
+              {{ event.target_id }}
+            </a>
+            {% if event.target_node_type %}({{ event.target_node_type }}){% endif %}
+          </dd>
+        </div>
+        {% endif %}
+      </dl>
+    </article>
+    {% else %}
+    <article class="resource-card resource-card-empty">
+      <h3>No events matched</h3>
+      <p class="resource-note">
+        Adjust the current filters or since_time to see events.
+      </p>
+    </article>
+    {% endfor %}
+  </div>
+
+  {% if previous_url or next_url %}
+  <div class="button-row">
+    {% if previous_url %}
+    <a class="button button-secondary" href="{{ previous_url }}">Previous page</a>
+    {% endif %}
+    {% if next_url %}
+    <a class="button button-secondary" href="{{ next_url }}">Next page</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+{% include 'partials/filters_toggle_script.html' %}
+{% include 'partials/info_strap_from_params.html' %}
+{% endblock %}

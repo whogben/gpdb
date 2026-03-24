@@ -1,0 +1,11 @@
+<script>
+  // Show info strap on page load if error/success query params exist
+  const urlParams = new URLSearchParams(window.location.search);
+  const error = urlParams.get('error');
+  const success = urlParams.get('success');
+  if (error) {
+    showInfoStrap(error, 'error');
+  } else if (success) {
+    showInfoStrap(success, 'success');
+  }
+</script>
