@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from gpdb.admin.graph_content import (
+    GraphChangeEventFilter,
     GraphEdgeCreateParam,
     GraphEdgeUpdateParam,
     GraphNodeCreateParam,
@@ -58,6 +60,25 @@ class SchemaIdentifierParams(BaseModel):
 
 class GraphOverviewParams(GraphIdParams):
     """Parameters for getting a graph overview."""
+
+
+class GraphChangeEventsListParams(BaseModel):
+    """Parameters for listing graph change events since one timestamp."""
+
+    graph_id: str = Field(..., description="Graph ID.")
+    since_time: datetime = Field(
+        ...,
+        description=(
+            "Lower bound timestamp for changes. Only rows with updated_at greater "
+            "than this value are included."
+        ),
+    )
+    event_filter: GraphChangeEventFilter | None = Field(
+        None,
+        description="Optional event filter for kinds and schema type patterns.",
+    )
+    limit: int = Field(default=50, description="Maximum number of results to return.")
+    offset: int = Field(default=0, description="Number of results to skip.")
 
 
 class GraphSchemaListParams(GraphIdParams):

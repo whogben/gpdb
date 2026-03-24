@@ -306,6 +306,57 @@ class GraphEdgeDetail(BaseModel):
         return self.edge_record
 
 
+class GraphChangeEventFilter(BaseModel):
+    """Event-kind and type filters for graph change polling."""
+
+    node_created: bool | None = None
+    node_updated: bool | None = None
+    node_deleted: bool | None = None
+    node_origin_edge_created: bool | None = None
+    node_origin_edge_updated: bool | None = None
+    node_origin_edge_deleted: bool | None = None
+    node_destination_edge_created: bool | None = None
+    node_destination_edge_updated: bool | None = None
+    node_destination_edge_deleted: bool | None = None
+    node_types: list[str] | None = None
+    edge_types: list[str] | None = None
+    origin_types: list[str] | None = None
+    destination_types: list[str] | None = None
+
+
+class GraphChangeEventRecord(BaseModel):
+    """Stable change-event payload returned by admin graph-content APIs."""
+
+    kind: str
+    table_prefix: str
+    occurred_at: str
+    node_id: str | None = None
+    node_type: str | None = None
+    edge_id: str | None = None
+    edge_type: str | None = None
+    source_id: str | None = None
+    target_id: str | None = None
+    source_node_type: str | None = None
+    target_node_type: str | None = None
+
+
+class GraphChangeEventFilters(BaseModel):
+    """Current event polling filters echoed back to callers."""
+
+    since_time: str
+    event_filter: GraphChangeEventFilter = Field(default_factory=GraphChangeEventFilter)
+
+
+class GraphChangeEventList(BaseModel):
+    """List response for graph change events."""
+
+    items: list[GraphChangeEventRecord] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+    filters: GraphChangeEventFilters
+
+
 class GraphSchemaDeleteResult(BaseModel):
     """Result of deleting a graph schema - only the name is returned."""
 

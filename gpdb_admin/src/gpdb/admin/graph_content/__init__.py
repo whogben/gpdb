@@ -19,6 +19,10 @@ from gpdb.admin.graph_content.exceptions import (
 
 # Re-export models
 from gpdb.admin.graph_content.models import (
+    GraphChangeEventFilter,
+    GraphChangeEventFilters,
+    GraphChangeEventList,
+    GraphChangeEventRecord,
     GraphContentSummary,
     GraphEdgeCreateParam,
     GraphEdgeDeleteResult,
@@ -55,7 +59,7 @@ from gpdb.admin.graph_content.models import (
 )
 
 # Import operation modules
-from gpdb.admin.graph_content import edges, graphs, instances, nodes, schemas
+from gpdb.admin.graph_content import edges, events, graphs, instances, nodes, schemas
 
 
 class GraphContentService:
@@ -112,6 +116,9 @@ class GraphContentService:
     delete_graph_edges = edges.delete_graph_edges
     get_graph_viewer_data = edges.get_graph_viewer_data
 
+    # Event operations
+    list_graph_change_events = events.list_graph_change_events
+
 
 __all__ = [
     # Exceptions
@@ -123,6 +130,10 @@ __all__ = [
     "GraphContentValidationError",
     # Models
     "GraphContentSummary",
+    "GraphChangeEventFilter",
+    "GraphChangeEventFilters",
+    "GraphChangeEventList",
+    "GraphChangeEventRecord",
     "GraphOverview",
     "GraphSchemaUsage",
     "GraphSchemaRecord",

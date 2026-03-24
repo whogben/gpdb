@@ -10,6 +10,7 @@ from toolaccess import (
 
 from gpdb.admin.context import _call_graph_content_from_context
 from gpdb.admin.graph_content import (
+    GraphChangeEventList,
     GraphDetail,
     GraphEdgeDeleteResult,
     GraphEdgeDetail,
@@ -39,6 +40,7 @@ from gpdb.admin.tools.graph_params import (
     EdgeListParams,
     EdgeUpdateParams,
     GraphCreateParams,
+    GraphChangeEventsListParams,
     GraphEdgesCreateParams,
     GraphEdgesDeleteParams,
     GraphEdgesGetParams,
@@ -79,6 +81,27 @@ from toolaccess import InvocationContext
 def _build_graph_content_service(services: AdminServices) -> ToolService:
     """Build graph-content tools once and expose them on all surfaces."""
     service = ToolService("admin-graph")
+
+    @service.tool(
+        name="graph_change_events_list",
+        surfaces=_graph_surface_specs(),
+        access=GRAPH_TOOL_ACCESS,
+    )
+    async def graph_change_events_list(
+        params: GraphChangeEventsListParams,
+        ctx: InvocationContext = inject_context(),
+    ) -> GraphChangeEventList:
+        """List graph change events for the authenticated caller."""
+        return await _call_graph_content_from_context(
+            services,
+            "list_graph_change_events",
+            ctx,
+            graph_id=params.graph_id,
+            since_time=params.since_time,
+            event_filter=params.event_filter,
+            limit=params.limit,
+            offset=params.offset,
+        )
 
     @service.tool(
         name="graph_overview",
