@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select, update
 
 from gpdb.conversions import (
     _edge_upsert_to_orm,
@@ -88,14 +88,25 @@ class EdgeMixin:
                 )
             edges_to_process.append(edge)
 
+        # Validate that new edges (not updates) have both endpoints specified
+        for edge in edges_to_process:
+            if edge.id is None:
+                # This is a create operation - require both source_id and target_id
+                if edge.source_id is None or edge.target_id is None:
+                    raise ValueError(
+                        "Edge creation requires both source_id and target_id to be specified"
+                    )
+
         # Perform all operations atomically in a single transaction
         for attempt in range(_ID_MAX_COLLISION_ATTEMPTS):
             try:
                 async with self._get_session() as session:
                     all_nt_ids: set[str] = set()
                     for edge in edges_to_process:
-                        all_nt_ids.add(edge.source_id)
-                        all_nt_ids.add(edge.target_id)
+                        if edge.source_id:
+                            all_nt_ids.add(edge.source_id)
+                        if edge.target_id:
+                            all_nt_ids.add(edge.target_id)
                     if all_nt_ids:
                         nd_res = await session.execute(
                             select(self._Node).where(self._Node.id.in_(all_nt_ids))
@@ -106,6 +117,9 @@ class EdgeMixin:
                                 ("source", edge.source_id),
                                 ("target", edge.target_id),
                             ):
+                                # Skip null endpoints
+                                if nid is None:
+                                    continue
                                 nn = live_nodes.get(nid)
                                 if nn is None or nn.deleted_at is not None:
                                     raise ValueError(
@@ -151,6 +165,25 @@ class EdgeMixin:
                             # This was a create, need to refresh and convert
                             await session.refresh(result)
                             final_results.append(_edge_orm_to_read(result))
+
+                    # Collect all node IDs that need updated_at bumped
+                    nodes_to_update = set()
+                    for er, was_create in zip(final_results, edge_was_create):
+                        if er.source_id:
+                            nodes_to_update.add(er.source_id)
+                        if er.target_id:
+                            nodes_to_update.add(er.target_id)
+                        
+                        # If this was an update, check if source/target changed
+                        if not was_create and er.id in existing_by_id:
+                            existing = existing_by_id[er.id]
+                            if existing.source_id and existing.source_id != er.source_id:
+                                nodes_to_update.add(existing.source_id)
+                            if existing.target_id and existing.target_id != er.target_id:
+                                nodes_to_update.add(existing.target_id)
+                    
+                    # Bump updated_at on all affected nodes
+                    await self._bump_node_updated_at(session, nodes_to_update)
 
                     prefix = self.table_prefix
                     evs: list[GraphEvent] = []
@@ -235,6 +268,21 @@ class EdgeMixin:
             f"{_ID_MAX_COLLISION_ATTEMPTS} attempts."
         )
 
+    async def _bump_node_updated_at(
+        self, session: Any, node_ids: set[str]
+    ) -> None:
+        """Bump updated_at on all non-deleted nodes in node_ids."""
+        if not node_ids:
+            return
+        now = datetime.now(timezone.utc)
+        await session.execute(
+            update(self._Node)
+            .where(self._Node.id.in_(node_ids))
+            .where(self._Node.deleted_at.is_(None))
+            .values(updated_at=now)
+        )
+        await session.flush()
+
     async def get_edges(
         self, ids: list[str], *, include_deleted: bool = False
     ) -> list[EdgeRead]:
@@ -316,6 +364,7 @@ class EdgeMixin:
                 orm.deleted_at = now
                 orm.data = {}
             await session.flush()
+            await self._bump_node_updated_at(session, nt_ids)
             for orm in orms:
                 await session.refresh(orm)
 

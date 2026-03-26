@@ -68,8 +68,8 @@ class EdgeUpsert(BaseModel):
 
     id: str | None = None
     type: str = "__default__"
-    source_id: str
-    target_id: str
+    source_id: str | None = None
+    target_id: str | None = None
     data: Dict[str, Any] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
 

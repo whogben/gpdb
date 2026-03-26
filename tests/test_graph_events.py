@@ -569,3 +569,39 @@ async def test_update_event_listener_filter(db: GPGraph):
     db.update_event_listener(lid, filter=EventFilter(node_updated=True))
     await db.set_nodes([NodeUpsert(id=n.id, type="__default__", data={"z": 1})])
     assert len(received) == 1
+
+
+@pytest.mark.asyncio
+async def test_change_events_includes_edge_affected_nodes(db: GPGraph):
+    # Create two nodes and record their initial state
+    node_a = (await db.set_nodes([NodeUpsert(type="__default__", data={"name": "a"})]))[0]
+    node_b = (await db.set_nodes([NodeUpsert(type="__default__", data={"name": "b"})]))[0]
+
+    # Get initial state using list_change_events_since
+    t0 = datetime.now(timezone.utc) - timedelta(seconds=1)
+    initial_page = await db.list_change_events_since(t0, EventFilter(), limit=500, offset=0)
+    initial_node_ids = {e.node_id for e in initial_page.items if hasattr(e, "node_id")}
+    assert node_a.id in initial_node_ids
+    assert node_b.id in initial_node_ids
+
+    # Create an edge between the two nodes
+    edge = (
+        await db.set_edges(
+            [EdgeUpsert(type="__default__", source_id=node_a.id, target_id=node_b.id, data={})]
+        )
+    )[0]
+
+    # Query change events again with the timestamp from before edge creation
+    after_edge_page = await db.list_change_events_since(t0, EventFilter(), limit=500, offset=0)
+
+    # Verify that both nodes appear in the change events
+    # (because their updated_at was bumped by the edge creation)
+    node_events = [e for e in after_edge_page.items if hasattr(e, "node_id")]
+    node_ids_after = {e.node_id for e in node_events}
+    assert node_a.id in node_ids_after
+    assert node_b.id in node_ids_after
+
+    # Verify that the edge also appears in the change events
+    edge_events = [e for e in after_edge_page.items if hasattr(e, "edge_id")]
+    edge_ids_after = {e.edge_id for e in edge_events}
+    assert edge.id in edge_ids_after

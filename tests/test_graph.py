@@ -447,6 +447,331 @@ async def test_set_edges_bulk_update(db: GPGraph):
 
 
 @pytest.mark.asyncio
+async def test_edge_create_bumps_nodes(db: GPGraph):
+    """
+    Test that creating an edge bumps the updated_at timestamp on both source and target nodes.
+    """
+    from datetime import timedelta
+
+    # Create two nodes with initial updated_at timestamps
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__", data={"label": "node1"})])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__", data={"label": "node2"})])
+    n1 = n1_list[0]
+    n2 = n2_list[0]
+
+    # Record the initial updated_at values
+    initial_n1_updated_at = n1.updated_at
+    initial_n2_updated_at = n2.updated_at
+
+    # Create an edge between the two nodes
+    edge = (await db.set_edges([EdgeUpsert(source_id=n1.id, target_id=n2.id, type="__default__", data={"weight": 5})]))[0]
+
+    # Fetch the updated nodes
+    updated_n1_list = await db.get_nodes([n1.id])
+    updated_n2_list = await db.get_nodes([n2.id])
+    updated_n1 = updated_n1_list[0]
+    updated_n2 = updated_n2_list[0]
+
+    # Verify that both nodes' updated_at timestamps have changed (are greater than initial values)
+    assert updated_n1.updated_at > initial_n1_updated_at, "Source node updated_at should be bumped"
+    assert updated_n2.updated_at > initial_n2_updated_at, "Target node updated_at should be bumped"
+
+    # Verify that the edge's created_at matches the nodes' updated_at (within 1 second tolerance)
+    time_tolerance = timedelta(seconds=1)
+    assert abs((updated_n1.updated_at - edge.created_at).total_seconds()) <= time_tolerance.total_seconds(), \
+        "Source node updated_at should match edge created_at"
+    assert abs((updated_n2.updated_at - edge.created_at).total_seconds()) <= time_tolerance.total_seconds(), \
+        "Target node updated_at should match edge created_at"
+
+
+@pytest.mark.asyncio
+async def test_edge_update_bumps_nodes(db: GPGraph):
+    """
+    Test that updating an edge bumps the updated_at timestamp on both source and target nodes.
+    """
+    from datetime import timedelta
+
+    # Create two nodes and an edge between them
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__", data={"label": "node1"})])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__", data={"label": "node2"})])
+    n1 = n1_list[0]
+    n2 = n2_list[0]
+
+    edge = (await db.set_edges([EdgeUpsert(source_id=n1.id, target_id=n2.id, type="__default__", data={"weight": 5})]))[0]
+
+    # Record the initial updated_at values of both nodes
+    initial_n1_updated_at = n1.updated_at
+    initial_n2_updated_at = n2.updated_at
+
+    # Update the edge by changing the data field
+    updated_edge = (await db.set_edges([EdgeUpsert(
+        id=edge.id,
+        source_id=n1.id,
+        target_id=n2.id,
+        type="__default__",
+        data={"weight": 10}
+    )]))[0]
+
+    # Fetch the updated nodes
+    updated_n1_list = await db.get_nodes([n1.id])
+    updated_n2_list = await db.get_nodes([n2.id])
+    updated_n1 = updated_n1_list[0]
+    updated_n2 = updated_n2_list[0]
+
+    # Verify that both nodes' updated_at timestamps have changed (are greater than initial values)
+    assert updated_n1.updated_at > initial_n1_updated_at, "Source node updated_at should be bumped"
+    assert updated_n2.updated_at > initial_n2_updated_at, "Target node updated_at should be bumped"
+
+    # Verify that the edge's updated_at matches the nodes' updated_at (within 1 second tolerance)
+    time_tolerance = timedelta(seconds=1)
+    assert abs((updated_n1.updated_at - updated_edge.updated_at).total_seconds()) <= time_tolerance.total_seconds(), \
+        "Source node updated_at should match edge updated_at"
+    assert abs((updated_n2.updated_at - updated_edge.updated_at).total_seconds()) <= time_tolerance.total_seconds(), \
+        "Target node updated_at should match edge updated_at"
+
+
+@pytest.mark.asyncio
+async def test_edge_update_changed_endpoints_bumps_all_nodes(db: GPGraph):
+    """
+    Test that updating an edge with changed source and target bumps the updated_at 
+    timestamp on all four nodes (old source, old target, new source, new target).
+    """
+    from datetime import timedelta
+
+    # Create four nodes
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__", data={"label": "node1"})])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__", data={"label": "node2"})])
+    n3_list = await db.set_nodes([NodeUpsert(type="__default__", data={"label": "node3"})])
+    n4_list = await db.set_nodes([NodeUpsert(type="__default__", data={"label": "node4"})])
+    n1 = n1_list[0]
+    n2 = n2_list[0]
+    n3 = n3_list[0]
+    n4 = n4_list[0]
+
+    # Create an edge between n1 and n2
+    edge = (await db.set_edges([EdgeUpsert(source_id=n1.id, target_id=n2.id, type="__default__", data={"weight": 5})]))[0]
+
+    # Record the initial updated_at values of all four nodes
+    initial_n1_updated_at = n1.updated_at
+    initial_n2_updated_at = n2.updated_at
+    initial_n3_updated_at = n3.updated_at
+    initial_n4_updated_at = n4.updated_at
+
+    # Update the edge to connect n3 and n4 instead (changing both source_id and target_id)
+    updated_edge = (await db.set_edges([EdgeUpsert(
+        id=edge.id,
+        source_id=n3.id,
+        target_id=n4.id,
+        type="__default__",
+        data={"weight": 10}
+    )]))[0]
+
+    # Fetch all four nodes
+    updated_n1_list = await db.get_nodes([n1.id])
+    updated_n2_list = await db.get_nodes([n2.id])
+    updated_n3_list = await db.get_nodes([n3.id])
+    updated_n4_list = await db.get_nodes([n4.id])
+    updated_n1 = updated_n1_list[0]
+    updated_n2 = updated_n2_list[0]
+    updated_n3 = updated_n3_list[0]
+    updated_n4 = updated_n4_list[0]
+
+    # Verify that all four nodes' updated_at timestamps have changed (are greater than initial values)
+    assert updated_n1.updated_at > initial_n1_updated_at, "Old source node updated_at should be bumped"
+    assert updated_n2.updated_at > initial_n2_updated_at, "Old target node updated_at should be bumped"
+    assert updated_n3.updated_at > initial_n3_updated_at, "New source node updated_at should be bumped"
+    assert updated_n4.updated_at > initial_n4_updated_at, "New target node updated_at should be bumped"
+
+    # Verify that all four nodes have the same updated_at (within 1 second tolerance)
+    time_tolerance = timedelta(seconds=1)
+    assert abs((updated_n1.updated_at - updated_edge.updated_at).total_seconds()) <= time_tolerance.total_seconds(), \
+        "Old source node updated_at should match edge updated_at"
+    assert abs((updated_n2.updated_at - updated_edge.updated_at).total_seconds()) <= time_tolerance.total_seconds(), \
+        "Old target node updated_at should match edge updated_at"
+    assert abs((updated_n3.updated_at - updated_edge.updated_at).total_seconds()) <= time_tolerance.total_seconds(), \
+        "New source node updated_at should match edge updated_at"
+    assert abs((updated_n4.updated_at - updated_edge.updated_at).total_seconds()) <= time_tolerance.total_seconds(), \
+        "New target node updated_at should match edge updated_at"
+
+
+@pytest.mark.asyncio
+async def test_edge_delete_bumps_nodes(db: GPGraph):
+    """
+    Test that deleting an edge bumps the updated_at timestamp on both source and target nodes.
+    """
+    from datetime import timedelta
+
+    # Create two nodes and an edge between them
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__", data={"label": "node1"})])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__", data={"label": "node2"})])
+    n1 = n1_list[0]
+    n2 = n2_list[0]
+
+    edge = (await db.set_edges([EdgeUpsert(source_id=n1.id, target_id=n2.id, type="__default__", data={"weight": 5})]))[0]
+
+    # Record the initial updated_at values of both nodes
+    initial_n1_updated_at = n1.updated_at
+    initial_n2_updated_at = n2.updated_at
+
+    # Delete the edge
+    await db.delete_edges([edge.id])
+
+    # Fetch the updated nodes
+    updated_n1_list = await db.get_nodes([n1.id])
+    updated_n2_list = await db.get_nodes([n2.id])
+    updated_n1 = updated_n1_list[0]
+    updated_n2 = updated_n2_list[0]
+
+    # Verify that both nodes' updated_at timestamps have changed (are greater than initial values)
+    assert updated_n1.updated_at > initial_n1_updated_at, "Source node updated_at should be bumped"
+    assert updated_n2.updated_at > initial_n2_updated_at, "Target node updated_at should be bumped"
+
+    # Verify that the edge's deleted_at matches the nodes' updated_at (within 1 second tolerance)
+    # Fetch the edge to get its deleted_at timestamp (include_deleted=True to get tombstoned edges)
+    deleted_edge_list = await db.get_edges([edge.id], include_deleted=True)
+    deleted_edge = deleted_edge_list[0]
+    
+    time_tolerance = timedelta(seconds=1)
+    assert abs((updated_n1.updated_at - deleted_edge.deleted_at).total_seconds()) <= time_tolerance.total_seconds(), \
+        "Source node updated_at should match edge deleted_at"
+    assert abs((updated_n2.updated_at - deleted_edge.deleted_at).total_seconds()) <= time_tolerance.total_seconds(), \
+        "Target node updated_at should match edge deleted_at"
+
+
+@pytest.mark.asyncio
+async def test_batch_edge_operations_bump_all_nodes(db: GPGraph):
+    """
+    Test that batch edge operations correctly bump all affected nodes.
+    Creates multiple nodes, performs multiple edge operations (create, create, update, delete),
+    and verifies that all affected nodes have their updated_at bumped while unaffected nodes
+    do not change.
+    """
+    from datetime import timedelta
+
+    # Create six nodes
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__", data={"label": "node1"})])
+    n2_list = await db.set_nodes([NodeUpsert(type="__default__", data={"label": "node2"})])
+    n3_list = await db.set_nodes([NodeUpsert(type="__default__", data={"label": "node3"})])
+    n4_list = await db.set_nodes([NodeUpsert(type="__default__", data={"label": "node4"})])
+    n5_list = await db.set_nodes([NodeUpsert(type="__default__", data={"label": "node5"})])
+    n6_list = await db.set_nodes([NodeUpsert(type="__default__", data={"label": "node6"})])
+    n1 = n1_list[0]
+    n2 = n2_list[0]
+    n3 = n3_list[0]
+    n4 = n4_list[0]
+    n5 = n5_list[0]
+    n6 = n6_list[0]
+
+    # Record the initial updated_at values of all nodes
+    initial_n1_updated_at = n1.updated_at
+    initial_n2_updated_at = n2.updated_at
+    initial_n3_updated_at = n3.updated_at
+    initial_n4_updated_at = n4.updated_at
+    initial_n5_updated_at = n5.updated_at
+    initial_n6_updated_at = n6.updated_at
+
+    # Perform batch edge operations:
+    # 1. Create edge between n1 and n2
+    edge1 = (await db.set_edges([EdgeUpsert(
+        source_id=n1.id,
+        target_id=n2.id,
+        type="__default__",
+        data={"weight": 5}
+    )]))[0]
+
+    # 2. Create edge between n3 and n4
+    edge2 = (await db.set_edges([EdgeUpsert(
+        source_id=n3.id,
+        target_id=n4.id,
+        type="__default__",
+        data={"weight": 10}
+    )]))[0]
+
+    # 3. Update edge between n1 and n2 (change data)
+    updated_edge1 = (await db.set_edges([EdgeUpsert(
+        id=edge1.id,
+        source_id=n1.id,
+        target_id=n2.id,
+        type="__default__",
+        data={"weight": 15}
+    )]))[0]
+
+    # 4. Delete edge between n3 and n4
+    await db.delete_edges([edge2.id])
+
+    # Fetch all six nodes
+    updated_n1_list = await db.get_nodes([n1.id])
+    updated_n2_list = await db.get_nodes([n2.id])
+    updated_n3_list = await db.get_nodes([n3.id])
+    updated_n4_list = await db.get_nodes([n4.id])
+    updated_n5_list = await db.get_nodes([n5.id])
+    updated_n6_list = await db.get_nodes([n6.id])
+    updated_n1 = updated_n1_list[0]
+    updated_n2 = updated_n2_list[0]
+    updated_n3 = updated_n3_list[0]
+    updated_n4 = updated_n4_list[0]
+    updated_n5 = updated_n5_list[0]
+    updated_n6 = updated_n6_list[0]
+
+    # Verify that affected nodes (n1, n2, n3, n4) have their updated_at bumped
+    assert updated_n1.updated_at > initial_n1_updated_at, "Node n1 updated_at should be bumped (edge create + update)"
+    assert updated_n2.updated_at > initial_n2_updated_at, "Node n2 updated_at should be bumped (edge create + update)"
+    assert updated_n3.updated_at > initial_n3_updated_at, "Node n3 updated_at should be bumped (edge create + delete)"
+    assert updated_n4.updated_at > initial_n4_updated_at, "Node n4 updated_at should be bumped (edge create + delete)"
+
+    # Verify that unaffected nodes (n5, n6) do NOT have their updated_at changed
+    assert updated_n5.updated_at == initial_n5_updated_at, "Node n5 updated_at should NOT be bumped (unaffected)"
+    assert updated_n6.updated_at == initial_n6_updated_at, "Node n6 updated_at should NOT be bumped (unaffected)"
+
+    # Verify that affected nodes' updated_at matches the edge timestamps (within 1 second tolerance)
+    time_tolerance = timedelta(seconds=1)
+    assert abs((updated_n1.updated_at - updated_edge1.updated_at).total_seconds()) <= time_tolerance.total_seconds(), \
+        "Node n1 updated_at should match edge1 updated_at"
+    assert abs((updated_n2.updated_at - updated_edge1.updated_at).total_seconds()) <= time_tolerance.total_seconds(), \
+        "Node n2 updated_at should match edge1 updated_at"
+
+    # Fetch the deleted edge to get its deleted_at timestamp
+    deleted_edge2_list = await db.get_edges([edge2.id], include_deleted=True)
+    deleted_edge2 = deleted_edge2_list[0]
+    assert abs((updated_n3.updated_at - deleted_edge2.deleted_at).total_seconds()) <= time_tolerance.total_seconds(), \
+        "Node n3 updated_at should match edge2 deleted_at"
+    assert abs((updated_n4.updated_at - deleted_edge2.deleted_at).total_seconds()) <= time_tolerance.total_seconds(), \
+        "Node n4 updated_at should match edge2 deleted_at"
+
+
+@pytest.mark.asyncio
+async def test_self_referential_edge_bumped_once(db: GPGraph):
+    """
+    Test that creating a self-referential edge (where source_id == target_id) only bumps
+    the node once, not twice. This verifies that the implementation correctly uses a set
+    to deduplicate node IDs when collecting which nodes need their updated_at bumped.
+    """
+    from datetime import timedelta
+
+    # Create a single node
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__", data={"label": "node1"})])
+    n1 = n1_list[0]
+
+    # Record the initial updated_at value of n1
+    initial_n1_updated_at = n1.updated_at
+
+    # Create a self-referential edge where source_id = n1.id and target_id = n1.id
+    edge = (await db.set_edges([EdgeUpsert(source_id=n1.id, target_id=n1.id, type="__default__", data={"weight": 5})]))[0]
+
+    # Fetch the updated node
+    updated_n1_list = await db.get_nodes([n1.id])
+    updated_n1 = updated_n1_list[0]
+
+    # Verify that n1's updated_at is bumped (changed)
+    assert updated_n1.updated_at > initial_n1_updated_at, "Node updated_at should be bumped"
+
+    # Verify that the edge's created_at matches n1's updated_at (within 1 second tolerance)
+    time_tolerance = timedelta(seconds=1)
+    assert abs((updated_n1.updated_at - edge.created_at).total_seconds()) <= time_tolerance.total_seconds(), \
+        "Node updated_at should match edge created_at"
+
+
+@pytest.mark.asyncio
 async def test_set_edges_duplicate_ids(db: GPGraph):
     """
     Test that duplicate edge ids are rejected.
@@ -463,6 +788,23 @@ async def test_set_edges_duplicate_ids(db: GPGraph):
     ]
     with pytest.raises(ValueError, match="Duplicate edge ids provided"):
         await db.set_edges(edges)
+
+
+@pytest.mark.asyncio
+async def test_set_edges_requires_both_endpoints(db: GPGraph):
+    """
+    Test that creating an edge without both source_id and target_id raises ValueError.
+    """
+    n1_list = await db.set_nodes([NodeUpsert(type="__default__", data={"label": "node1"})])
+    n1 = n1_list[0]
+
+    # Test missing target_id
+    with pytest.raises(ValueError, match="Edge creation requires both source_id and target_id"):
+        await db.set_edges([EdgeUpsert(source_id=n1.id, target_id=None, type="__default__", data={})])
+
+    # Test missing source_id
+    with pytest.raises(ValueError, match="Edge creation requires both source_id and target_id"):
+        await db.set_edges([EdgeUpsert(source_id=None, target_id=n1.id, type="__default__", data={})])
 
 
 @pytest.mark.asyncio
