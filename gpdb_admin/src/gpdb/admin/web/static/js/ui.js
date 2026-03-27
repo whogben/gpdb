@@ -260,12 +260,51 @@
         initFilterBar();
     }
 
+    // --- Click-to-copy ID utility ---
+
+    function copyToClipboard(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(function () {
+                showInfoStrap("Copied!", "success");
+            });
+        } else {
+            // Fallback for insecure contexts
+            var ta = document.createElement("textarea");
+            ta.value = text;
+            ta.style.position = "fixed";
+            ta.style.opacity = "0";
+            document.body.appendChild(ta);
+            ta.select();
+            try {
+                document.execCommand("copy");
+                showInfoStrap("Copied!", "success");
+            } catch (e) {
+                // silent
+            }
+            document.body.removeChild(ta);
+        }
+    }
+
+    function initCopyId() {
+        document.addEventListener("click", function (e) {
+            var el = e.target.closest("[data-copy-id]");
+            if (!el) return;
+            e.preventDefault();
+            var text = el.getAttribute("data-copy-id") || el.textContent;
+            copyToClipboard(text);
+        });
+    }
+
     window.showInfoStrap = showInfoStrap;
     window.hideInfoStrap = hideInfoStrap;
 
     if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", init);
+        document.addEventListener("DOMContentLoaded", function () {
+            init();
+            initCopyId();
+        });
     } else {
         init();
+        initCopyId();
     }
 })();

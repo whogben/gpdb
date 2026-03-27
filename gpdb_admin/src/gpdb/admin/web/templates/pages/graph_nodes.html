@@ -1,6 +1,10 @@
 {% extends "base.html" %}
 
 {% block titlebar_right %}
+{% if current_user.is_owner %}
+<a class="titlebar-btn titlebar-btn--right"
+  href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_create_page', graph_id=current_graph.id) }}">New</a>
+{% endif %}
 <button class="titlebar-btn titlebar-btn--right" data-filter-toggle type="button" aria-label="Toggle filters">⚙</button>
 {% endblock %}
 
@@ -16,64 +20,67 @@
       <h2>Node list</h2>
       <p class="resource-note">{{ node_list.total }} node{{ "" if node_list.total == 1 else "s" }} matched · Showing {{ node_list.offset + 1 if node_list.total else 0 }}–{{ [node_list.offset + node_list.limit, node_list.total] | min }}</p>
     </div>
-    {% if current_user.is_owner %}
-    <a class="button"
-      href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_create_page', graph_id=current_graph.id) }}">New
-      node</a>
-    {% endif %}
   </div>
 
-  <div class="card-grid">
-    {% for node in node_list["items"] %}
-    <article class="resource-card">
-      <div class="resource-header">
-        <div>
-          <h3>{{ node.name or node.id }}</h3>
-          <p class="resource-subtitle">{{ node.type }}</p>
-        </div>
-      </div>
-      <dl class="resource-meta">
-        <div>
-          <dt>Schema</dt>
-          <dd>{{ node.type or "none" }}</dd>
-        </div>
-        <div>
-          <dt>Parent</dt>
-          <dd>{{ node.parent_id or "none" }}</dd>
-        </div>
-        <div>
-          <dt>Payload</dt>
-          <dd>{{ node.payload_size }} bytes</dd>
-        </div>
-        <div>
-          <dt>Version</dt>
-          <dd>{{ node.version }}</dd>
-        </div>
-      </dl>
-      {% if node.tags %}
-      <p class="resource-note">Tags: {{ node.tags | join(", ") }}</p>
-      {% endif %}
-      <div class="button-row">
-        <a class="button button-secondary"
-          href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_detail_page', graph_id=current_graph.id, node_id=node.id) }}">Open</a>
-        {% if current_user.is_owner %}
-        <a class="button button-secondary"
-          href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_edit_page', graph_id=current_graph.id, node_id=node.id) }}">Edit</a>
-        {% endif %}
-      </div>
-    </article>
-    {% else %}
-    <article class="resource-card resource-card-empty">
-      <h3>No nodes matched</h3>
-      <p class="resource-note">
-        Adjust the current filters or create the first node for this graph.
-      </p>
-    </article>
-    {% endfor %}
+  <div class="data-table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Parent</th>
+          <th>Payload</th>
+          <th>Version</th>
+          <th>Tags</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for node in node_list["items"] %}
+        <tr>
+          <td class="data-table__id data-table__id--copy" data-copy-id="{{ node.id }}" title="Click to copy">{{ node.id }}</td>
+          <td>{{ node.name or "—" }}</td>
+          <td>{{ node.type or "—" }}</td>
+          <td class="data-table__muted">{{ node.parent_id or "—" }}</td>
+          <td class="data-table__muted">{{ node.payload_size }} bytes</td>
+          <td>{{ node.version }}</td>
+          <td>
+            {% if node.tags %}
+            <span class="data-table__tags">
+              {% for tag in node.tags %}
+              <span class="data-table__tag">{{ tag }}</span>
+              {% endfor %}
+            </span>
+            {% else %}
+            <span class="data-table__muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="data-table__actions">
+              <a class="data-table__link"
+                href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_detail_page', graph_id=current_graph.id, node_id=node.id) }}">Open</a>
+              {% if current_user.is_owner %}
+              <a class="data-table__link"
+                href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_edit_page', graph_id=current_graph.id, node_id=node.id) }}">Edit</a>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td class="data-table__empty" colspan="8">
+            <h3>No nodes matched</h3>
+            <p class="resource-note">Adjust the current filters or create the first node for this graph.</p>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 
   {% if previous_url or next_url %}
-  <div class="button-row">
+  <div class="button-row" style="margin-top: 1rem;">
     {% if previous_url %}
     <a class="button button-secondary" href="{{ previous_url }}">Previous page</a>
     {% endif %}

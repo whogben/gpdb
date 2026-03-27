@@ -78,74 +78,68 @@
     </div>
   </div>
 
-  <div class="card-grid">
-    {% for event in events_list["items"] %}
-    <article class="resource-card">
-      <div class="resource-header">
-        <div>
-          <h3>{{ event.kind }}</h3>
-          <p class="resource-subtitle">{{ event.occurred_at }}</p>
-        </div>
-      </div>
-      <dl class="resource-meta">
-        {% if event.node_id %}
-        <div>
-          <dt>Node</dt>
-          <dd>
-            <a href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_detail_page', graph_id=current_graph.id, node_id=event.node_id) }}">
-              {{ event.node_id }}
-            </a>
-            {% if event.node_type %}({{ event.node_type }}){% endif %}
-          </dd>
-        </div>
-        {% endif %}
-        {% if event.edge_id %}
-        <div>
-          <dt>Edge</dt>
-          <dd>
-            <a href="{{ mount_prefix }}{{ web_app.url_path_for('graph_edge_detail_page', graph_id=current_graph.id, edge_id=event.edge_id) }}">
-              {{ event.edge_id }}
-            </a>
-            {% if event.edge_type %}({{ event.edge_type }}){% endif %}
-          </dd>
-        </div>
-        {% endif %}
-        {% if event.source_id %}
-        <div>
-          <dt>Source</dt>
-          <dd>
-            <a href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_detail_page', graph_id=current_graph.id, node_id=event.source_id) }}">
-              {{ event.source_id }}
-            </a>
-            {% if event.source_node_type %}({{ event.source_node_type }}){% endif %}
-          </dd>
-        </div>
-        {% endif %}
-        {% if event.target_id %}
-        <div>
-          <dt>Target</dt>
-          <dd>
-            <a href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_detail_page', graph_id=current_graph.id, node_id=event.target_id) }}">
-              {{ event.target_id }}
-            </a>
-            {% if event.target_node_type %}({{ event.target_node_type }}){% endif %}
-          </dd>
-        </div>
-        {% endif %}
-      </dl>
-    </article>
-    {% else %}
-    <article class="resource-card resource-card-empty">
-      <h3>No events matched</h3>
-      <p class="resource-note">
-        Adjust the current filters or since_time to see events.
-      </p>
-    </article>
-    {% endfor %}
+  <div class="data-table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Kind</th>
+          <th>Type</th>
+          <th>Timestamp</th>
+          <th>Node</th>
+          <th>Edge</th>
+          <th>Source</th>
+          <th>Target</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for event in events_list["items"] %}
+        <tr>
+          <td>{{ event.kind }}</td>
+          <td>{{ event.node_type or event.edge_type or "—" }}</td>
+          <td class="data-table__muted">{{ event.occurred_at }}</td>
+          <td>
+            {% if event.node_id %}
+            <a class="data-table__link" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_detail_page', graph_id=current_graph.id, node_id=event.node_id) }}">{{ event.node_id }}</a>
+            {% else %}
+            <span class="data-table__muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if event.edge_id %}
+            <a class="data-table__link" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_edge_detail_page', graph_id=current_graph.id, edge_id=event.edge_id) }}">{{ event.edge_id }}</a>
+            {% else %}
+            <span class="data-table__muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if event.source_id %}
+            <a class="data-table__link" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_detail_page', graph_id=current_graph.id, node_id=event.source_id) }}">{{ event.source_id }}</a>
+            {% else %}
+            <span class="data-table__muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if event.target_id %}
+            <a class="data-table__link" href="{{ mount_prefix }}{{ web_app.url_path_for('graph_node_detail_page', graph_id=current_graph.id, node_id=event.target_id) }}">{{ event.target_id }}</a>
+            {% else %}
+            <span class="data-table__muted">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td class="data-table__empty" colspan="7">
+            <h3>No events matched</h3>
+            <p class="resource-note">Adjust the current filters or since_time to see events.</p>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 
   {% if previous_url or next_url %}
-  <div class="button-row">
+  <div class="button-row" style="margin-top: 1rem;">
     {% if previous_url %}
     <a class="button button-secondary" href="{{ previous_url }}">Previous page</a>
     {% endif %}

@@ -2,6 +2,10 @@
 {% from 'macros/svg_icon_slot.html' import svg_icon_slot %}
 
 {% block titlebar_right %}
+{% if current_user.is_owner %}
+<a class="titlebar-btn titlebar-btn--right"
+  href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_create_page', graph_id=current_graph.id) }}">New</a>
+{% endif %}
 <button class="titlebar-btn titlebar-btn--right" data-filter-toggle type="button" aria-label="Toggle filters">⚙</button>
 {% endblock %}
 
@@ -29,11 +33,6 @@
       <h2>Schema list</h2>
       <p class="resource-note">{{ schema_list.total }} {{ schema_kind }} schema{{ "" if schema_list.total == 1 else "s" }} matched</p>
     </div>
-    {% if current_user.is_owner %}
-    <a class="button"
-      href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_create_page', graph_id=current_graph.id) }}">New
-      schema</a>
-    {% endif %}
   </div>
 
   <div class="schema-kind-switch" role="tablist" aria-label="Schema kind">
@@ -47,43 +46,45 @@
       schemas</a>
   </div>
 
-  <div class="card-grid" style="margin-top: 1.25rem;">
-    {% for schema in schema_list["items"] %}
-    <article class="resource-card">
-      <div class="resource-header">
-        <div>
-          <h3>{{ schema.name }}</h3>
-          <p class="resource-subtitle">{{ schema.kind }} schema · Version {{ schema.version }}</p>
-        </div>
-        {{ svg_icon_slot(schema.svg_icon, 'sm') }}
-      </div>
-      <dl class="resource-meta">
-        <div>
-          <dt>Alias</dt>
-          <dd>{{ schema.alias or '-' }}</dd>
-        </div>
-        <div>
-          <dt>Nodes</dt>
-          <dd>{{ schema.usage.node_count }}</dd>
-        </div>
-        <div>
-          <dt>Edges</dt>
-          <dd>{{ schema.usage.edge_count }}</dd>
-        </div>
-      </dl>
-      <div class="button-row">
-        <a class="button button-secondary"
-          href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_detail_page', graph_id=current_graph.id, schema_name=schema.name, kind=schema.kind) }}">Open</a>
-      </div>
-    </article>
-    {% else %}
-    <article class="resource-card resource-card-empty">
-      <h3>No schemas yet</h3>
-      <p class="resource-note">
-        Create the first schema to start validating graph content from the admin UI or tool surfaces.
-      </p>
-    </article>
-    {% endfor %}
+  <div class="data-table-wrap" style="margin-top: 1.25rem;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th></th>
+          <th>Name</th>
+          <th>Kind</th>
+          <th>Version</th>
+          <th>Nodes</th>
+          <th>Edges</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for schema in schema_list["items"] %}
+        <tr>
+          <td>{{ svg_icon_slot(schema.svg_icon, 'sm') }}</td>
+          <td>{{ schema.name }}</td>
+          <td>{{ schema.kind }}</td>
+          <td>{{ schema.version }}</td>
+          <td>{{ schema.usage.node_count }}</td>
+          <td>{{ schema.usage.edge_count }}</td>
+          <td>
+            <div class="data-table__actions">
+              <a class="data-table__link"
+                href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_detail_page', graph_id=current_graph.id, schema_name=schema.name, kind=schema.kind) }}">Open</a>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td class="data-table__empty" colspan="7">
+            <h3>No schemas yet</h3>
+            <p class="resource-note">Create the first schema to start validating graph content from the admin UI or tool surfaces.</p>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </section>
 {% endblock %}
