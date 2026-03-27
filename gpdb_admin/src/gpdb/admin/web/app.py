@@ -21,6 +21,7 @@ from .routes.pages import router as pages_router
 
 WEB_ROOT = Path(__file__).resolve().parent
 STATIC_DIR = WEB_ROOT / "static"
+GEPHI_LITE_DIR = STATIC_DIR / "gephi-lite"
 
 
 def create_web_app(
@@ -77,6 +78,19 @@ def create_web_app(
     def _serve_static(path: str):
         root = STATIC_DIR.resolve()
         full = (STATIC_DIR / path).resolve()
+        if not full.is_file():
+            raise HTTPException(status_code=404)
+        if full != root and not str(full).startswith(str(root) + os.sep):
+            raise HTTPException(status_code=404)
+        return FileResponse(full)
+
+    # Gephi Lite static assets — same pattern as /static/ for nested mount safety
+    @app.get("/gephi-lite/{path:path}", name="gephi-lite")
+    def _serve_gephi_lite(path: str):
+        root = GEPHI_LITE_DIR.resolve()
+        full = (GEPHI_LITE_DIR / path).resolve()
+        if full.is_dir():
+            full = (full / "index.html").resolve()
         if not full.is_file():
             raise HTTPException(status_code=404)
         if full != root and not str(full).startswith(str(root) + os.sep):

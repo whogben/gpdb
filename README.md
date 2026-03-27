@@ -418,7 +418,7 @@ await graph.set_schemas([schema])
 #### Display Order
 
 The graph viewer displays schema information in this priority order:
-1. **SVG icon** (if set) — on the node body for node schemas; for edge schemas, a small icon sits at the edge midpoint (Cytoscape cannot paint images on the edge line itself)
+1. **SVG icon** (if set) — rendered as a node image via data URI
 2. **Alias** (if set) - displayed as label text
 3. **Schema name** - fallback if neither alias nor icon is set
 

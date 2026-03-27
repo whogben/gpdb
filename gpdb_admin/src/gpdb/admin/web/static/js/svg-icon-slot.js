@@ -1,5 +1,5 @@
 /**
- * Single place to normalize user SVG icons for fixed-size UI slots and Cytoscape.
+ * Single place to normalize user SVG icons for fixed-size UI slots and the graph viewer.
  * - Strips root width/height/x/y so CSS controls size.
  * - Infers viewBox when missing.
  * - Tightens viewBox to painted bounds (getBBox) so loose artboards center correctly.

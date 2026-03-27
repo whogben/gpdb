@@ -50,6 +50,7 @@ class AdminStore:
     get_user_by_id = users.get_user_by_id
     create_initial_owner = users.create_initial_owner
     verify_user_credentials = users.verify_user_credentials
+    update_user_gephi_state = users.update_user_gephi_state
 
     # API key operations
     list_api_keys_for_user = api_keys.list_api_keys_for_user

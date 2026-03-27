@@ -58,7 +58,7 @@
     </div>
 
     <!-- Main Content -->
-    <main class="main-content">
+    <main class="main-content {% block main_extra_class %}{% endblock %}">
       {% block page_messages %}
       {% if error_message %}<p class="form-error">{{ error_message }}</p>{% endif %}
       {% if success_message %}<p class="form-success">{{ success_message }}</p>{% endif %}

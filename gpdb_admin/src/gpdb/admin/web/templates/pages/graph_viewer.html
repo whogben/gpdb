@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 
+{% block main_extra_class %}main-content--graph-viewer{% endblock %}
+
 {% block content %}
+<div class="graph-viewer-page">
 <section class="dashboard-section">
   <div class="section-heading">
     <div>
@@ -49,7 +52,7 @@
         <span>Node limit</span>
         <select name="node_limit">
           {% for option in (50, 100, 200, 500) %}
-          <option value="{{ option }}" {% if filter_params.node_limit==option %}selected{% endif %}{{ option }}
+          <option value="{{ option }}" {% if filter_params.node_limit==option %}selected{% endif %}>{{ option }}
           </option>
           {% endfor %}
         </select>
@@ -86,14 +89,10 @@
   </article>
 </section>
 
-<section class="dashboard-section">
+<section class="dashboard-section dashboard-section--viewer-graph">
   <div class="section-heading">
     <p class="eyebrow">Graph</p>
     <h2>View</h2>
-    <label class="field-inline" style="margin-left: auto; margin-right: 1rem;">
-      <input type="checkbox" id="viewer-live-toggle">
-      <span>Live</span>
-    </label>
   </div>
   <div id="viewer-status" class="resource-note" aria-live="polite">Loading…</div>
 
@@ -108,26 +107,345 @@
         <line x1="3" y1="21" x2="10" y2="14"></line>
       </svg>
     </button>
-    <div id="viewer-cy"></div>
+    <iframe id="viewer-iframe" class="viewer-iframe"></iframe>
   </div>
 </section>
+</div>
 {% endblock %}
 
 {% block scripts %}
-<script
-  src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/cytoscape.min.js') }}?v={{ admin_version or 'dev' }}"></script>
 <script data-viewer-base="{{ mount_prefix or '' }}"
-  src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/graph-viewer.js') }}?v={{ admin_version or 'dev' }}"></script>
+  src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/gephi-driver.js') }}?v={{ admin_version or 'dev' }}"></script>
 {% include 'partials/filters_toggle_script.html' %}
 <script>
-  // Show info strap on page load if error/success query params exist
-  const urlParams = new URLSearchParams(window.location.search);
-  const error = urlParams.get('error');
-  const success = urlParams.get('success');
-  if (error) {
-    showInfoStrap(error, 'error');
-  } else if (success) {
-    showInfoStrap(success, 'success');
+(function () {
+  "use strict";
+
+  // --- URL helpers ---
+
+  function getGraphId() {
+    var el = document.getElementById("viewer-filter-form");
+    return el && el.getAttribute("data-graph-id");
   }
+
+  function getWebMountPrefix() {
+    var el = document.querySelector('script[data-viewer-base]');
+    return (el && el.getAttribute("data-viewer-base")) || "";
+  }
+
+  function getViewerBase() {
+    var graphId = getGraphId();
+    if (!graphId) return null;
+    return getWebMountPrefix() + "/graphs/" + encodeURIComponent(graphId) + "/viewer";
+  }
+
+  function getFilterParams() {
+    var params = {};
+    var names = [
+      "node_type", "node_schema_name", "node_parent_id", "node_filter", "node_limit",
+      "edge_type", "edge_schema_name", "edge_source_id", "edge_target_id", "edge_filter", "edge_limit"
+    ];
+    for (var i = 0; i < names.length; i++) {
+      var input = document.querySelector("#viewer-filter-form [name=\"" + names[i] + "\"]");
+      if (input) {
+        var val = input.value ? input.value.trim() : "";
+        if (val || names[i] === "node_limit" || names[i] === "edge_limit") params[names[i]] = val || input.value;
+      }
+    }
+    return params;
+  }
+
+  function buildQueryString(params) {
+    var parts = [];
+    for (var key in params) {
+      if (params.hasOwnProperty(key) && params[key] !== "") {
+        parts.push(encodeURIComponent(key) + "=" + encodeURIComponent(params[key]));
+      }
+    }
+    return parts.length ? "?" + parts.join("&") : "";
+  }
+
+  function setStatus(text, isError) {
+    var el = document.getElementById("viewer-status");
+    if (!el) return;
+    el.textContent = text;
+    el.className = "resource-note" + (isError ? " form-error" : "");
+  }
+
+  // --- Expand / collapse ---
+
+  var viewerContainer = document.getElementById("viewer-container");
+  var expandBtn = document.getElementById("viewer-expand-btn");
+  var isExpanded = false;
+
+  function toggleExpand() {
+    isExpanded = !isExpanded;
+    if (isExpanded) {
+      viewerContainer.classList.add("expanded");
+      expandBtn.setAttribute("aria-label", "Collapse graph view");
+      expandBtn.setAttribute("title", "Collapse graph view");
+      expandBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"></polyline><polyline points="20 10 14 10 14 4"></polyline><line x1="14" y1="10" x2="21" y2="3"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>';
+    } else {
+      viewerContainer.classList.remove("expanded");
+      expandBtn.setAttribute("aria-label", "Expand graph view");
+      expandBtn.setAttribute("title", "Expand graph view");
+      expandBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>';
+    }
+  }
+
+  if (expandBtn) {
+    expandBtn.addEventListener("click", toggleExpand);
+  }
+
+  // --- Gephi Lite driver integration ---
+
+  var driver = null;
+  var autoSaveTimer = null;
+  var connected = false;
+
+  function initDriver() {
+    var channelName = crypto.randomUUID();
+    driver = new GephiLiteBroadcast.GephiLiteDriver(channelName);
+
+    var iframe = document.getElementById("viewer-iframe");
+    iframe.src = getWebMountPrefix() + "/gephi-lite/?broadcast=" + channelName;
+
+    driver.on("newInstance", function () {
+      connected = true;
+      setStatus("Connected — loading data…");
+      loadAndPushData();
+    });
+
+    // Timeout: if Gephi Lite doesn't connect within 15s, show error
+    setTimeout(function () {
+      if (!connected) {
+        setStatus("Gephi Lite failed to connect. Try refreshing the page.", true);
+      }
+    }, 15000);
+  }
+
+  async function loadAndPushData() {
+    var base = getViewerBase();
+    if (!base) {
+      setStatus("Missing graph id.", true);
+      return;
+    }
+
+    var params = getFilterParams();
+    var dataUrl = base + "/data" + buildQueryString(params);
+    var appearanceUrl = base + "/appearance";
+    var filtersUrl = base + "/filters";
+    var layoutUrl = base + "/layout";
+
+    try {
+      var results = await Promise.all([
+        fetch(dataUrl).then(function (r) { return r.json(); }),
+        fetch(appearanceUrl).then(function (r) { return r.json(); }),
+        fetch(filtersUrl).then(function (r) { return r.json(); }),
+        fetch(layoutUrl).then(function (r) { return r.json(); }),
+      ]);
+
+      var dataRes = results[0];
+      var appearanceRes = results[1];
+      var filtersRes = results[2];
+      var layoutRes = results[3];
+
+      if (dataRes.error) {
+        setStatus(dataRes.error, true);
+        return;
+      }
+
+      // Strip extra fields not part of SerializedGraphDataset.
+      // Sigma requires numeric x,y per node. Server sends a default circle layout; overlay
+      // saved positions only for node ids in this graph, then fill any gaps.
+      var datasetInput = {
+        nodeData: dataRes.nodeData,
+        edgeData: dataRes.edgeData,
+        metadata: dataRes.metadata,
+        nodeFields: dataRes.nodeFields,
+        edgeFields: dataRes.edgeFields,
+        fullGraph: dataRes.fullGraph,
+      };
+
+      function nonEmptyLayout(obj) {
+        return obj && typeof obj === "object" && Object.keys(obj).length > 0;
+      }
+
+      function validPos(p) {
+        return p && typeof p.x === "number" && typeof p.y === "number";
+      }
+
+      function circleLayoutForIds(ids) {
+        var out = {};
+        var n = ids.length;
+        if (!n) return out;
+        var r = 100;
+        for (var i = 0; i < n; i++) {
+          var angle = (2 * Math.PI * i) / n;
+          out[ids[i]] = {
+            x: Math.round(r * Math.cos(angle) * 1e6) / 1e6,
+            y: Math.round(r * Math.sin(angle) * 1e6) / 1e6,
+          };
+        }
+        return out;
+      }
+
+      var layout = {};
+      if (nonEmptyLayout(dataRes.layout)) {
+        Object.assign(layout, dataRes.layout);
+      }
+      if (nonEmptyLayout(layoutRes.state)) {
+        var ndForSaved = datasetInput.nodeData || {};
+        for (var sk in layoutRes.state) {
+          if (
+            Object.prototype.hasOwnProperty.call(layoutRes.state, sk) &&
+            Object.prototype.hasOwnProperty.call(ndForSaved, sk) &&
+            validPos(layoutRes.state[sk])
+          ) {
+            layout[sk] = { x: layoutRes.state[sk].x, y: layoutRes.state[sk].y };
+          }
+        }
+      }
+      var allIds = Object.keys(datasetInput.nodeData || {});
+      var missing = [];
+      for (var mi = 0; mi < allIds.length; mi++) {
+        if (!validPos(layout[allIds[mi]])) {
+          missing.push(allIds[mi]);
+        }
+      }
+      if (missing.length) {
+        var fill = circleLayoutForIds(missing);
+        Object.assign(layout, fill);
+      }
+      if (Object.keys(layout).length) {
+        datasetInput.layout = layout;
+      }
+
+      // Deserialize the server's SerializedGraphDataset into a live GraphDataset
+      // (deserializeDataset creates a live MultiGraph from the serialized fullGraph)
+      var dataset;
+      try {
+        dataset = GephiLiteBroadcast.deserializeDataset(datasetInput);
+      } catch (e) {
+        console.error("[viewer] deserializeDataset failed:", e);
+        setStatus("Failed to deserialize graph data: " + e.message, true);
+        return;
+      }
+
+      // Push to Gephi Lite
+      try {
+        await driver.setGraphDataset(dataset);
+      } catch (e) {
+        console.error("[viewer] setGraphDataset failed:", e);
+        setStatus("Failed to load graph data: " + e.message, true);
+        return;
+      }
+      try {
+        if (appearanceRes.state) await driver.setAppearance(appearanceRes.state);
+        if (filtersRes.state) await driver.setFilters(filtersRes.state);
+      } catch (e) {
+        console.error("[viewer] appearance/filters failed:", e);
+      }
+
+      var nodeCount = Object.keys(dataset.nodeData || {}).length;
+      var edgeCount = Object.keys(dataset.edgeData || {}).length;
+      setStatus("Nodes: " + nodeCount + ", Edges: " + edgeCount);
+
+      // Start auto-save
+      startAutoSave(base);
+    } catch (e) {
+      setStatus("Failed to load graph data: " + e.message, true);
+    }
+  }
+
+  // --- Auto-save ---
+
+  var AUTO_SAVE_INTERVAL_MS = 5000;
+
+  function startAutoSave(base) {
+    autoSaveTimer = setInterval(function () { autoSave(base); }, AUTO_SAVE_INTERVAL_MS);
+    window.addEventListener("beforeunload", function () { autoSave(base); });
+  }
+
+  async function autoSave(base) {
+    if (!driver || !connected) return;
+    try {
+      var results = await Promise.all([
+        driver.getAppearance(),
+        driver.getFilters(),
+        driver.getGraphDataset(),
+      ]);
+
+      var appearance = results[0];
+      var filters = results[1];
+      var dataset = results[2];
+
+      // Save appearance (global)
+      await fetch(base + "/appearance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state: appearance }),
+      });
+
+      // Save filters (per-user)
+      await fetch(base + "/filters", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state: filters }),
+      });
+
+      // Save layout (per-user) — extract layout from the live MultiGraph
+      var layout = dataset.layout;
+      if (layout && Object.keys(layout).length > 0) {
+        await fetch(base + "/layout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ state: layout }),
+        });
+      }
+    } catch (e) {
+      console.warn("Auto-save failed:", e);
+    }
+  }
+
+  // --- Filter integration ---
+
+  var DEBOUNCE_MS = 500;
+  var debounceTimer = null;
+
+  function onFilterChange() {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(function () {
+      if (driver && connected) {
+        setStatus("Loading…");
+        loadAndPushData();
+      }
+    }, DEBOUNCE_MS);
+  }
+
+  document.querySelectorAll("#viewer-filter-form input, #viewer-filter-form select").forEach(function (input) {
+    input.addEventListener("change", onFilterChange);
+    input.addEventListener("input", onFilterChange);
+  });
+
+  // --- Info strap ---
+
+  var urlParams = new URLSearchParams(window.location.search);
+  var error = urlParams.get("error");
+  var success = urlParams.get("success");
+  if (error) {
+    showInfoStrap(error, "error");
+  } else if (success) {
+    showInfoStrap(success, "success");
+  }
+
+  // --- Init ---
+
+  if (typeof GephiLiteBroadcast !== "undefined" && GephiLiteBroadcast.GephiLiteDriver) {
+    initDriver();
+  } else {
+    setStatus("Gephi Lite driver not loaded.", true);
+  }
+})();
 </script>
 {% endblock %}

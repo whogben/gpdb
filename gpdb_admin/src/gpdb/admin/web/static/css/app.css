@@ -906,36 +906,63 @@ a {
   }
 }
 
+/* Graph viewer: fill viewport below titlebar + intro/filter sections */
+.main-content--graph-viewer {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.graph-viewer-page {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.dashboard-section--viewer-graph {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.dashboard-section--viewer-graph .section-heading,
+.dashboard-section--viewer-graph #viewer-status {
+  flex-shrink: 0;
+}
+
 /* Graph viewer styles */
 .viewer-container {
   border: 1px solid var(--border-color);
   border-radius: 1.25rem;
   overflow: hidden;
   position: relative;
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 400px;
 }
 
-#viewer-cy {
-  height: 400px;
+/* Absolute fill: percentage height on iframes is unreliable when the parent’s height
+   comes only from flex layout; inset sizing matches the sized flex item. */
+.viewer-iframe {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  min-height: 300px;
+  height: 100%;
+  border: none;
+  display: block;
 }
 
 .viewer-container.expanded {
   position: fixed;
-  top: var(--titlebar-height);
+  top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  /* Above titlebar (100) / drawers (200) so expand control stays usable */
   z-index: 250;
   border-radius: 0;
   border: none;
-  background: var(--page-bg);
-}
-
-.viewer-container.expanded #viewer-cy {
-  height: calc(100vh - var(--titlebar-height));
-  min-height: calc(100vh - var(--titlebar-height));
 }
 
 .viewer-expand-btn {
@@ -970,43 +997,6 @@ a {
 
 .viewer-container.expanded .viewer-expand-btn svg {
   transform: rotate(180deg);
-}
-
-/* Live mode indicator */
-#viewer-live-toggle {
-  margin-right: 0.5rem;
-}
-
-#viewer-live-toggle:checked+span {
-  position: relative;
-  padding-left: 1.25rem;
-}
-
-#viewer-live-toggle:checked+span::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 8px;
-  height: 8px;
-  background-color: #22c55e;
-  border-radius: 50%;
-  animation: pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes pulse {
-
-  0%,
-  100% {
-    opacity: 1;
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
-  }
-
-  50% {
-    opacity: 0.7;
-    box-shadow: 0 0 0 6px rgba(34, 197, 94, 0);
-  }
 }
 
 /* SVG icon slot: fixed outer box; inner SVG scaled via viewBox + svg-icon-slot.js (getBBox) */
@@ -1100,17 +1090,6 @@ a {
   border-color: var(--text-color);
   background: var(--page-bg);
   box-shadow: inset 0 0 0 1px var(--text-color);
-}
-
-cytoscape-node-label {
-  text-shadow: 0 0 3px rgba(255, 255, 255, 0.8);
-}
-
-/* Dark theme support */
-@media (prefers-color-scheme: dark) {
-  cytoscape-node-label {
-    text-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
-  }
 }
 
 /* Checkbox group styling for Events page filters */

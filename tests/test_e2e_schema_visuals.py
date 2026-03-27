@@ -5,7 +5,7 @@ from urllib.parse import unquote
 import pytest
 import pytest_asyncio
 from gpdb import GPGraph, NodeUpsert, EdgeUpsert, SchemaUpsert, SchemaRef, SearchQuery
-from gpdb.svg_sanitizer import svg_markup_to_cytoscape_data_uri
+from gpdb.svg_sanitizer import svg_to_data_uri
 
 
 @pytest.mark.asyncio
@@ -332,7 +332,7 @@ async def test_schema_with_only_svg_icon(db: GPGraph):
     elements = []
     for node in node_page.items:
         display_info = schemas_metadata.get(node.type, {})
-        uri = svg_markup_to_cytoscape_data_uri(display_info.get("svg_icon"))
+        uri = svg_to_data_uri(display_info.get("svg_icon"))
         data = {
             "id": node.id,
             "display_label": display_info.get("alias") or node.type,
@@ -849,7 +849,7 @@ async def test_multiple_nodes_same_schema_no_duplicate_svg(db: GPGraph):
         assert node.type == "person"
     
     # Verify elements can be built with shared SVG reference
-    expected_uri = svg_markup_to_cytoscape_data_uri(
+    expected_uri = svg_to_data_uri(
         schemas_metadata["person"]["svg_icon"]
     )
     elements = []

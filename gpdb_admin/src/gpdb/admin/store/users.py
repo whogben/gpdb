@@ -168,4 +168,41 @@ def _admin_user_from_node(node: NodeRead) -> AdminUser:
         is_owner=bool(node.data.get("is_owner", False)),
         is_active=bool(node.data.get("is_active", False)),
         auth_version=int(node.data.get("auth_version", 1)),
+        gephi_filters_state=node.data.get("gephi_filters_state"),
+        gephi_layout_state=node.data.get("gephi_layout_state"),
     )
+
+
+async def update_user_gephi_state(
+    store,
+    *,
+    user_id: str,
+    gephi_filters_state: dict | None = None,
+    gephi_layout_state: dict | None = None,
+) -> AdminUser | None:
+    """Update per-user Gephi Lite visualization state fields."""
+    try:
+        nodes = await store.db.get_nodes([user_id])
+        node = nodes[0]
+        if node.type != "user":
+            return None
+
+        updated_data = dict(node.data)
+        if gephi_filters_state is not None:
+            updated_data["gephi_filters_state"] = gephi_filters_state
+        if gephi_layout_state is not None:
+            updated_data["gephi_layout_state"] = gephi_layout_state
+
+        updated_list = await store.db.set_nodes(
+            [
+                NodeUpsert(
+                    id=node.id,
+                    type=node.type,
+                    name=node.name,
+                    data=updated_data,
+                )
+            ]
+        )
+        return _admin_user_from_node(updated_list[0])
+    except ValueError:
+        return None

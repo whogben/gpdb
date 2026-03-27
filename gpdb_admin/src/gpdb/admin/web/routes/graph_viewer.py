@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pydantic import BaseModel
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
@@ -111,7 +112,7 @@ async def graph_viewer_page(request: Request, graph_id: str) -> HTMLResponse:
 
 @router.get("/graphs/{graph_id}/viewer/data", name="graph_viewer_data")
 async def graph_viewer_data(request: Request, graph_id: str) -> JSONResponse:
-    """Return filtered nodes and edges as JSON for the graph viewer (Cytoscape elements)."""
+    """Return filtered nodes and edges as JSON for the graph viewer (Gephi Lite format)."""
     current_user = await require_authenticated_user(request)
     if isinstance(current_user, RedirectResponse):
         return JSONResponse(
@@ -142,16 +143,101 @@ async def graph_viewer_data(request: Request, graph_id: str) -> JSONResponse:
     except GraphContentError as exc:
         return JSONResponse(
             status_code=400,
-            content={
-                "error": str(exc),
-                "elements": [],
-                "node_count": 0,
-                "edge_count": 0,
-            },
+            content={"error": str(exc)},
         )
 
     payload = data.model_dump(mode="json")
     payload["graph"] = overview.model_dump(mode="json")["graph"]
+    # Omit layout only when there are no positions (empty graph).
+    _layout = payload.get("layout")
+    if _layout is None or _layout == {}:
+        payload.pop("layout", None)
     if data.error:
         return JSONResponse(status_code=400, content=payload)
     return JSONResponse(content=payload)
+
+
+# --- Viz state persistence endpoints ---
+
+
+class _StateBody(BaseModel):
+    state: dict
+
+
+@router.post("/graphs/{graph_id}/viewer/appearance")
+async def save_appearance(request: Request, graph_id: str, body: _StateBody) -> JSONResponse:
+    """Save the global Gephi Lite appearance state to admin.toml."""
+    current_user = await require_authenticated_user(request)
+    if isinstance(current_user, RedirectResponse):
+        return JSONResponse(status_code=401, content={"error": "Authentication required"})
+
+    config_store = request.app.state.config_store
+    resolved = config_store.load()
+    resolved.file_config.viz.gephi_appearance_state = body.state
+    config_store.save(resolved.file_config)
+    return JSONResponse(content={"ok": True})
+
+
+@router.get("/graphs/{graph_id}/viewer/appearance")
+async def read_appearance(request: Request, graph_id: str) -> JSONResponse:
+    """Read the saved global appearance state from config."""
+    current_user = await require_authenticated_user(request)
+    if isinstance(current_user, RedirectResponse):
+        return JSONResponse(status_code=401, content={"error": "Authentication required"})
+
+    resolved = request.app.state.config_store.load()
+    return JSONResponse(content={"state": resolved.file_config.viz.gephi_appearance_state})
+
+
+@router.post("/graphs/{graph_id}/viewer/filters")
+async def save_filters(request: Request, graph_id: str, body: _StateBody) -> JSONResponse:
+    """Save the current user's Gephi Lite filter state."""
+    current_user = await require_authenticated_user(request)
+    if isinstance(current_user, RedirectResponse):
+        return JSONResponse(status_code=401, content={"error": "Authentication required"})
+
+    store = get_admin_store(request)
+    await store.update_user_gephi_state(
+        user_id=current_user.id,
+        gephi_filters_state=body.state,
+    )
+    return JSONResponse(content={"ok": True})
+
+
+@router.get("/graphs/{graph_id}/viewer/filters")
+async def read_filters(request: Request, graph_id: str) -> JSONResponse:
+    """Read the current user's saved filter state."""
+    current_user = await require_authenticated_user(request)
+    if isinstance(current_user, RedirectResponse):
+        return JSONResponse(status_code=401, content={"error": "Authentication required"})
+
+    store = get_admin_store(request)
+    user = await store.get_user_by_id(current_user.id)
+    return JSONResponse(content={"state": getattr(user, "gephi_filters_state", None)})
+
+
+@router.post("/graphs/{graph_id}/viewer/layout")
+async def save_layout(request: Request, graph_id: str, body: _StateBody) -> JSONResponse:
+    """Save the current user's Gephi Lite layout positions."""
+    current_user = await require_authenticated_user(request)
+    if isinstance(current_user, RedirectResponse):
+        return JSONResponse(status_code=401, content={"error": "Authentication required"})
+
+    store = get_admin_store(request)
+    await store.update_user_gephi_state(
+        user_id=current_user.id,
+        gephi_layout_state=body.state,
+    )
+    return JSONResponse(content={"ok": True})
+
+
+@router.get("/graphs/{graph_id}/viewer/layout")
+async def read_layout(request: Request, graph_id: str) -> JSONResponse:
+    """Read the current user's saved layout positions."""
+    current_user = await require_authenticated_user(request)
+    if isinstance(current_user, RedirectResponse):
+        return JSONResponse(status_code=401, content={"error": "Authentication required"})
+
+    store = get_admin_store(request)
+    user = await store.get_user_by_id(current_user.id)
+    return JSONResponse(content={"state": getattr(user, "gephi_layout_state", None)})

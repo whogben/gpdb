@@ -51,9 +51,6 @@ def test_viewer_page_renders_and_linked_from_overview(admin_test_env):
     response = client.get(f"/graphs/{graph_id}/viewer")
     assert response.status_code == 200
     assert "Graph Viewer" in response.text
-    assert "cytoscape.min.js" in response.text
-    assert "graph-viewer.js" in response.text
-    assert "viewer-cy" in response.text
     assert "Node filters" in response.text
     assert "Edge filters" in response.text
 
@@ -125,9 +122,10 @@ def test_viewer_data_applies_filters(admin_test_env):
     response = client.get(f"/graphs/{graph_id}/viewer/data")
     assert response.status_code == 200
     data = response.json()
-    assert "elements" in data
-    assert data["node_count"] == 3
-    assert data["edge_count"] == 1
+    assert "nodeData" in data
+    assert "edgeData" in data
+    assert len(data["nodeData"]) == 3
+    assert len(data["edgeData"]) == 1
 
     response = client.get(
         f"/graphs/{graph_id}/viewer/data",
@@ -135,8 +133,8 @@ def test_viewer_data_applies_filters(admin_test_env):
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["node_count"] == 2
-    assert data["edge_count"] == 1
+    assert len(data["nodeData"]) == 2
+    assert len(data["edgeData"]) == 1
 
     response = client.get(
         f"/graphs/{graph_id}/viewer/data",
@@ -144,11 +142,11 @@ def test_viewer_data_applies_filters(admin_test_env):
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["edge_count"] == 1
+    assert len(data["edgeData"]) == 1
 
 
 def test_viewer_data_includes_svg_icon_data_uri(admin_test_env):
-    """Viewer JSON includes server-built percent-encoded SVG data URIs for Cytoscape."""
+    """Viewer JSON includes server-built percent-encoded SVG data URIs for node images."""
     manager = admin_test_env.manager
     client = admin_test_env.client
 
@@ -198,24 +196,18 @@ def test_viewer_data_includes_svg_icon_data_uri(admin_test_env):
     response = client.get(f"/graphs/{graph_id}/viewer/data")
     assert response.status_code == 200
     data = response.json()
-    assert "schemas" in data
-    assert "node:iconnode" in data["schemas"]
-    entry = data["schemas"]["node:iconnode"]
-    assert entry.get("svg_icon")
-    uri = entry.get("svg_icon_data_uri")
+    node_data = data["nodeData"]
+    assert len(node_data) == 1
+    row = next(iter(node_data.values()))
+    assert row.get("type") == "iconnode"
+    uri = row.get("svg_icon_data_uri")
     assert uri and uri.startswith("data:image/svg+xml;charset=utf-8,")
     decoded = unquote(uri.split(",", 1)[1])
     assert "<circle" in decoded
 
-    node_elts = [e for e in data["elements"] if e.get("group") == "nodes"]
-    assert node_elts
-    icon_nodes = [e for e in node_elts if e.get("data", {}).get("type") == "iconnode"]
-    assert icon_nodes
-    assert icon_nodes[0]["data"].get("iconUri") == uri
-
 
 def test_viewer_data_includes_edge_schema_svg_icon_data_uri(admin_test_env):
-    """Edge schema SVGs appear as iconUri on edge elements (viewer uses midpoint nodes)."""
+    """Edge schema SVGs are exposed on edge attributes as svg_icon_data_uri (Gephi payload)."""
     manager = admin_test_env.manager
     client = admin_test_env.client
 
@@ -286,16 +278,14 @@ def test_viewer_data_includes_edge_schema_svg_icon_data_uri(admin_test_env):
     response = client.get(f"/graphs/{graph_id}/viewer/data")
     assert response.status_code == 200
     data = response.json()
-    assert "edge:iconedge" in data["schemas"]
-    entry = data["schemas"]["edge:iconedge"]
-    uri = entry.get("svg_icon_data_uri")
+    edge_data = data["edgeData"]
+    assert len(edge_data) == 1
+    row = next(iter(edge_data.values()))
+    assert row.get("type") == "iconedge"
+    uri = row.get("svg_icon_data_uri")
     assert uri and uri.startswith("data:image/svg+xml;charset=utf-8,")
     decoded = unquote(uri.split(",", 1)[1])
     assert "<rect" in decoded
-
-    edge_elts = [e for e in data["elements"] if e.get("group") == "edges"]
-    assert len(edge_elts) == 1
-    assert edge_elts[0]["data"].get("iconUri") == uri
 
 
 def test_viewer_data_invalid_dsl_returns_error(admin_test_env):
@@ -335,8 +325,8 @@ def test_viewer_data_invalid_dsl_returns_error(admin_test_env):
     data = response.json()
     assert "error" in data
     assert data["error"]
-    assert "elements" in data
-    assert data["elements"] == []
+    assert data.get("nodeData") == {}
+    assert data.get("edgeData") == {}
 
 
 def _bootstrap_owner(client: TestClient) -> None:

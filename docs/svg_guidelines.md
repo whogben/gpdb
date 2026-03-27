@@ -10,9 +10,9 @@ This document provides guidelines for creating SVG icons for schema visualizatio
 
 ### Dimensions
 - Recommended viewBox: `0 0 24 24` or `0 0 32 32`
-- Icons will be displayed at 32x32px in the graph viewer (node schemas on the node; edge schemas as a midpoint badge — Cytoscape has no `background-image` on edges)
+- Icons are rendered as node images in the graph viewer via percent-encoded SVG data URIs
 - Icons should scale well to different sizes
-- Loose viewBoxes (lots of empty space) or root `x`/`y` on `<svg>` are normalized in the admin UI via the `svg_icon_slot` macro and `svg-icon-slot.js` (`getBBox` tightening). The graph viewer runs the same `fitSvgMarkupToContent` step in `graph-viewer.js` before rasterizing to PNG so icons center like the schema pages. It then follows [Cytoscape.js guidance](https://js.cytoscape.org/#style/background-image): percent-encoded `data:image/svg+xml;charset=utf-8,...` (not base64) from the server, with explicit root `width`/`height` derived from `viewBox` when needed. If your icon omits `xmlns`, the server adds `xmlns="http://www.w3.org/2000/svg"` when building that data URI so WebKit can decode it in `<img>` / `Image()` (inline HTML SVG does not need this).
+- Loose viewBoxes (lots of empty space) or root `x`/`y` on `<svg>` are normalized in the admin UI via the `svg_icon_slot` macro and `svg-icon-slot.js` (`getBBox` tightening). The graph viewer receives the same normalized SVG from the server as a percent-encoded `data:image/svg+xml;charset=utf-8,...` data URI (not base64), with explicit root `width`/`height` derived from `viewBox` when needed. If your icon omits `xmlns`, the server adds `xmlns="http://www.w3.org/2000/svg"` when building that data URI so WebKit can decode it in `<img>` / `Image()` (inline HTML SVG does not need this).
 
 ### Security
 

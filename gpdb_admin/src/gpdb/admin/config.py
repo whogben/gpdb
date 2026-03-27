@@ -51,12 +51,19 @@ class AuthConfig(BaseModel):
     session_secret: str | None = None
 
 
+class VizConfig(BaseModel):
+    """File-backed visualization settings."""
+
+    gephi_appearance_state: dict | None = None
+
+
 class AdminConfig(BaseModel):
     """File-backed gpdb-admin configuration."""
 
     server: ServerConfig = Field(default_factory=ServerConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
+    viz: VizConfig = Field(default_factory=VizConfig)
 
 
 @dataclass(frozen=True)

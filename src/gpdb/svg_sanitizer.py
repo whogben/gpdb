@@ -130,7 +130,7 @@ def _parse_svg_length(raw: str | None) -> float | None:
 
 
 def _inject_intrinsic_size_from_viewbox(root: ET.Element) -> None:
-    """Set root width/height from viewBox so Cytoscape's Image() gets intrinsic dimensions."""
+    """Set root width/height from viewBox so Image() gets intrinsic dimensions."""
     if _local_tag(root.tag) != "svg":
         return
     if root.get("width") or root.get("height"):
@@ -151,9 +151,9 @@ def _inject_intrinsic_size_from_viewbox(root: ET.Element) -> None:
         root.set("height", str(vh))
 
 
-def svg_markup_to_cytoscape_data_uri(svg: str | None) -> str | None:
+def svg_to_data_uri(svg: str | None) -> str | None:
     """
-    Build a percent-encoded UTF-8 data URI for Cytoscape node background-image.
+    Build a percent-encoded UTF-8 data URI from SVG markup.
 
     Uses ``data:image/svg+xml;charset=utf-8,`` + percent-encoding (RFC 2397). We emit
     only the ``<svg>...</svg>`` fragment — no XML declaration or ``<!DOCTYPE svg>``:

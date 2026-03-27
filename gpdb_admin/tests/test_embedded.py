@@ -171,11 +171,46 @@ def test_embedded_admin_web_under_prefix(embedded_admin_test_env):
         "GET %s/static/css/tokens.css returned %s" % (HTTP_ROOT, response.status_code)
     )
 
-    # Viewer assets (Cytoscape vendored locally)
-    response = client.get(f"{HTTP_ROOT}/static/js/cytoscape.min.js")
-    assert response.status_code == 200, (
-        "GET %s/static/js/cytoscape.min.js returned %s" % (HTTP_ROOT, response.status_code)
+
+def _gephi_lite_index_path() -> Path:
+    return (
+        Path(__file__).resolve().parent.parent
+        / "src"
+        / "gpdb"
+        / "admin"
+        / "web"
+        / "static"
+        / "gephi-lite"
+        / "index.html"
     )
+
+
+def _assert_gephi_index_is_prefix_safe(html: str) -> None:
+    """Gephi Lite must not use root-absolute /gephi-lite/... asset URLs (breaks mount prefix)."""
+    for needle in ('src="/gephi-lite/', "src='/gephi-lite/", 'href="/gephi-lite/', "href='/gephi-lite/"):
+        assert needle not in html, (
+            "Expected relative asset base (Vite --base ./); found prefix-unsafe URL fragment: %r" % needle
+        )
+
+
+def test_embedded_gephi_lite_under_prefix_when_built(embedded_admin_test_env):
+    """Gephi Lite index uses relative asset URLs and is served under the mount prefix.
+
+    Build output comes from ``scripts/update_gephi.py`` (Vite ``--base ./``). Skips if
+    ``static/gephi-lite/`` has not been generated yet.
+    """
+    index_path = _gephi_lite_index_path()
+    if not index_path.is_file():
+        pytest.skip("Gephi Lite build not present (run scripts/update_gephi.py)")
+
+    _assert_gephi_index_is_prefix_safe(index_path.read_text(encoding="utf-8"))
+
+    client = embedded_admin_test_env.client
+    response = client.get(f"{HTTP_ROOT}/gephi-lite/")
+    assert response.status_code == 200, (
+        "GET %s/gephi-lite/ returned %s" % (HTTP_ROOT, response.status_code)
+    )
+    _assert_gephi_index_is_prefix_safe(response.text)
 
 
 # --- Admin REST under prefix ---

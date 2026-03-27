@@ -50,7 +50,7 @@ from gpdb.admin.graph_content.models import (
     GraphSchemaRecord,
     GraphSchemaUpdateParam,
     GraphSchemaUsage,
-    GraphViewerData,
+    GephiViewerData,
     InstanceDetail,
     InstanceList,
     InstanceRecord,
@@ -165,7 +165,7 @@ __all__ = [
     "GraphRecord",
     "GraphList",
     "GraphDetail",
-    "GraphViewerData",
+    "GephiViewerData",
     # Service
     "GraphContentService",
 ]

@@ -15,6 +15,8 @@ class AdminUser:
     is_owner: bool
     is_active: bool
     auth_version: int
+    gephi_filters_state: dict | None = None
+    gephi_layout_state: dict | None = None
 
 
 @dataclass(frozen=True)

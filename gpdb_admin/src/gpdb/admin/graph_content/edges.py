@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import math
+from typing import Any
+
 from gpdb import (
     EdgeUpsert,
     Filter,
@@ -14,7 +17,7 @@ from gpdb import (
     SearchQuery,
 )
 from gpdb.admin.store import AdminUser
-from gpdb.svg_sanitizer import svg_markup_to_cytoscape_data_uri
+from gpdb.svg_sanitizer import svg_to_data_uri
 from sqlalchemy.exc import IntegrityError
 
 from gpdb.admin.graph_content.exceptions import (
@@ -23,6 +26,7 @@ from gpdb.admin.graph_content.exceptions import (
     GraphContentValidationError,
 )
 from gpdb.admin.graph_content.models import (
+    GephiViewerData,
     GraphEdgeCreateParam,
     GraphEdgeDeleteResult,
     GraphEdgeDetail,
@@ -30,7 +34,6 @@ from gpdb.admin.graph_content.models import (
     GraphEdgeList,
     GraphEdgeRecord,
     GraphEdgeUpdateParam,
-    GraphViewerData,
 )
 from gpdb.admin.graph_content._helpers import (
     build_edge_filter,
@@ -113,6 +116,66 @@ async def list_graph_edges(
         await db.sqla_engine.dispose()
 
 
+def _flatten_dict(d: dict[str, Any], prefix: str = "") -> dict[str, Any]:
+    """Recursively flatten a nested dict with '__'-separated keys."""
+    out: dict[str, Any] = {}
+    for k, v in d.items():
+        key = f"{prefix}__{k}" if prefix else k
+        if isinstance(v, dict):
+            out.update(_flatten_dict(v, key))
+        else:
+            out[key] = v
+    return out
+
+
+def _infer_field_type(value: Any) -> str:
+    """Map a scalar value to a Gephi Lite field type."""
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int | float):
+        return "number"
+    return "text"
+
+
+def _build_field_defs(
+    all_attrs: dict[str, dict[str, Any]],
+    *,
+    item_type: str,
+) -> list[dict[str, Any]]:
+    """Inspect all flattened attribute dicts and produce FieldModel definitions."""
+    key_types: dict[str, str] = {}
+    for attrs in all_attrs.values():
+        for k, v in attrs.items():
+            if k not in key_types:
+                key_types[k] = _infer_field_type(v)
+    overrides: dict[str, str] = {
+        "type": "category",
+        "name": "text",
+        "display_label": "text",
+        "svg_icon_data_uri": "url",
+    }
+    return [{"name": name, "itemType": item_type, "type": overrides.get(name, t)} for name, t in key_types.items()]
+
+
+def _default_layout_for_nodes(
+    node_ids: list[str],
+    *,
+    radius: float = 100.0,
+) -> dict[str, dict[str, float]]:
+    """Place each node on a circle so Sigma always receives numeric x and y."""
+    n = len(node_ids)
+    if n == 0:
+        return {}
+    out: dict[str, dict[str, float]] = {}
+    for i, nid in enumerate(node_ids):
+        angle = (2 * math.pi * i) / n
+        out[nid] = {
+            "x": round(radius * math.cos(angle), 6),
+            "y": round(radius * math.sin(angle), 6),
+        }
+    return out
+
+
 async def get_graph_viewer_data(
     self,
     *,
@@ -128,8 +191,8 @@ async def get_graph_viewer_data(
     edge_target_id: str | None = None,
     edge_filter_dsl: str | None = None,
     edge_limit: int = 200,
-) -> GraphViewerData:
-    """Return combined filtered nodes and edges for the graph viewer (Cytoscape elements)."""
+) -> GephiViewerData:
+    """Return combined filtered nodes and edges for the graph viewer (Gephi Lite format)."""
     try:
         node_list = await list_graph_nodes(
             self,
@@ -157,23 +220,18 @@ async def get_graph_viewer_data(
             sort="created_at_desc",
         )
     except GraphContentValidationError as exc:
-        return GraphViewerData(
-            elements=[],
-            node_count=0,
-            edge_count=0,
-            error=str(exc),
-        )
+        return GephiViewerData(error=str(exc))
 
     # Collect unique schema types from nodes and edges
-    schema_types = set()
+    schema_types: set[tuple[str, str]] = set()
     for node in node_list.items:
         schema_types.add((node.type, "node"))
     for edge in edge_list.items:
         schema_types.add((edge.type, "edge"))
 
-    # Fetch schema display metadata for all unique schemas (keyed by kind:name so node/edge
-    # schemas with the same name do not collide).
+    # Fetch schema display metadata for all unique schemas
     schemas_metadata: dict[str, dict[str, str | None]] = {}
+    graph_display_name = graph_id
     if schema_types:
         graph, instance, db = await open_graph(
             graph_id=graph_id,
@@ -183,6 +241,7 @@ async def get_graph_viewer_data(
             admin_store=require_admin_store(self._admin_store),
             captive_url_factory=self._captive_url_factory,
         )
+        graph_display_name = graph.display_name
         try:
             for schema_name, schema_kind in schema_types:
                 try:
@@ -192,49 +251,79 @@ async def get_graph_viewer_data(
                     schemas_metadata[meta_key] = {
                         "alias": display_info["alias"],
                         "svg_icon": display_info["svg_icon"],
-                        "svg_icon_data_uri": svg_markup_to_cytoscape_data_uri(
+                        "svg_icon_data_uri": svg_to_data_uri(
                             display_info["svg_icon"]
                         ),
                     }
                 except SchemaNotFoundError:
-                    # Schema might not exist, skip it
                     pass
         finally:
             await db.sqla_engine.dispose()
 
-    elements: list[dict[str, object]] = []
-
+    # Build flattened node attributes
+    node_data: dict[str, dict[str, Any]] = {}
     for node in node_list.items:
         display_info = schemas_metadata.get(f"node:{node.type}", {})
-        node_data: dict[str, object] = {
-            "id": node.id,
-            "label": node.name or node.id,
+        attrs: dict[str, Any] = {
             "type": node.type,
+            "name": node.name,
             "display_label": display_info.get("alias") or node.type,
         }
         svg_uri = display_info.get("svg_icon_data_uri")
         if svg_uri:
-            node_data["iconUri"] = svg_uri
-        elements.append({"group": "nodes", "data": node_data})
+            attrs["svg_icon_data_uri"] = svg_uri
+        attrs.update(_flatten_dict(node.data, "data"))
+        attrs = {k: v for k, v in attrs.items() if isinstance(v, (str, int, float, bool)) or v is None}
+        for tag in node.tags or []:
+            attrs[f"tag__{tag}"] = True
+        node_data[node.id] = attrs
+
+    # Build flattened edge attributes
+    edge_data: dict[str, dict[str, Any]] = {}
     for edge in edge_list.items:
         display_info = schemas_metadata.get(f"edge:{edge.type}", {})
-        edge_data: dict[str, object] = {
-            "id": edge.id,
-            "source": edge.source_id,
-            "target": edge.target_id,
-            "label": edge.type,
+        attrs = {
+            "type": edge.type,
             "display_label": display_info.get("alias") or edge.type,
         }
         svg_uri = display_info.get("svg_icon_data_uri")
         if svg_uri:
-            edge_data["iconUri"] = svg_uri
-        elements.append({"group": "edges", "data": edge_data})
+            attrs["svg_icon_data_uri"] = svg_uri
+        attrs.update(_flatten_dict(edge.data, "data"))
+        attrs = {k: v for k, v in attrs.items() if isinstance(v, (str, int, float, bool)) or v is None}
+        for tag in edge.tags or []:
+            attrs[f"tag__{tag}"] = True
+        edge_data[edge.id] = attrs
 
-    return GraphViewerData(
-        elements=elements,
-        node_count=len(node_list.items),
-        edge_count=len(edge_list.items),
-        schemas=schemas_metadata,
+    # Build fullGraph (Graphology SerializedGraph)
+    full_graph: dict[str, Any] = {
+        "attributes": {},
+        "options": {"type": "mixed", "multi": True, "allowSelfLoops": True},
+        "nodes": [{"key": nid} for nid in node_data],
+        "edges": [
+            {
+                "key": eid,
+                "source": edge.source_id,
+                "target": edge.target_id,
+            }
+            for eid, edge in zip(edge_data, edge_list.items)
+        ],
+    }
+
+    # Build field definitions by inspecting all flattened attributes
+    node_fields = _build_field_defs(node_data, item_type="nodes")
+    edge_fields = _build_field_defs(edge_data, item_type="edges")
+
+    layout_positions = _default_layout_for_nodes(list(node_data.keys()))
+
+    return GephiViewerData(
+        nodeData=node_data,
+        edgeData=edge_data,
+        layout=layout_positions,
+        metadata={"title": graph_display_name},
+        nodeFields=node_fields,
+        edgeFields=edge_fields,
+        fullGraph=full_graph,
     )
 
 

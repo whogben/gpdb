@@ -439,14 +439,14 @@ class GraphDetail(BaseModel):
     graph: GraphRecord
 
 
-class GraphViewerData(BaseModel):
-    """Combined nodes and edges for the graph viewer (Cytoscape-oriented)."""
+class GephiViewerData(BaseModel):
+    """Combined nodes and edges for the graph viewer (Gephi Lite format)."""
 
-    elements: list[dict[str, object]] = Field(default_factory=list)
-    node_count: int = 0
-    edge_count: int = 0
-    schemas: dict[str, dict[str, str | None]] = Field(
-        default_factory=dict,
-        description="Display metadata keyed as 'node:<name>' or 'edge:<name>'.",
-    )
+    nodeData: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    edgeData: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    layout: dict[str, dict[str, float]] = Field(default_factory=dict)
+    metadata: dict[str, str] = Field(default_factory=dict)
+    nodeFields: list[dict[str, Any]] = Field(default_factory=list)
+    edgeFields: list[dict[str, Any]] = Field(default_factory=list)
+    fullGraph: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None

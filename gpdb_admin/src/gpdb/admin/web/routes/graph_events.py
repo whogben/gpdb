@@ -26,11 +26,23 @@ router = APIRouter()
 DEFAULT_EVENT_LIMIT = 50
 
 
+def _checkbox_tri_state(request: Request, name: str) -> bool | None:
+    """Parse checkbox / pagination param: absent means no kind filter (include all)."""
+    if name not in request.query_params:
+        return None
+    val = request.query_params.get(name)
+    if val in ("true", "on"):
+        return True
+    if val == "false":
+        return False
+    return None
+
+
 def event_filter_form_from_request(
     request: Request,
     *,
     default_limit: int = DEFAULT_EVENT_LIMIT,
-) -> dict[str, str | int | bool | list[str]]:
+) -> dict[str, str | int | bool | None | list[str]]:
     """Build events list filter form state from request query params."""
     def _split_comma_separated(values: list[str]) -> list[str]:
         """Split comma-separated values from form input."""
@@ -38,15 +50,15 @@ def event_filter_form_from_request(
     
     return {
         "since_time": request.query_params.get("since_time", "").strip(),
-        "node_created": request.query_params.get("node_created") in ("true", "on"),
-        "node_updated": request.query_params.get("node_updated") in ("true", "on"),
-        "node_deleted": request.query_params.get("node_deleted") in ("true", "on"),
-        "node_origin_edge_created": request.query_params.get("node_origin_edge_created") in ("true", "on"),
-        "node_origin_edge_updated": request.query_params.get("node_origin_edge_updated") in ("true", "on"),
-        "node_origin_edge_deleted": request.query_params.get("node_origin_edge_deleted") in ("true", "on"),
-        "node_destination_edge_created": request.query_params.get("node_destination_edge_created") in ("true", "on"),
-        "node_destination_edge_updated": request.query_params.get("node_destination_edge_updated") in ("true", "on"),
-        "node_destination_edge_deleted": request.query_params.get("node_destination_edge_deleted") in ("true", "on"),
+        "node_created": _checkbox_tri_state(request, "node_created"),
+        "node_updated": _checkbox_tri_state(request, "node_updated"),
+        "node_deleted": _checkbox_tri_state(request, "node_deleted"),
+        "node_origin_edge_created": _checkbox_tri_state(request, "node_origin_edge_created"),
+        "node_origin_edge_updated": _checkbox_tri_state(request, "node_origin_edge_updated"),
+        "node_origin_edge_deleted": _checkbox_tri_state(request, "node_origin_edge_deleted"),
+        "node_destination_edge_created": _checkbox_tri_state(request, "node_destination_edge_created"),
+        "node_destination_edge_updated": _checkbox_tri_state(request, "node_destination_edge_updated"),
+        "node_destination_edge_deleted": _checkbox_tri_state(request, "node_destination_edge_deleted"),
         "node_types": _split_comma_separated(request.query_params.getlist("node_types")),
         "edge_types": _split_comma_separated(request.query_params.getlist("edge_types")),
         "origin_types": _split_comma_separated(request.query_params.getlist("origin_types")),

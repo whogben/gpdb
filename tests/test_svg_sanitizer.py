@@ -9,7 +9,7 @@ import pytest
 from gpdb.svg_sanitizer import (
     normalize_svg_icon_for_display,
     sanitize_svg,
-    svg_markup_to_cytoscape_data_uri,
+    svg_to_data_uri,
 )
 
 
@@ -29,18 +29,18 @@ class TestSanitizeSVG:
         assert "r=" in result
         assert "fill=" in result
 
-    def test_svg_markup_to_cytoscape_data_uri_percent_encoded(self):
-        """Viewer payload uses percent-encoded UTF-8 data URIs (Cytoscape.js recommendation)."""
-        uri = svg_markup_to_cytoscape_data_uri('<svg xmlns="http://www.w3.org/2000/svg"/>')
+    def test_svg_to_data_uri_percent_encoded(self):
+        """Viewer payload uses percent-encoded UTF-8 data URIs."""
+        uri = svg_to_data_uri('<svg xmlns="http://www.w3.org/2000/svg"/>')
         assert uri is not None
         assert uri.startswith("data:image/svg+xml;charset=utf-8,")
         raw = unquote(uri.split(",", 1)[1])
         assert raw.lstrip().startswith("<svg")
         assert "<!DOCTYPE" not in raw
 
-    def test_svg_markup_to_cytoscape_data_uri_adds_xmlns_for_bare_svg(self):
+    def test_svg_to_data_uri_adds_xmlns_for_bare_svg(self):
         """Bare <svg> (no xmlns) must get SVG namespace or WebKit img/Image rejects the data URL."""
-        uri = svg_markup_to_cytoscape_data_uri('<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>')
+        uri = svg_to_data_uri('<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>')
         assert uri is not None
         raw = unquote(uri.split(",", 1)[1])
         assert 'xmlns="http://www.w3.org/2000/svg"' in raw

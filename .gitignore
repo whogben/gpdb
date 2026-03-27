@@ -179,8 +179,20 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
-.DS_Store
-/temp_refs
 /.cursor
+
+# Mac OS
+.DS_Store
+
+/temp_refs
+
 /.kilocode
+
+# local storage
+/plans
+/temp_refs
+
+# Gephi Lite build artifacts
+gpdb_admin/src/gpdb/admin/web/static/gephi-lite/
+gpdb_admin/src/gpdb/admin/web/static/js/gephi-driver.js
 

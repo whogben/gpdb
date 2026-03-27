@@ -30,6 +30,9 @@ def _iter_code_files(repo_root: Path):
         for p in abs_dir.rglob("*"):
             if not p.is_file():
                 continue
+            # Vendored Gephi Lite app (Vite build); not project-authored source.
+            if "gephi-lite" in p.parts:
+                continue
             # Skip minified/bundled JS artifacts; they aren't meant to be refactored.
             if p.name.endswith(".bundle.js"):
                 continue
