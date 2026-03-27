@@ -1,9 +1,13 @@
 {% extends "base.html" %}
 
+{% block titlebar_right %}
+<button class="titlebar-btn titlebar-btn--right" data-filter-toggle type="button" aria-label="Toggle filters">⚙</button>
+{% endblock %}
+
 {% block content %}
 {% set form_action = web_app.url_path_for('graph_edge_list_page', graph_id=current_graph.id) %}
 {% set filter_kind = 'edge' %}
-{% include 'partials/list_filter_panel.html' %}
+{% include 'partials/filter_bar.html' %}
 
 <section class="dashboard-section">
   <div class="section-heading">
@@ -78,7 +82,6 @@
 {% endblock %}
 
 {% block scripts %}
-{% include 'partials/filters_toggle_script.html' %}
 <script>
   // Show info strap on page load if error/success query params exist
   const urlParams = new URLSearchParams(window.location.search);

@@ -1,0 +1,17 @@
+{# Collapsible filter bar. Hidden by default, toggled by [data-filter-toggle].
+   Expects: form_action, clear_filters_url, filter_form, sort_options, filter_kind ('node'|'edge')
+#}
+<div class="filter-bar" data-filter-bar hidden>
+  <form class="filter-bar__form auth-form" action="{{ form_action }}" method="get">
+    {% if filter_kind == 'node' %}
+      {% include 'partials/list_filter_fields_node.html' %}
+    {% elif filter_kind == 'edge' %}
+      {% include 'partials/list_filter_fields_edge.html' %}
+    {% endif %}
+    <input type="hidden" name="offset" value="0">
+    <div class="filter-bar__actions button-row">
+      <button class="button" type="submit">Apply</button>
+      <a class="button button-secondary" href="{{ clear_filters_url }}">Clear</a>
+    </div>
+  </form>
+</div>

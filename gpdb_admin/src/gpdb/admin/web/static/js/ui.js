@@ -198,6 +198,53 @@
         return div.textContent || div.innerText || "";
     }
 
+    // --- Filter bar toggle ---
+
+    var filterToggle, filterBar;
+
+    function countActiveFilters() {
+        if (!filterBar) return 0;
+        var count = 0;
+        var inputs = filterBar.querySelectorAll("input, select");
+        for (var i = 0; i < inputs.length; i++) {
+            var el = inputs[i];
+            if (el.type === "hidden") continue;
+            if (el.name === "sort" || el.name === "limit" || el.name === "node_limit" || el.name === "edge_limit") continue;
+            if (el.type === "checkbox") {
+                if (el.checked) count++;
+            } else if (el.value && el.value.trim() !== "") {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    function updateFilterToggleText() {
+        if (!filterToggle) return;
+        var n = countActiveFilters();
+        filterToggle.textContent = n > 0 ? "⚙ (" + n + ")" : "⚙";
+    }
+
+    function initFilterBar() {
+        filterToggle = document.querySelector("[data-filter-toggle]");
+        filterBar = document.querySelector("[data-filter-bar]");
+        if (!filterToggle || !filterBar) return;
+
+        filterToggle.addEventListener("click", function () {
+            if (filterBar.hasAttribute("hidden")) {
+                filterBar.removeAttribute("hidden");
+            } else {
+                filterBar.setAttribute("hidden", "hidden");
+            }
+        });
+
+        // Update count on input changes
+        filterBar.addEventListener("input", updateFilterToggleText);
+        filterBar.addEventListener("change", updateFilterToggleText);
+
+        updateFilterToggleText();
+    }
+
     function init() {
         navToggle = document.querySelector("[data-nav-toggle]");
         navMenu = document.querySelector("[data-nav-menu]");
@@ -210,6 +257,7 @@
 
         initEventListeners();
         initGraphSelector();
+        initFilterBar();
     }
 
     window.showInfoStrap = showInfoStrap;

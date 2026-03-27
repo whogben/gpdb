@@ -20,35 +20,8 @@ from gpdb.admin.web.routes.list_filters import (
 
 router = APIRouter()
 
-DEFAULT_VIEWER_NODE_LIMIT = 200
-DEFAULT_VIEWER_EDGE_LIMIT = 200
-
-FILTER_SUMMARY_MAX_LEN = 72
-
-
-def _viewer_filter_summary(params: dict[str, str | int]) -> str:
-    """Build a short one-line summary of active filters for display when panel is closed."""
-    parts: list[str] = []
-    if params.get("node_type"):
-        parts.append(f"node type={params['node_type']}")
-    if params.get("node_parent_id"):
-        parts.append("node parent=…")
-    if params.get("node_filter"):
-        parts.append("node DSL")
-    if params.get("edge_type"):
-        parts.append(f"edge type={params['edge_type']}")
-    if params.get("edge_source_id"):
-        parts.append("edge source=…")
-    if params.get("edge_target_id"):
-        parts.append("edge target=…")
-    if params.get("edge_filter"):
-        parts.append("edge DSL")
-    if not parts:
-        return ""
-    summary = "; ".join(parts)
-    if len(summary) > FILTER_SUMMARY_MAX_LEN:
-        summary = summary[: FILTER_SUMMARY_MAX_LEN - 1].rstrip() + "…"
-    return summary
+DEFAULT_VIEWER_NODE_LIMIT = 500
+DEFAULT_VIEWER_EDGE_LIMIT = 500
 
 
 def _viewer_filter_params_from_request(request: Request) -> dict[str, str | int]:
@@ -92,7 +65,6 @@ async def graph_viewer_page(request: Request, graph_id: str) -> HTMLResponse:
         return redirect_with_message(request, "home", error=str(exc))
 
     filter_params = _viewer_filter_params_from_request(request)
-    filter_summary = _viewer_filter_summary(filter_params)
     overview_payload = overview.model_dump(mode="json")
     return render(
         request,
@@ -103,7 +75,6 @@ async def graph_viewer_page(request: Request, graph_id: str) -> HTMLResponse:
         current_graph=overview_payload["graph"],
         graph_id=graph_id,
         filter_params=filter_params,
-        filter_summary=filter_summary,
         graphs=await get_admin_store(request).list_graphs(),
         error_message=request.query_params.get("error"),
         success_message=request.query_params.get("success"),

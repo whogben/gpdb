@@ -27,7 +27,7 @@
 <label class="field">
   <span>Page size</span>
   <select name="limit">
-    {% for option in (10, 20, 50, 100) %}
+    {% for option in (10, 20, 50, 100, 1000, 5000, 10000) %}
     <option value="{{ option }}" {% if filter_form.limit == option %}selected{% endif %}>{{ option }}</option>
     {% endfor %}
   </select>

@@ -1,7 +1,27 @@
 {% extends "base.html" %}
 {% from 'macros/svg_icon_slot.html' import svg_icon_slot %}
 
+{% block titlebar_right %}
+<button class="titlebar-btn titlebar-btn--right" data-filter-toggle type="button" aria-label="Toggle filters">⚙</button>
+{% endblock %}
+
 {% block content %}
+<div class="filter-bar" data-filter-bar {% if not schema_q %}hidden{% endif %}>
+  <form class="filter-bar__form auth-form" method="get"
+    action="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_list_page', graph_id=current_graph.id) }}">
+    <input type="hidden" name="kind" value="{{ schema_kind }}">
+    <label class="field">
+      <span>Name contains</span>
+      <input name="q" type="search" value="{{ schema_q }}" placeholder="Substring match" autocomplete="off">
+    </label>
+    <div class="filter-bar__actions button-row">
+      <button class="button" type="submit">Apply</button>
+      <a class="button button-secondary"
+        href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_list_page', graph_id=current_graph.id) }}?{{ schema_list_clear_qs }}">Clear</a>
+    </div>
+  </form>
+</div>
+
 <section class="dashboard-section">
   <div class="section-heading">
     <div>
@@ -26,36 +46,6 @@
       href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_list_page', graph_id=current_graph.id) }}?{{ schema_qs_edge }}">Edge
       schemas</a>
   </div>
-
-  {% if filter_summary %}
-  <p data-filters-summary class="resource-note" style="margin-top: 0;">Filters: {{ filter_summary }}</p>
-  {% endif %}
-
-  <div class="section-heading" style="margin-top: 1rem;">
-    <div>
-      <p class="eyebrow">Browse</p>
-      <h2>Filters</h2>
-    </div>
-    <button class="button button-secondary" type="button" data-filters-toggle>
-      Show filters
-    </button>
-  </div>
-
-  <article class="resource-card" data-filters-panel {% if not schema_q %}hidden{% endif %}>
-    <form class="auth-form" method="get"
-      action="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_list_page', graph_id=current_graph.id) }}">
-      <input type="hidden" name="kind" value="{{ schema_kind }}">
-      <label class="field">
-        <span>Name contains</span>
-        <input name="q" type="search" value="{{ schema_q }}" placeholder="Substring match" autocomplete="off">
-      </label>
-      <div class="button-row">
-        <button class="button" type="submit">Apply filters</button>
-        <a class="button button-secondary"
-          href="{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_list_page', graph_id=current_graph.id) }}?{{ schema_list_clear_qs }}">Clear</a>
-      </div>
-    </form>
-  </article>
 
   <div class="card-grid" style="margin-top: 1.25rem;">
     {% for schema in schema_list["items"] %}
@@ -110,5 +100,4 @@
     showInfoStrap(success, 'success');
   }
 </script>
-{% include 'partials/filters_toggle_script.html' %}
 {% endblock %}

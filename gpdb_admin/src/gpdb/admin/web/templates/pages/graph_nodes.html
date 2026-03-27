@@ -1,30 +1,13 @@
 {% extends "base.html" %}
 
+{% block titlebar_right %}
+<button class="titlebar-btn titlebar-btn--right" data-filter-toggle type="button" aria-label="Toggle filters">⚙</button>
+{% endblock %}
+
 {% block content %}
 {% set form_action = web_app.url_path_for('graph_node_list_page', graph_id=current_graph.id) %}
 {% set filter_kind = 'node' %}
-<section class="dashboard-section">
-  <div class="section-heading">
-    <div>
-      <p class="eyebrow">Browse</p>
-      <h2>Filters</h2>
-    </div>
-    <button class="button button-secondary" type="button" data-filters-toggle>
-      Show filters
-    </button>
-  </div>
-
-  <article class="resource-card" data-filters-panel hidden>
-    <form class="auth-form" action="{{ form_action }}" method="get">
-      {% include 'partials/list_filter_fields_node.html' %}
-      <input type="hidden" name="offset" value="0">
-      <div class="button-row">
-        <button class="button" type="submit">Apply filters</button>
-        <a class="button button-secondary" href="{{ clear_filters_url }}">Clear</a>
-      </div>
-    </form>
-  </article>
-</section>
+{% include 'partials/filter_bar.html' %}
 
 <section class="dashboard-section">
   <div class="section-heading">
@@ -103,7 +86,6 @@
 {% endblock %}
 
 {% block scripts %}
-{% include 'partials/filters_toggle_script.html' %}
 <script>
   // Show info strap on page load if error/success query params exist
   const urlParams = new URLSearchParams(window.location.search);

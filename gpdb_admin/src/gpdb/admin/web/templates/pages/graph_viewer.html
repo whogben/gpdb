@@ -2,79 +2,65 @@
 
 {% block main_extra_class %}main-content--graph-viewer{% endblock %}
 
+{% block titlebar_right %}
+<button class="titlebar-btn titlebar-btn--right" data-filter-toggle type="button" aria-label="Toggle filters">⚙</button>
+{% endblock %}
+
 {% block content %}
 <div class="graph-viewer-page">
-<section class="dashboard-section">
-  <div class="section-heading">
-    <div>
-      <p class="eyebrow">Filters</p>
-      <h2>Node and edge filters</h2>
-    </div>
-    <button class="button button-secondary" type="button" data-filters-toggle>
-      Hide filters
-    </button>
+<div class="filter-bar" data-filter-bar hidden>
+  <div id="viewer-filter-form" data-graph-id="{{ graph_id }}" class="filter-bar__form auth-form">
+    <h3 class="filter-bar__group-title">Node filters</h3>
+    <label class="field">
+      <span>Type</span>
+      <input name="node_type" value="{{ filter_params.node_type }}" placeholder="e.g. user">
+    </label>
+    <label class="field">
+      <span>Parent ID</span>
+      <input name="node_parent_id" value="{{ filter_params.node_parent_id }}">
+    </label>
+    <label class="field">
+      <span>Filter (DSL)</span>
+      <input name="node_filter" value="{{ filter_params.node_filter }}" placeholder="e.g. type = user">
+      <small class="field-hint">Optional. Same syntax as Nodes list.</small>
+    </label>
+    <label class="field">
+      <span>Node limit</span>
+      <select name="node_limit">
+        {% for option in (50, 100, 200, 500) %}
+        <option value="{{ option }}" {% if filter_params.node_limit == option %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <h3 class="filter-bar__group-title">Edge filters</h3>
+    <label class="field">
+      <span>Type</span>
+      <input name="edge_type" value="{{ filter_params.edge_type }}" placeholder="e.g. follows">
+    </label>
+    <label class="field">
+      <span>Source ID</span>
+      <input name="edge_source_id" value="{{ filter_params.edge_source_id }}">
+    </label>
+    <label class="field">
+      <span>Target ID</span>
+      <input name="edge_target_id" value="{{ filter_params.edge_target_id }}">
+    </label>
+    <label class="field">
+      <span>Filter (DSL)</span>
+      <input name="edge_filter" value="{{ filter_params.edge_filter }}" placeholder="e.g. type = follows">
+      <small class="field-hint">Optional. Same syntax as Edges list.</small>
+    </label>
+    <label class="field">
+      <span>Edge limit</span>
+      <select name="edge_limit">
+        {% for option in (50, 100, 200, 500) %}
+        <option value="{{ option }}" {% if filter_params.edge_limit == option %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
   </div>
-
-  {% if filter_summary %}
-  <p data-filters-summary class="resource-note" style="margin-top: 0;">Filters: {{ filter_summary }}</p>
-  {% endif %}
-
-  <article class="resource-card" data-filters-panel hidden>
-    <div id="viewer-filter-form" data-graph-id="{{ graph_id }}" class="auth-form">
-      <h3 class="resource-subtitle">Node filters</h3>
-      <label class="field">
-        <span>Type</span>
-        <input name="node_type" value="{{ filter_params.node_type }}" placeholder="e.g. user">
-      </label>
-      <label class="field">
-        <span>Parent ID</span>
-        <input name="node_parent_id" value="{{ filter_params.node_parent_id }}">
-      </label>
-      <label class="field">
-        <span>Filter (DSL)</span>
-        <input name="node_filter" value="{{ filter_params.node_filter }}" placeholder="e.g. type = user">
-        <small class="field-hint">Optional. Same syntax as Nodes list.</small>
-      </label>
-      <label class="field">
-        <span>Node limit</span>
-        <select name="node_limit">
-          {% for option in (50, 100, 200, 500) %}
-          <option value="{{ option }}" {% if filter_params.node_limit==option %}selected{% endif %}>{{ option }}
-          </option>
-          {% endfor %}
-        </select>
-      </label>
- 
-      <h3 class="resource-subtitle">Edge filters</h3>
-      <label class="field">
-        <span>Type</span>
-        <input name="edge_type" value="{{ filter_params.edge_type }}" placeholder="e.g. follows">
-      </label>
-      <label class="field">
-        <span>Source ID</span>
-        <input name="edge_source_id" value="{{ filter_params.edge_source_id }}">
-      </label>
-      <label class="field">
-        <span>Target ID</span>
-        <input name="edge_target_id" value="{{ filter_params.edge_target_id }}">
-      </label>
-      <label class="field">
-        <span>Filter (DSL)</span>
-        <input name="edge_filter" value="{{ filter_params.edge_filter }}" placeholder="e.g. type = follows">
-        <small class="field-hint">Optional. Same syntax as Edges list.</small>
-      </label>
-      <label class="field">
-        <span>Edge limit</span>
-        <select name="edge_limit">
-          {% for option in (50, 100, 200, 500) %}
-          <option value="{{ option }}" {% if filter_params.edge_limit==option %}selected{% endif %}>{{ option }}
-          </option>
-          {% endfor %}
-        </select>
-      </label>
-    </div>
-  </article>
-</section>
+</div>
 
 <section class="dashboard-section dashboard-section--viewer-graph">
   <div class="section-heading">
@@ -103,7 +89,6 @@
 {% block scripts %}
 <script data-viewer-base="{{ mount_prefix or '' }}"
   src="{{ mount_prefix }}{{ web_app.url_path_for('static', path='js/gephi-driver.js') }}?v={{ admin_version or 'dev' }}"></script>
-{% include 'partials/filters_toggle_script.html' %}
 <script>
 (function () {
   "use strict";

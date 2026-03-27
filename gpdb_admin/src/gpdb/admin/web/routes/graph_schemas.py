@@ -134,9 +134,6 @@ async def graph_schema_list_page(
         schema_qs_node=_listing_qs("node"),
         schema_qs_edge=_listing_qs("edge"),
         schema_list_clear_qs=urlencode({"kind": list_kind}),
-        filter_summary=(
-            f'Name contains "{name_query}".' if name_query else ""
-        ),
     )
 
 
