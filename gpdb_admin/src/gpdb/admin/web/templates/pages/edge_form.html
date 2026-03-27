@@ -1,5 +1,14 @@
 {% extends "base.html" %}
 
+{% block titlebar_left %}
+<a class="titlebar-btn titlebar-btn--left titlebar-btn--cancel"
+  href="{% if is_edit and edge_detail %}{{ web_app.url_path_for('graph_edge_detail_page', graph_id=overview.graph.id, edge_id=edge_detail.edge.id) }}{% else %}{{ web_app.url_path_for('graph_edge_list_page', graph_id=overview.graph.id) }}{% endif %}">Cancel</a>
+{% endblock %}
+
+{% block titlebar_right %}
+<button class="titlebar-btn titlebar-btn--right titlebar-btn--save" type="submit" form="edge-form">{% if is_edit %}Save{% else %}Create{% endif %}</button>
+{% endblock %}
+
 {% block content %}
 <section class="auth-layout auth-layout--full-width">
   <div class="auth-copy">
@@ -21,7 +30,7 @@
 
   <div class="auth-card">
     <h2>{% if is_edit %}Update edge{% else %}New edge{% endif %}</h2>
-    <form class="auth-form" action="{{ submit_url }}" method="post">
+    <form id="edge-form" class="auth-form" action="{{ submit_url }}" method="post">
       {% if is_edit and edge_detail %}
       <label class="field">
         <span>Edge ID</span>
@@ -87,10 +96,6 @@
         <textarea id="edge-data-json" name="data" rows="14" required>{{ (form_data or {}).get('data', '') }}</textarea>
       </label>
 
-      <div class="button-row">
-        <button class="button" type="submit">{% if is_edit %}Save changes{% else %}Create edge{% endif %}</button>
-        <a class="button button-secondary" href="{% if is_edit and edge_detail %}{{ web_app.url_path_for('graph_edge_detail_page', graph_id=overview.graph.id, edge_id=edge_detail.edge.id) }}{% else %}{{ web_app.url_path_for('graph_edge_list_page', graph_id=overview.graph.id) }}{% endif %}">Back</a>
-      </div>
     </form>
   </div>
 </section>

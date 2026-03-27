@@ -1,5 +1,14 @@
 {% extends "base.html" %}
 
+{% block titlebar_left %}
+<a class="titlebar-btn titlebar-btn--left titlebar-btn--cancel"
+  href="{% if is_edit %}{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_detail_page', graph_id=overview.graph.id, schema_name=schema_detail.schema.name, kind=schema_detail.schema.kind) }}{% else %}{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_list_page', graph_id=overview.graph.id) }}{% endif %}">Cancel</a>
+{% endblock %}
+
+{% block titlebar_right %}
+<button class="titlebar-btn titlebar-btn--right titlebar-btn--save" type="submit" form="schema-form">{% if is_edit %}Save{% else %}Create{% endif %}</button>
+{% endblock %}
+
 {% block content %}
 <section class="auth-layout auth-layout--full-width">
   <div class="auth-copy">
@@ -24,7 +33,7 @@
 
   <div class="auth-card">
     <h2>{% if is_edit %}Update schema{% else %}New schema{% endif %}</h2>
-    <form class="auth-form" action="{{ submit_url }}" method="post">
+    <form id="schema-form" class="auth-form" action="{{ submit_url }}" method="post">
       {% if is_edit %}
       <label class="field">
         <span>Name</span>
@@ -97,11 +106,6 @@
       <input type="hidden" name="json_schema" id="schema-json-field"
         value="{{ (form_data or {}).get('json_schema', '') }}">
 
-      <div class="button-row">
-        <button class="button" type="submit">{% if is_edit %}Save changes{% else %}Create schema{% endif %}</button>
-        <a class="button button-secondary"
-          href="{% if is_edit %}{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_detail_page', graph_id=overview.graph.id, schema_name=schema_detail.schema.name, kind=schema_detail.schema.kind) }}{% else %}{{ mount_prefix }}{{ web_app.url_path_for('graph_schema_list_page', graph_id=overview.graph.id) }}{% endif %}">Back</a>
-      </div>
     </form>
   </div>
 </section>

@@ -50,11 +50,11 @@ a {
   align-items: center;
   justify-content: center;
   min-width: 2.5rem;
-  min-height: 2.5rem;
+  min-height: 2.25rem;
   padding: 0 0.75rem;
   white-space: nowrap;
   border: 0;
-  border-radius: 0.5rem;
+  border-radius: 0.35rem;
   background: transparent;
   color: var(--text-color);
   font-size: 1.25rem;
@@ -95,6 +95,31 @@ a {
   font-weight: 700;
   letter-spacing: 0.02em;
   text-align: center;
+}
+
+/* Titlebar form actions (cancel/save) */
+.titlebar-btn--save {
+  background: var(--accent-color);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  min-width: auto;
+  padding: 0 0.75rem;
+}
+
+.titlebar-btn--save:hover {
+  background: color-mix(in srgb, var(--accent-color) 85%, white);
+}
+
+.titlebar-btn--cancel {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  min-width: auto;
+  padding: 0 0.75rem;
 }
 
 /* Navigation Menu */
@@ -636,7 +661,7 @@ a {
 }
 
 /* Let the title column shrink; icon column is fixed — avoids flex min-width:auto blowouts. */
-.resource-header > div:first-child {
+.resource-header>div:first-child {
   min-width: 0;
 }
 
@@ -1198,6 +1223,7 @@ a {
 }
 
 @media (max-width: 800px) {
+
   .data-table th,
   .data-table td {
     padding: 0.5rem 0.5rem;

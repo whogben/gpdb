@@ -1,5 +1,14 @@
 {% extends "base.html" %}
 
+{% block titlebar_left %}
+<a class="titlebar-btn titlebar-btn--left titlebar-btn--cancel"
+  href="{{ mount_prefix }}{{ web_app.url_path_for('home') }}">Cancel</a>
+{% endblock %}
+
+{% block titlebar_right %}
+<button class="titlebar-btn titlebar-btn--right titlebar-btn--save" type="submit" form="graph-form">{% if mode == "create" %}Create{% else %}Save{% endif %}</button>
+{% endblock %}
+
 {% block content %}
 <section class="auth-layout auth-layout--full-width">
   <div class="auth-copy">
@@ -13,7 +22,7 @@
 
   <div class="auth-card">
     <h2>{% if mode == "create" %}New graph{% else %}{{ graph.display_name }}{% endif %}</h2>
-    <form class="auth-form" action="{{ submit_url }}" method="post">
+    <form id="graph-form" class="auth-form" action="{{ submit_url }}" method="post">
       {% if mode == "create" %}
       <label class="field">
         <span>Instance</span>
@@ -47,11 +56,6 @@
         <input name="display_name" value="{{ (form_data or {}).get('display_name', '') }}">
       </label>
 
-      <div class="button-row">
-        <button class="button" type="submit">{% if mode == "create" %}Create graph{% else %}Save changes{% endif
-          %}</button>
-        <a class="button button-secondary" href="{{ mount_prefix }}{{ web_app.url_path_for('home') }}">Back</a>
-      </div>
     </form>
   </div>
 </section>
