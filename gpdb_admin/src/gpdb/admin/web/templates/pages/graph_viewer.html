@@ -62,27 +62,9 @@
   </div>
 </div>
 
-<section class="dashboard-section dashboard-section--viewer-graph">
-  <div class="section-heading">
-    <p class="eyebrow">Graph</p>
-    <h2>View</h2>
-  </div>
-  <div id="viewer-status" class="resource-note" aria-live="polite">Loading…</div>
-
-  <div id="viewer-container" class="viewer-container">
-    <button id="viewer-expand-btn" class="viewer-expand-btn" type="button" aria-label="Expand graph view"
-      title="Expand graph view">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-        stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="15 3 21 3 21 9"></polyline>
-        <polyline points="9 21 3 21 3 15"></polyline>
-        <line x1="21" y1="3" x2="14" y2="10"></line>
-        <line x1="3" y1="21" x2="10" y2="14"></line>
-      </svg>
-    </button>
-    <iframe id="viewer-iframe" class="viewer-iframe"></iframe>
-  </div>
-</section>
+<div id="viewer-container" class="viewer-container">
+  <iframe id="viewer-iframe" class="viewer-iframe"></iframe>
+</div>
 </div>
 {% endblock %}
 
@@ -137,38 +119,6 @@
     return parts.length ? "?" + parts.join("&") : "";
   }
 
-  function setStatus(text, isError) {
-    var el = document.getElementById("viewer-status");
-    if (!el) return;
-    el.textContent = text;
-    el.className = "resource-note" + (isError ? " form-error" : "");
-  }
-
-  // --- Expand / collapse ---
-
-  var viewerContainer = document.getElementById("viewer-container");
-  var expandBtn = document.getElementById("viewer-expand-btn");
-  var isExpanded = false;
-
-  function toggleExpand() {
-    isExpanded = !isExpanded;
-    if (isExpanded) {
-      viewerContainer.classList.add("expanded");
-      expandBtn.setAttribute("aria-label", "Collapse graph view");
-      expandBtn.setAttribute("title", "Collapse graph view");
-      expandBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"></polyline><polyline points="20 10 14 10 14 4"></polyline><line x1="14" y1="10" x2="21" y2="3"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>';
-    } else {
-      viewerContainer.classList.remove("expanded");
-      expandBtn.setAttribute("aria-label", "Expand graph view");
-      expandBtn.setAttribute("title", "Expand graph view");
-      expandBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>';
-    }
-  }
-
-  if (expandBtn) {
-    expandBtn.addEventListener("click", toggleExpand);
-  }
-
   // --- Gephi Lite driver integration ---
 
   var driver = null;
@@ -184,14 +134,13 @@
 
     driver.on("newInstance", function () {
       connected = true;
-      setStatus("Connected — loading data…");
       loadAndPushData();
     });
 
     // Timeout: if Gephi Lite doesn't connect within 15s, show error
     setTimeout(function () {
       if (!connected) {
-        setStatus("Gephi Lite failed to connect. Try refreshing the page.", true);
+        console.error("[viewer] Gephi Lite failed to connect. Try refreshing the page.");
       }
     }, 15000);
   }
@@ -199,7 +148,7 @@
   async function loadAndPushData() {
     var base = getViewerBase();
     if (!base) {
-      setStatus("Missing graph id.", true);
+      console.error("[viewer] Missing graph id.");
       return;
     }
 
@@ -223,7 +172,7 @@
       var layoutRes = results[3];
 
       if (dataRes.error) {
-        setStatus(dataRes.error, true);
+        console.error("[viewer] data error:", dataRes.error);
         return;
       }
 
@@ -300,7 +249,6 @@
         dataset = GephiLiteBroadcast.deserializeDataset(datasetInput);
       } catch (e) {
         console.error("[viewer] deserializeDataset failed:", e);
-        setStatus("Failed to deserialize graph data: " + e.message, true);
         return;
       }
 
@@ -309,7 +257,6 @@
         await driver.setGraphDataset(dataset);
       } catch (e) {
         console.error("[viewer] setGraphDataset failed:", e);
-        setStatus("Failed to load graph data: " + e.message, true);
         return;
       }
       try {
@@ -319,14 +266,10 @@
         console.error("[viewer] appearance/filters failed:", e);
       }
 
-      var nodeCount = Object.keys(dataset.nodeData || {}).length;
-      var edgeCount = Object.keys(dataset.edgeData || {}).length;
-      setStatus("Nodes: " + nodeCount + ", Edges: " + edgeCount);
-
       // Start auto-save
       startAutoSave(base);
     } catch (e) {
-      setStatus("Failed to load graph data: " + e.message, true);
+      console.error("[viewer] loadAndPushData failed:", e);
     }
   }
 
@@ -389,7 +332,6 @@
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(function () {
       if (driver && connected) {
-        setStatus("Loading…");
         loadAndPushData();
       }
     }, DEBOUNCE_MS);
@@ -416,7 +358,7 @@
   if (typeof GephiLiteBroadcast !== "undefined" && GephiLiteBroadcast.GephiLiteDriver) {
     initDriver();
   } else {
-    setStatus("Gephi Lite driver not loaded.", true);
+    console.error("[viewer] Gephi Lite driver not loaded.");
   }
 })();
 </script>

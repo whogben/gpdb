@@ -900,45 +900,46 @@ a {
   }
 }
 
-/* Graph viewer: fill viewport below titlebar + intro/filter sections */
+/* Stage 5: Viewer — full-bleed under titlebar */
 .main-content--graph-viewer {
   display: flex;
   flex-direction: column;
+  flex: 1 1 0;
   min-height: 0;
+  padding: 0 !important;
+  max-width: none;
+  margin: 0;
+  width: 100%;
 }
 
 .graph-viewer-page {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
 
-.dashboard-section--viewer-graph {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.dashboard-section--viewer-graph .section-heading,
-.dashboard-section--viewer-graph #viewer-status {
+.viewer-status {
   flex-shrink: 0;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+  color: var(--muted-text);
+  background: var(--surface-bg);
+  border-bottom: 1px solid var(--border-color);
 }
 
-/* Graph viewer styles */
+.viewer-status--error {
+  color: #c53d4b;
+}
+
 .viewer-container {
-  border: 1px solid var(--border-color);
-  border-radius: 0.5rem;
-  overflow: hidden;
+  flex: 1 1 0;
   position: relative;
   width: 100%;
-  flex: 1 1 auto;
-  min-height: 400px;
+  min-height: 0;
+  overflow: hidden;
 }
 
-/* Absolute fill: percentage height on iframes is unreliable when the parent’s height
-   comes only from flex layout; inset sizing matches the sized flex item. */
 .viewer-iframe {
   position: absolute;
   inset: 0;
@@ -946,51 +947,6 @@ a {
   height: 100%;
   border: none;
   display: block;
-}
-
-.viewer-container.expanded {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 250;
-  border-radius: 0;
-  border: none;
-}
-
-.viewer-expand-btn {
-  position: absolute;
-  top: 0.75rem;
-  right: 0.75rem;
-  z-index: 20;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  border: 1px solid var(--border-color);
-  border-radius: 0.5rem;
-  background: var(--surface-bg);
-  color: var(--text-color);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.viewer-expand-btn:hover {
-  background: var(--accent-color);
-  color: white;
-  border-color: var(--accent-color);
-}
-
-.viewer-expand-btn svg {
-  width: 20px;
-  height: 20px;
-}
-
-.viewer-container.expanded .viewer-expand-btn svg {
-  transform: rotate(180deg);
 }
 
 /* SVG icon slot: fixed outer box; inner SVG scaled via viewBox + svg-icon-slot.js (getBBox) */

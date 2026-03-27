@@ -154,7 +154,7 @@ def _build_field_defs(
         "display_label": "text",
         "svg_icon_data_uri": "url",
     }
-    return [{"name": name, "itemType": item_type, "type": overrides.get(name, t)} for name, t in key_types.items()]
+    return [{"id": name, "itemType": item_type, "type": overrides.get(name, t)} for name, t in key_types.items()]
 
 
 def _default_layout_for_nodes(

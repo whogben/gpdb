@@ -337,8 +337,8 @@ async def test_gephi_viewer_data_model(db: GPGraph):
         edgeData={"e1": {"type": "friend"}},
         layout={},
         metadata={"title": "Test"},
-        nodeFields=[{"name": "type", "type": "category"}],
-        edgeFields=[{"name": "type", "type": "category"}],
+        nodeFields=[{"id": "type", "type": "category"}],
+        edgeFields=[{"id": "type", "type": "category"}],
         fullGraph={
             "options": {"type": "mixed", "multi": True, "allowSelfLoops": True},
             "nodes": [{"key": "n1"}],
@@ -398,19 +398,19 @@ class TestBuildFieldDefs:
     def test_basic_fields(self):
         all_attrs = {"n1": {"type": "person", "name": "Alice", "age": 30}}
         fields = _build_field_defs(all_attrs, item_type="nodes")
-        names = {f["name"] for f in fields}
-        assert "type" in names
-        assert "name" in names
-        assert "age" in names
-        type_field = next(f for f in fields if f["name"] == "type")
+        ids = {f["id"] for f in fields}
+        assert "type" in ids
+        assert "name" in ids
+        assert "age" in ids
+        type_field = next(f for f in fields if f["id"] == "type")
         assert type_field["type"] == "category"
-        name_field = next(f for f in fields if f["name"] == "name")
+        name_field = next(f for f in fields if f["id"] == "name")
         assert name_field["type"] == "text"
-        age_field = next(f for f in fields if f["name"] == "age")
+        age_field = next(f for f in fields if f["id"] == "age")
         assert age_field["type"] == "number"
 
     def test_svg_icon_data_uri_type_is_image(self):
         all_attrs = {"n1": {"type": "person", "svg_icon_data_uri": "data:image/svg+xml,xxx"}}
         fields = _build_field_defs(all_attrs, item_type="nodes")
-        img_field = next(f for f in fields if f["name"] == "svg_icon_data_uri")
+        img_field = next(f for f in fields if f["id"] == "svg_icon_data_uri")
         assert img_field["type"] == "url"

@@ -625,7 +625,7 @@ async def _render_graph_node_form(
         current_graph=overview_payload["graph"],
         node_detail=node_detail,
         form_data=form_data,
-        schema_names=[item.name for item in schema_list.items],
+        schema_names=[item.name for item in schema_list.items if item.name != "__default__"],
         schema_json_map={
             item.name: item.effective_json_schema if item.effective_json_schema is not None else item.json_schema
             for item in schema_list.items

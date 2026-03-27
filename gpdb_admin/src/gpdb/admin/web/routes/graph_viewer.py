@@ -20,8 +20,8 @@ from gpdb.admin.web.routes.list_filters import (
 
 router = APIRouter()
 
-DEFAULT_VIEWER_NODE_LIMIT = 500
-DEFAULT_VIEWER_EDGE_LIMIT = 500
+DEFAULT_VIEWER_NODE_LIMIT = 200
+DEFAULT_VIEWER_EDGE_LIMIT = 200
 
 
 def _viewer_filter_params_from_request(request: Request) -> dict[str, str | int]:

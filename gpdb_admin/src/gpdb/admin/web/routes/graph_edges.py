@@ -470,7 +470,7 @@ async def _render_graph_edge_form(
         current_graph=overview_payload["graph"],
         edge_detail=edge_detail,
         form_data=form_data,
-        schema_names=[item.name for item in schema_list.items],
+        schema_names=[item.name for item in schema_list.items if item.name != "__default__"],
         schema_json_map={
             item.name: item.json_schema
             for item in schema_list.items
