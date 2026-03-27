@@ -60,6 +60,7 @@ a {
   font-size: 1.25rem;
   cursor: pointer;
   transition: background 0.15s ease;
+  text-decoration: none;
 }
 
 .titlebar-btn:hover {
@@ -72,6 +73,14 @@ a {
 
 .titlebar-btn--right {
   flex-shrink: 0;
+}
+
+.titlebar-btn--text {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  min-width: auto;
 }
 
 [data-nav-toggle] {
@@ -332,7 +341,6 @@ a {
   .titlebar-btn {
     min-width: 2.25rem;
     min-height: 2.25rem;
-    font-size: 1.125rem;
   }
 
   .titlebar-title {
@@ -1072,14 +1080,13 @@ a {
   gap: 0.35rem;
   white-space: nowrap;
   min-width: auto;
-  padding: 0.35rem 0.75rem;
-  border: 1px solid var(--border-color);
+  padding: 0 0.75rem;
+  border: 0;
   border-radius: 0.5rem;
   background: transparent;
   color: var(--text-color);
   font: inherit;
-  font-size: 0.85rem;
-  font-weight: 600;
+  font-size: 1.25rem;
   cursor: pointer;
   transition: background 0.15s ease;
 }

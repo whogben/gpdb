@@ -2,7 +2,7 @@
 
 {% block titlebar_right %}
 {% if current_user.is_owner %}
-<a class="titlebar-btn titlebar-btn--right"
+<a class="titlebar-btn titlebar-btn--right titlebar-btn--text"
   href="{{ mount_prefix }}{{ web_app.url_path_for('graph_edge_create_page', graph_id=current_graph.id) }}">New</a>
 {% endif %}
 <button class="titlebar-btn titlebar-btn--right" data-filter-toggle type="button" aria-label="Toggle filters">⚙</button>
