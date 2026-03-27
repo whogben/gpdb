@@ -3,8 +3,8 @@
 
     var STORAGE_KEY = "gpdb_selected_graph";
 
-    var navToggle, profileToggle, navMenu, profileMenu;
-    var navOverlay, profileOverlay;
+    var navToggle, navMenu;
+    var navOverlay;
     var infoStrap, infoStrapContent, infoStrapClose;
     var graphSelect, graphSettingsLink;
 
@@ -25,31 +25,10 @@
         }
     }
 
-    function toggleProfileMenu(show) {
-        if (show === undefined) {
-            show = !profileMenu.classList.contains("profile-menu--open");
-        }
-        if (show) {
-            profileMenu.classList.add("profile-menu--open");
-            if (profileOverlay) {
-                profileOverlay.classList.add("profile-overlay--open");
-            }
-        } else {
-            profileMenu.classList.remove("profile-menu--open");
-            if (profileOverlay) {
-                profileOverlay.classList.remove("profile-overlay--open");
-            }
-        }
-    }
-
     function closeAllMenus() {
         navMenu.classList.remove("nav-menu--open");
-        profileMenu.classList.remove("profile-menu--open");
         if (navOverlay) {
             navOverlay.classList.remove("nav-overlay--open");
-        }
-        if (profileOverlay) {
-            profileOverlay.classList.remove("profile-overlay--open");
         }
     }
 
@@ -162,26 +141,11 @@
             });
         }
 
-        if (profileToggle) {
-            profileToggle.addEventListener("click", function () {
-                toggleProfileMenu();
-            });
-        }
-
         if (navOverlay) {
             navOverlay.addEventListener("click", function () {
                 navMenu.classList.remove("nav-menu--open");
                 if (navOverlay) {
                     navOverlay.classList.remove("nav-overlay--open");
-                }
-            });
-        }
-
-        if (profileOverlay) {
-            profileOverlay.addEventListener("click", function () {
-                profileMenu.classList.remove("profile-menu--open");
-                if (profileOverlay) {
-                    profileOverlay.classList.remove("profile-overlay--open");
                 }
             });
         }
@@ -204,6 +168,25 @@
                 closeAllMenus();
             }
         });
+
+        // Swipe-to-open nav on touch devices
+        if ("ontouchstart" in window || navigator.maxTouchPoints > 0) {
+            var touchStartX = null;
+            document.addEventListener("touchstart", function (e) {
+                touchStartX = e.touches[0].clientX;
+            }, { passive: true });
+            document.addEventListener("touchmove", function (e) {
+                if (touchStartX === null) return;
+                var deltaX = e.touches[0].clientX - touchStartX;
+                if (touchStartX < 30 && deltaX > 50) {
+                    touchStartX = null;
+                    toggleNavMenu(true);
+                }
+            }, { passive: true });
+            document.addEventListener("touchend", function () {
+                touchStartX = null;
+            }, { passive: true });
+        }
     }
 
     function decodeHtmlEntities(value) {
@@ -217,11 +200,8 @@
 
     function init() {
         navToggle = document.querySelector("[data-nav-toggle]");
-        profileToggle = document.querySelector("[data-profile-toggle]");
         navMenu = document.querySelector("[data-nav-menu]");
-        profileMenu = document.querySelector("[data-profile-menu]");
         navOverlay = document.querySelector("[data-nav-overlay]");
-        profileOverlay = document.querySelector("[data-profile-overlay]");
         infoStrap = document.querySelector("[data-info-strap]");
         infoStrapContent = document.querySelector("[data-info-strap-content]");
         infoStrapClose = document.querySelector("[data-info-strap-close]");

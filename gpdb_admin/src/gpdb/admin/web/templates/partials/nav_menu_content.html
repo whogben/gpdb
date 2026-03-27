@@ -44,6 +44,19 @@
         </a>
     </div>
 
+    <div class="nav-section" data-nav-section="profile">
+        <label class="nav-label">{{ current_user.username if current_user else 'Guest' }}</label>
+        <a class="nav-link" href="{{ mount_prefix }}{{ web_app.url_path_for('api_keys_page') }}">
+            🔑 API Keys
+        </a>
+        <a class="nav-link" href="{{ api_docs_url }}" target="_blank" rel="noopener noreferrer">
+            📄 API Docs
+        </a>
+        <a class="nav-link nav-link--danger" href="{{ mount_prefix }}{{ web_app.url_path_for('logout') }}">
+            ✖︎ Sign Out
+        </a>
+    </div>
+
     {% if admin_version %}
     <div class="nav-footer">
         <span class="nav-footer-label">gpdb-admin</span>

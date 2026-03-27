@@ -4,28 +4,6 @@
 <section class="dashboard-section">
   <div class="section-heading">
     <div>
-      <p class="eyebrow">Events</p>
-      <h2>{{ current_graph.display_name }}</h2>
-    </div>
-  </div>
-
-  <p class="resource-note">
-    Browse change events in this graph, filter by event kind and type, and navigate
-    to related nodes and edges.
-  </p>
-
-  <ul class="feature-list">
-    <li>{{ events_list.total }} event{{ "" if events_list.total == 1 else "s" }} matched.</li>
-    {% if events_list.total > 0 %}
-    <li>Showing {{ events_list.offset + 1 }}-{{ [events_list.offset + events_list.limit,
-      events_list.total] | min }}.</li>
-    {% endif %}
-  </ul>
-</section>
-
-<section class="dashboard-section">
-  <div class="section-heading">
-    <div>
       <p class="eyebrow">Browse</p>
       <h2>Filters</h2>
     </div>
@@ -104,6 +82,7 @@
     <div>
       <p class="eyebrow">Results</p>
       <h2>Event list</h2>
+      <p class="resource-note">{{ events_list.total }} event{{ "" if events_list.total == 1 else "s" }} matched{% if events_list.total > 0 %} · Showing {{ events_list.offset + 1 }}–{{ [events_list.offset + events_list.limit, events_list.total] | min }}{% endif %}</p>
     </div>
   </div>
 

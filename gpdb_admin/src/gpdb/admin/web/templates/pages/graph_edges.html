@@ -1,26 +1,6 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="dashboard-section">
-  <div class="section-heading">
-    <div>
-      <p class="eyebrow">Edges</p>
-      <h2>{{ current_graph.display_name }}</h2>
-    </div>
-  </div>
-
-  <p class="resource-note">
-    Browse relationships in this graph, inspect connected node IDs, and create new
-    edges with schema-validated JSON data.
-  </p>
-
-  <ul class="feature-list">
-    <li>{{ edge_list.total }} edge{{ "" if edge_list.total == 1 else "s" }} matched.</li>
-    <li>Showing {{ edge_list.offset + 1 if edge_list.total else 0 }}-{{ [edge_list.offset + edge_list.limit,
-      edge_list.total] | min }}.</li>
-  </ul>
-</section>
-
 {% set form_action = web_app.url_path_for('graph_edge_list_page', graph_id=current_graph.id) %}
 {% set filter_kind = 'edge' %}
 {% include 'partials/list_filter_panel.html' %}
@@ -30,6 +10,7 @@
     <div>
       <p class="eyebrow">Results</p>
       <h2>Edge list</h2>
+      <p class="resource-note">{{ edge_list.total }} edge{{ "" if edge_list.total == 1 else "s" }} matched · Showing {{ edge_list.offset + 1 if edge_list.total else 0 }}–{{ [edge_list.offset + edge_list.limit, edge_list.total] | min }}</p>
     </div>
     {% if current_user.is_owner %}
     <a class="button"

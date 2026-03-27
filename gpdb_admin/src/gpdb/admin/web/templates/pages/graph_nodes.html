@@ -1,28 +1,6 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="dashboard-section">
-  <div class="section-heading">
-    <div>
-      <p class="eyebrow">Nodes</p>
-      <h2>{{ current_graph.display_name }}</h2>
-    </div>
-    <div class="button-row">
-    </div>
-  </div>
-
-  <p class="resource-note">
-    Browse nodes in this graph, inspect stored metadata, and create new records with
-    schema-validated JSON data.
-  </p>
-
-  <ul class="feature-list">
-    <li>{{ node_list.total }} node{{ "" if node_list.total == 1 else "s" }} matched.</li>
-    <li>Showing {{ node_list.offset + 1 if node_list.total else 0 }}-{{ [node_list.offset + node_list.limit,
-      node_list.total] | min }}.</li>
-  </ul>
-</section>
-
 {% set form_action = web_app.url_path_for('graph_node_list_page', graph_id=current_graph.id) %}
 {% set filter_kind = 'node' %}
 <section class="dashboard-section">
@@ -53,6 +31,7 @@
     <div>
       <p class="eyebrow">Results</p>
       <h2>Node list</h2>
+      <p class="resource-note">{{ node_list.total }} node{{ "" if node_list.total == 1 else "s" }} matched · Showing {{ node_list.offset + 1 if node_list.total else 0 }}–{{ [node_list.offset + node_list.limit, node_list.total] | min }}</p>
     </div>
     {% if current_user.is_owner %}
     <a class="button"

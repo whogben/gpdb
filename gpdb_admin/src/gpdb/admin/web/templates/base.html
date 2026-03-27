@@ -31,12 +31,8 @@
         ☰
       </button>
       {% endblock %}
-      <h1 class="titlebar-title">gpdb</h1>
-      {% block titlebar_right %}
-      <button class="titlebar-btn titlebar-btn--right" data-profile-toggle aria-label="Toggle profile menu">
-        ♀︎
-      </button>
-      {% endblock %}
+      <h1 class="titlebar-title">{{ page_title or "gpdb" }}</h1>
+      {% block titlebar_right %}{% endblock %}
     </header>
 
     <!-- Navigation Menu -->
@@ -44,12 +40,6 @@
       {% include 'partials/nav_menu_content.html' %}
     </nav>
     <button class="nav-overlay" data-nav-overlay aria-label="Close navigation"></button>
-
-    <!-- Profile Menu -->
-    <aside class="profile-menu" data-profile-menu>
-      {% include 'partials/profile_menu_content.html' %}
-    </aside>
-    <button class="profile-overlay" data-profile-overlay aria-label="Close profile menu"></button>
 
     <!-- Information Strap -->
     <div class="info-strap" data-info-strap hidden>

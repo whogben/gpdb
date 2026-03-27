@@ -5,27 +5,9 @@
 <section class="dashboard-section">
   <div class="section-heading">
     <div>
-      <p class="eyebrow">Schemas</p>
-      <h2>{{ current_graph.display_name }}</h2>
-    </div>
-  </div>
-
-  <p class="resource-note">
-    Browse the registered JSON Schemas for this graph and open individual schema
-    details, including version and current usage across nodes and edges.
-  </p>
-
-  <ul class="feature-list">
-    <li>{{ schema_list.total }} {{ schema_kind }} schema{{ "" if schema_list.total == 1 else "s" }} matched.</li>
-    <li>Each schema is scoped to either nodes or edges; use the switch below to change kind.</li>
-  </ul>
-</section>
-
-<section class="dashboard-section">
-  <div class="section-heading">
-    <div>
       <p class="eyebrow">Registry</p>
       <h2>Schema list</h2>
+      <p class="resource-note">{{ schema_list.total }} {{ schema_kind }} schema{{ "" if schema_list.total == 1 else "s" }} matched</p>
     </div>
     {% if current_user.is_owner %}
     <a class="button"
