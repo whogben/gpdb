@@ -76,25 +76,30 @@
         <input name="tags" value="{{ (form_data or {}).get('tags', '') }}" placeholder="alpha, beta">
       </label>
  
-      <section
-        class="schema-editor-card"
-        data-jedison-root
-        data-mode="form"
-        data-schema-select-id="edge-type-name"
-        data-json-field-id="edge-data-json"
-      >
+      <section class="schema-editor-card" data-data-editor>
         <div class="schema-editor-card__header">
-          <h3>Schema Editor</h3>
+          <h3>Edit Data</h3>
+          <div class="data-editor-toggle">
+            <button class="data-editor-toggle__btn data-editor-toggle__btn--active" type="button" data-data-toggle="json">JSON</button>
+            <button class="data-editor-toggle__btn" type="button" data-data-toggle="editor">Editor</button>
+          </div>
         </div>
-        <div class="schema-editor-card__body" data-jedison-mount></div>
-        <p class="schema-editor-card__status" data-jedison-status></p>
-        <script type="application/json" data-jedison-schema-map>{{ schema_json_map | tojson }}</script>
+        <div data-data-panel="json" class="data-panel--active">
+          <label class="field">
+            <textarea id="edge-data-json" name="data" rows="14" required>{{ (form_data or {}).get('data', '') }}</textarea>
+          </label>
+        </div>
+        <div data-data-panel="editor"
+          data-jedison-root
+          data-mode="form"
+          data-schema-select-id="edge-type-name"
+          data-json-field-id="edge-data-json"
+        >
+          <div class="schema-editor-card__body" data-jedison-mount></div>
+          <p class="schema-editor-card__status" data-jedison-status></p>
+          <script type="application/json" data-jedison-schema-map>{{ schema_json_map | tojson }}</script>
+        </div>
       </section>
-
-      <label class="field">
-        <span>Raw JSON</span>
-        <textarea id="edge-data-json" name="data" rows="14" required>{{ (form_data or {}).get('data', '') }}</textarea>
-      </label>
 
     </form>
   </div>

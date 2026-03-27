@@ -245,6 +245,35 @@
         updateFilterToggleText();
     }
 
+    // --- Data editor toggle (JSON / Editor) ---
+
+    function initDataEditorToggle() {
+        var root = document.querySelector("[data-data-editor]");
+        if (!root) return;
+
+        var buttons = root.querySelectorAll("[data-data-toggle]");
+        var panels = root.querySelectorAll("[data-data-panel]");
+
+        buttons.forEach(function (btn) {
+            btn.addEventListener("click", function () {
+                var target = btn.getAttribute("data-data-toggle");
+
+                buttons.forEach(function (b) {
+                    b.classList.remove("data-editor-toggle__btn--active");
+                });
+                btn.classList.add("data-editor-toggle__btn--active");
+
+                panels.forEach(function (p) {
+                    if (p.getAttribute("data-data-panel") === target) {
+                        p.classList.add("data-panel--active");
+                    } else {
+                        p.classList.remove("data-panel--active");
+                    }
+                });
+            });
+        });
+    }
+
     function init() {
         navToggle = document.querySelector("[data-nav-toggle]");
         navMenu = document.querySelector("[data-nav-menu]");
@@ -258,6 +287,7 @@
         initEventListeners();
         initGraphSelector();
         initFilterBar();
+        initDataEditorToggle();
     }
 
     // --- Click-to-copy ID utility ---
