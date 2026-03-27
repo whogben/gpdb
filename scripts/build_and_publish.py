@@ -114,6 +114,36 @@ def check_git_clean(auto_confirm: bool = False) -> bool:
         return True
 
 
+def check_gephi_files_exist() -> None:
+    """Check that gephi-lite static assets have been built before publishing gpdb-admin.
+    
+    The gephi-lite files must be built at least once using scripts/update_gephi.py
+    before publishing gpdb-admin, as they are included in the package.
+    """
+    gephi_lite_dir = Path("gpdb_admin/src/gpdb/admin/web/static/gephi-lite")
+    gephi_driver = Path("gpdb_admin/src/gpdb/admin/web/static/js/gephi-driver.js")
+    
+    missing = []
+    if not gephi_lite_dir.exists() or not any(gephi_lite_dir.iterdir()):
+        missing.append(f"  - {gephi_lite_dir} (directory missing or empty)")
+    if not gephi_driver.exists():
+        missing.append(f"  - {gephi_driver}")
+    
+    if missing:
+        print_error("Gephi Lite static assets not found!")
+        print_error("gpdb-admin requires gephi-lite files to be built before publishing.")
+        print_error("")
+        print_error("Missing files:")
+        for item in missing:
+            print_error(item)
+        print_error("")
+        print_error("Run the following command to build them:")
+        print_error("  python scripts/update_gephi.py")
+        sys.exit(1)
+    
+    print_success("Gephi Lite static assets found")
+
+
 def clean_dist_dirs() -> None:
     """Clean dist directories for both packages."""
     print_header("Cleaning old build artifacts")
@@ -391,6 +421,9 @@ def main():
 
     # Build gpdb
     build_package(Path("."), "gpdb")
+
+    # Check gephi files exist before building gpdb-admin
+    check_gephi_files_exist()
 
     # Build gpdb-admin
     build_package(Path("gpdb_admin"), "gpdb-admin")
