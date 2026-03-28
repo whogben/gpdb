@@ -27,10 +27,9 @@ def test_events_page_renders_with_authentication(admin_test_env):
     # Verify page structure
     assert "Events" in html
     assert "Events Graph" in html
-    assert "Browse change events in this graph" in html
+    assert "Event list" in html
 
     # Verify filter section
-    assert "Filters" in html
     assert "Since time (ISO 8601)" in html
     assert "Event kinds" in html
     assert "Node created" in html

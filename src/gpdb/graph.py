@@ -69,10 +69,11 @@ from gpdb.events import (
     NodeOriginEdgeUpdatedEvent,
     NodeUpdatedEvent,
 )
-from gpdb.graph_event_listeners import EventListenersMixin, GPDB_EVENTS_BUFFER_KEY
-from gpdb.graph_schemas import SchemaMixin
-from gpdb.graph_nodes import NodeMixin
 from gpdb.graph_edges import EdgeMixin
+from gpdb.graph_event_listeners import EventListenersMixin, GPDB_EVENTS_BUFFER_KEY
+from gpdb.graph_nodes import NodeMixin
+from gpdb.graph_schemas import SchemaMixin
+from gpdb.migrations import CORE_MIGRATIONS, run_migrations
 
 
 class GPGraph(SchemaMixin, NodeMixin, EdgeMixin, EventListenersMixin):
@@ -200,6 +201,10 @@ class GPGraph(SchemaMixin, NodeMixin, EdgeMixin, EventListenersMixin):
                     sync_conn, checkfirst=True
                 )
             )
+
+    async def ensure_migrations(self) -> int:
+        """Run pending core migrations and return the new schema version."""
+        return await run_migrations(self.sqla_engine, scope="core", migrations=CORE_MIGRATIONS)
 
     async def drop_tables(self):
         """

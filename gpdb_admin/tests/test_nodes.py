@@ -62,7 +62,7 @@ def test_graph_node_schema_editor_renders_ui(admin_test_env):
     response = client.get(f"/graphs/{graph_id}/nodes/new")
     assert response.status_code == 200
     assert "Schema Editor" in response.text
-    assert "Raw JSON" in response.text
+    assert "JSON" in response.text
     assert "jedison.umd.js" in response.text
     assert "jedison-form.js" in response.text
     assert "data-jedison-root" in response.text

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from gpdb import Filter, FilterGroup, GPGraph, Logic, NodeRead, SearchQuery
+from gpdb.admin.migrations import run_admin_migrations
 from gpdb.admin.secrets import SecretCipher
 
 # Re-export models and exceptions
@@ -35,8 +36,10 @@ class AdminStore:
         )
 
     async def initialize(self) -> None:
-        """Create required admin tables if they do not exist."""
+        """Create required admin tables if they do not exist, then run migrations."""
         await self.db.create_tables()
+        await self.db.ensure_migrations()
+        await run_admin_migrations(self)
 
     async def close(self) -> None:
         """Dispose the underlying SQLAlchemy engine."""

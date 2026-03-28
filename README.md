@@ -489,6 +489,7 @@ await scratch.create_tables()   # creates: scratch_nodes, scratch_edges, scratch
 | Method | Description |
 |---|---|
 | `create_tables()` | Create tables (idempotent) |
+| `ensure_migrations()` | Run pending core migrations; returns new version |
 | `drop_tables()` | Drop this instance's tables |
 | `set_nodes([NodeUpsert])` | Create or update nodes |
 | `get_nodes([ids])` | Get nodes without payload |

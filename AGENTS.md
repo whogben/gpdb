@@ -91,3 +91,26 @@ Code Style:
 - NEVER lazy import inside a function. Whenever there is an "import" that is not at the top level, move it to the top level and organize it alphabetically by group: standard, 3rd party, project.  (The only exception is inside tests, where a lazy import may be appropriate.)
 - NEVER USE REGEX OR OTHER PATTERN MATCHES TO MAKE EDITS. You simply cannot control what will be edited. You must always READ EVERYTHING AND MANUALLY EDIT ALL OCCURANCES when making updates to avoid unexpected changes.
 - Centralize configuration values: When introducing configuration values (e.g., breakpoints, constants, thresholds), define them in a single place (typically as constants at the top of the relevant module) and reference them throughout the code. Avoid hardcoding the same value in multiple locations. For values that span both JavaScript and CSS, document the relationship with comments in both files.
+
+Migrations:
+- gpdb includes a lightweight migration system that keeps the database schema in sync with the installed package version. Migrations run automatically on startup — no user action is needed.
+- **How it works:** A `gpdb_migrations` table tracks which schema version the database is at. When `ensure_migrations()` is called, it reads the current version, runs any pending migration functions in order, and records each successful one. Each migration runs in its own transaction.
+- **Migration table:**
+  ```
+  gpdb_migrations:
+    scope    TEXT PRIMARY KEY   -- "core" or "admin"
+    version  INTEGER NOT NULL   -- 1, 2, 3...
+    applied  TIMESTAMPTZ DEFAULT now()
+  ```
+  The `scope` column lets the core `gpdb` package and `gpdb-admin` each maintain their own independent version sequence.
+- **Core vs admin migrations:**
+  - **Core** (`scope = "core"`) — DDL changes to the shared table structure (column additions, index changes). Defined in [`CORE_MIGRATIONS`](src/gpdb/migrations.py:104) in `src/gpdb/migrations.py`. Core migrations discover all existing prefixed tables by querying `pg_tables` and apply DDL to each.
+  - **Admin** (`scope = "admin"`) — admin-specific data seeding and config changes. Defined in `gpdb_admin/src/gpdb/admin/migrations.py`. Only runs when `gpdb-admin` is installed.
+- **Startup order:**
+  1. `create_tables()` — ensures tables exist (idempotent `CREATE IF NOT EXISTS`)
+  2. `ensure_migrations()` — ensures existing tables have the current schema
+  For a brand new database, `create_tables()` creates everything at the current schema and `ensure_migrations()` finds nothing to do. For an existing database, `create_tables()` is a no-op and `ensure_migrations()` applies the diff.
+- **Adding a new migration:** Append a `(version, description, async_function)` tuple to [`CORE_MIGRATIONS`](src/gpdb/migrations.py:104) (or `ADMIN_MIGRATIONS` in the admin package). The function receives an `AsyncConnection` and can execute arbitrary DDL or data changes.
+- **What this does not cover:**
+  - **User graph data migrations** — transforming data within a user's graph is handled separately via [`migrate_schema()`](src/gpdb/graph_schema_migrate.py:30)
+  - **Rollback** — not supported; restore from backup if needed

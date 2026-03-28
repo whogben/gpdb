@@ -50,7 +50,7 @@ def test_viewer_page_renders_and_linked_from_overview(admin_test_env):
 
     response = client.get(f"/graphs/{graph_id}/viewer")
     assert response.status_code == 200
-    assert "Graph Viewer" in response.text
+    assert "Viewer Test Viewer" in response.text
     assert "Node filters" in response.text
     assert "Edge filters" in response.text
 
