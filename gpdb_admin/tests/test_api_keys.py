@@ -231,12 +231,12 @@ def _extract_revealed_api_key(html: str) -> str:
 def _read_stored_api_key(manager, *, label: str) -> dict[str, object]:
     services = manager.app.state.services
     assert services.captive_server is not None
-    assert services.resolved_config.auth.session_secret is not None
+    assert services.resolved_config.auth.instance_secret is not None
 
     async def _load() -> dict[str, object]:
         store = AdminStore(
             services.captive_server.get_uri(),
-            instance_secret=services.resolved_config.auth.session_secret,
+            instance_secret=services.resolved_config.auth.instance_secret,
         )
         try:
             owner = await store.get_user_by_username("owner")
@@ -255,12 +255,12 @@ def _read_stored_api_key(manager, *, label: str) -> dict[str, object]:
 def _verify_api_key_with_mcp_verifier(manager, api_key_value: str):
     services = manager.app.state.services
     assert services.captive_server is not None
-    assert services.resolved_config.auth.session_secret is not None
+    assert services.resolved_config.auth.instance_secret is not None
 
     async def _verify():
         store = AdminStore(
             services.captive_server.get_uri(),
-            instance_secret=services.resolved_config.auth.session_secret,
+            instance_secret=services.resolved_config.auth.instance_secret,
         )
         try:
             verifier = entry._AdminAPIKeyTokenVerifier(

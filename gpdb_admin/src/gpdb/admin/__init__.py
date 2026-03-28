@@ -1,5 +1,7 @@
 """Admin package for the optional GPDB web/API/CLI surface."""
 
+__version__ = "0.6.1"
+
 from .config import AdminConfig, ConfigStore, ResolvedConfig
 from .entry import (
     AdminRuntime,

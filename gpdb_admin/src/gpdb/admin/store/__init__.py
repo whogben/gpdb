@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
+
 from gpdb import Filter, FilterGroup, GPGraph, Logic, NodeRead, SearchQuery
-from gpdb.admin.migrations import run_admin_migrations
+from gpdb.admin import __version__
+from gpdb.admin.migrations import (
+    check_version_compatibility,
+    register_server_version,
+    run_admin_migrations,
+)
 from gpdb.admin.secrets import SecretCipher
 
 # Re-export models and exceptions
@@ -18,6 +25,7 @@ from gpdb.admin.store.exceptions import (
     InstanceAlreadyExistsError,
     OwnerAlreadyExistsError,
     UserAlreadyExistsError,
+    VersionMismatchError,
 )
 
 # Import operation modules
@@ -29,17 +37,28 @@ ADMIN_TABLE_PREFIX = "admin"
 class AdminStore:
     """Access admin users and managed graph metadata in the captive admin DB."""
 
-    def __init__(self, url: str, *, instance_secret: str | None = None):
+    def __init__(self, url: str, *, instance_secret: str | None = None, is_host: bool = True):
         self.db = GPGraph(url, table_prefix=ADMIN_TABLE_PREFIX)
         self._instance_secret_cipher = (
             SecretCipher(instance_secret) if instance_secret else None
         )
+        self._is_host = is_host
+        self._server_id = hashlib.sha256(
+            self.db.sqla_engine.url.render_as_string(hide_password=False).encode()
+        ).hexdigest()[:16]
 
     async def initialize(self) -> None:
         """Create required admin tables if they do not exist, then run migrations."""
         await self.db.create_tables()
         await self.db.ensure_migrations()
+
+        major_minor = ".".join(__version__.split(".")[:2])
         await run_admin_migrations(self)
+
+        if self._is_host:
+            await register_server_version(self.db.sqla_engine, self._server_id, major_minor)
+        else:
+            await check_version_compatibility(self.db.sqla_engine, major_minor)
 
     async def close(self) -> None:
         """Dispose the underlying SQLAlchemy engine."""
@@ -151,4 +170,5 @@ __all__ = [
     "UserAlreadyExistsError",
     "InstanceAlreadyExistsError",
     "GraphAlreadyExistsError",
+    "VersionMismatchError",
 ]

@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gpdb.admin import entry
+from gpdb.admin.config import PostgresMode
 
 
 def test_cli_status_command():
@@ -96,3 +97,39 @@ def test_nested_admin_lifespan_reuses_active_services(admin_test_env):
     response = client.get("/")
     assert response.status_code == 200
     assert "Create the initial owner user." in response.text
+
+
+def test_external_mode_lifespan(pg_server, tmp_path):
+    """Test that external mode lifespan connects to external Postgres without starting captive server."""
+    data_dir = tmp_path / "admin-external"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "admin.toml").write_text(
+        (
+            "[server]\n"
+            'host = "127.0.0.1"\n'
+            "port = 8747\n"
+            "[auth]\n"
+            'session_secret = "test-session-secret"\n'
+            'instance_secret = "test-instance-secret"\n'
+            "[postgres]\n"
+            'mode = "external"\n'
+            f'url = "{pg_server.get_uri()}"\n'
+        ),
+        encoding="utf-8",
+    )
+    config_store = entry.ConfigStore.from_sources(cli_data_dir=data_dir)
+    resolved_config = config_store.load()
+    manager = entry.create_manager(
+        resolved_config=resolved_config, config_store=config_store
+    )
+
+    with TestClient(manager.app) as client:
+        services = manager.app.state.services
+        assert services.captive_server is None
+        assert services.admin_store is not None
+        assert services.postgres_config.mode == PostgresMode.EXTERNAL
+        assert services.postgres_config.url == pg_server.get_uri()
+
+        response = client.get("/")
+        assert response.status_code == 200
+        assert "Create the initial owner user." in response.text

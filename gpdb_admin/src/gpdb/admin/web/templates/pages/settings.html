@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+
+{% block titlebar_left %}
+<a class="titlebar-btn titlebar-btn--left titlebar-btn--cancel"
+  href="{{ mount_prefix }}{{ web_app.url_path_for('home') }}">Cancel</a>
+{% endblock %}
+
+{% block titlebar_right %}
+<button class="titlebar-btn titlebar-btn--right titlebar-btn--save" type="submit" form="settings-form">Save</button>
+{% endblock %}
+
+{% block content %}
+<form id="settings-form" class="auth-form" action="{{ mount_prefix }}{{ web_app.url_path_for('settings_save') }}" method="post">
+
+<section class="auth-layout auth-layout--full-width">
+  <div class="auth-copy">
+    <p class="eyebrow">Configuration</p>
+    <h1>Local settings</h1>
+    <p class="hero-text">
+      These values are stored in <code>admin.toml</code>. Changes take effect after restart.
+    </p>
+  </div>
+
+  <div class="auth-card">
+    <h2>Server</h2>
+
+      <label class="field">
+        <span>Host</span>
+        <input name="server_host" value="{{ config.server.host }}" required>
+      </label>
+
+      <label class="field">
+        <span>Port</span>
+        <input name="server_port" type="number" value="{{ config.server.port }}" required>
+      </label>
+
+      <label class="field">
+        <span>
+          Public URL
+          {% if env_overrides.get('server.public_url') %}<span class="env-badge">ENV</span>{% endif %}
+        </span>
+        <input name="server_public_url" value="{{ config.server.public_url or '' }}" placeholder="https://example.com">
+      </label>
+
+  </div>
+</section>
+
+<section class="dashboard-section">
+  <div class="auth-card">
+    <h2>Postgres</h2>
+
+      <label class="field">
+        <span>
+          Mode
+          {% if env_overrides.get('postgres.mode') %}<span class="env-badge">ENV</span>{% endif %}
+        </span>
+        <select name="postgres_mode" id="postgres-mode-select">
+          <option value="captive" {% if config.postgres.mode.value == 'captive' %}selected{% endif %}>Captive</option>
+          <option value="external" {% if config.postgres.mode.value == 'external' %}selected{% endif %}>External</option>
+        </select>
+      </label>
+
+      <label class="field" id="postgres-url-field" {% if config.postgres.mode.value != 'external' %}hidden{% endif %}>
+        <span>
+          URL
+          {% if env_overrides.get('postgres.url') %}<span class="env-badge">ENV</span>{% endif %}
+        </span>
+        <input name="postgres_url" value="{{ config.postgres.url or '' }}" placeholder="postgresql://user:pass@host:5432/db">
+      </label>
+
+      <label class="field field-checkbox" id="expose-postgres-field" {% if config.postgres.mode.value != 'captive' %}hidden{% endif %}>
+        <input name="postgres_expose_postgres" type="checkbox" value="true" {% if config.postgres.expose_postgres %}checked{% endif %}>
+        <span>
+          Expose Postgres via TCP
+          {% if env_overrides.get('postgres.expose_postgres') %}<span class="env-badge">ENV</span>{% endif %}
+        </span>
+      </label>
+
+      <label class="field" id="expose-port-field" {% if not config.postgres.expose_postgres %}hidden{% endif %}>
+        <span>
+          Expose Port
+          {% if env_overrides.get('postgres.expose_port') %}<span class="env-badge">ENV</span>{% endif %}
+        </span>
+        <input name="postgres_expose_port" type="number" value="{{ config.postgres.expose_port }}">
+      </label>
+
+  </div>
+</section>
+
+<section class="dashboard-section">
+  <div class="auth-card">
+    <h2>Auth</h2>
+
+      <label class="field">
+        <span>
+          Instance Secret
+          {% if env_overrides.get('auth.instance_secret') %}<span class="env-badge">ENV</span>{% endif %}
+        </span>
+        <div class="password-field">
+          <input name="auth_instance_secret" type="password" value="{{ config.auth.instance_secret or '' }}" placeholder="Leave empty to keep current" autocomplete="new-password">
+          <button type="button" class="password-toggle" aria-label="Toggle visibility">👁</button>
+        </div>
+      </label>
+
+  </div>
+</section>
+
+<section class="dashboard-section">
+  <div class="auth-card">
+    <h2>Shared</h2>
+    <dl class="resource-meta">
+      <div>
+        <dt>DB Mode</dt>
+        <dd>{{ 'Host' if is_host else 'Client' }}</dd>
+      </div>
+      <div>
+        <dt>Version</dt>
+        <dd>{{ server_version or '—' }}</dd>
+      </div>
+    </dl>
+  </div>
+</section>
+
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    {% if error_message %} showInfoStrap({{ error_message | tojson }}, 'error'); {% endif %}
+    {% if success_message %} showInfoStrap({{ success_message | tojson }}, 'success'); {% endif %}
+
+    var modeSelect = document.getElementById('postgres-mode-select');
+    var urlField = document.getElementById('postgres-url-field');
+    var exposeField = document.getElementById('expose-postgres-field');
+    var portField = document.getElementById('expose-port-field');
+
+    function updatePostgresFields() {
+      var isExternal = modeSelect.value === 'external';
+      urlField.hidden = !isExternal;
+      exposeField.hidden = isExternal;
+      if (isExternal) portField.hidden = true;
+    }
+
+    modeSelect.addEventListener('change', updatePostgresFields);
+
+    var exposeCheckbox = exposeField.querySelector('input[type="checkbox"]');
+    exposeCheckbox.addEventListener('change', function () {
+      portField.hidden = !exposeCheckbox.checked;
+    });
+
+    document.querySelectorAll('.password-toggle').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var input = btn.parentElement.querySelector('input');
+        input.type = input.type === 'password' ? 'text' : 'password';
+      });
+    });
+  });
+</script>
+{% endblock %}

@@ -112,6 +112,7 @@ def create_admin_runtime(
     services = AdminServices(
         resolved_config=resolved_config,
         config_store=config_store,
+        postgres_config=resolved_config.postgres,
     )
     lifespan = create_admin_lifespan(services)
 
@@ -288,11 +289,14 @@ def _run_start_command(
 def _ensure_runtime_config(config_store: ConfigStore) -> ResolvedConfig:
     """Ensure required runtime secrets exist before the app starts."""
     resolved_config = config_store.load()
-    if resolved_config.auth.session_secret:
+    if resolved_config.auth.session_secret and resolved_config.auth.instance_secret:
         return resolved_config
 
     updated = resolved_config.file_config.model_copy(deep=True)
-    updated.auth.session_secret = secrets.token_urlsafe(32)
+    if not updated.auth.session_secret:
+        updated.auth.session_secret = secrets.token_urlsafe(32)
+    if not updated.auth.instance_secret:
+        updated.auth.instance_secret = secrets.token_urlsafe(32)
     config_store.save(updated)
     return config_store.load()
 

@@ -6,10 +6,6 @@ Working on the Project:
 - Study the project's existing code to understand and maintain the established patterns.
 - Never use Python or terminal scripts for file editing unless its the only option - ALWAYS prefer the built in tools for working with files provided by your IDE and agent harness. (This is because the built in tools can be automatically executed, but if you use a custom python command in the terminal, it stops the entire process until the user can approve it. So NEVER use custom terminal commands just for file reading/editing unless you need to perform some task not available via the MCP tools. Search is the only exception, you can grep.)
     - DO NOT USE CAT it always registers as a separate command it is not possible to pre-approve because Kilo Code has a bug where it can't tell the difference between the arguments and the command.
-
-IN THIS HOUSE WE BUILD IT LIKE IT WAS ALWAYS MEANT TO BE THE WAY IT IS - AS THOUGH WE MADE IT RIGHT TO START
-- NO BACKWARDS COMPATIBILITY: Everything we change should be changed as if it was ALWAYS that way, BREAK COMPATIBILITY ANYTIME. We are Pre 1.0 and only supporting our own development. NEVER create shims and wrappers to preserve old compatibilities, NEVER worry about migrations - ALWAYS rewrite and change things in the state they would be if we had started with that design from the first place.
-
 `gpdb_admin/src/gpdb/admin/entry.py`:
 - When adding new admin graph tools, follow the existing pattern:
   - Put the core behavior in the shared services (for example `graph_content.py`).
@@ -19,6 +15,10 @@ IN THIS HOUSE WE BUILD IT LIKE IT WAS ALWAYS MEANT TO BE THE WAY IT IS - AS THOU
     - and keep the REST/OpenAPI, CLI, and MCP signatures and return types stable.
   - Use a single Pydantic param model that contains all the params for the method, ensuring they will be sent in the body for FastAPI.
   - Expose REST tool endpoints with POST for every operation (including creates and updates). Do not use PUT; keep a single method for all tool invocations.
+
+ToolAccess toolaccess Library:
+We are also the maintainers of the toolaccess package - if we need to make changes that include toolaccess, stop and ask the user, and we'll do those changes first.
+Write a good description of the requested toolaccess improvements to pass to the toolaccess maintainer, then give it to the user and wait.
 
 Tool parameterization (all future tools):
 - Use exactly ONE Pydantic model per operation for that operation’s parameters. That same model is used for REST (body), CLI, and MCP; do not introduce separate or duplicate param shapes.

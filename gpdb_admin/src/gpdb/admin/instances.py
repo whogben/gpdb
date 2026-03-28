@@ -59,9 +59,11 @@ class ManagedInstanceMonitor:
         *,
         admin_store: AdminStore,
         captive_url_factory: Callable[[], str],
+        on_health_change: Callable[[bool], None] | None = None,
     ) -> None:
         self.admin_store = admin_store
         self._captive_url_factory = captive_url_factory
+        self._on_health_change = on_health_change
         self._lock = asyncio.Lock()
         self._stop_event = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
@@ -168,6 +170,7 @@ class ManagedInstanceMonitor:
 
     async def _run_loop(self) -> None:
         while not self._stop_event.is_set():
+            await self._check_shared_db_health()
             try:
                 await self.refresh_all()
             except Exception:
@@ -180,6 +183,18 @@ class ManagedInstanceMonitor:
                 )
             except asyncio.TimeoutError:
                 continue
+
+    async def _check_shared_db_health(self) -> None:
+        """Run a lightweight SELECT 1 and notify via callback."""
+        try:
+            async with self.admin_store.db.sqla_engine.connect() as conn:
+                await conn.execute(text("select 1"))
+            if self._on_health_change:
+                self._on_health_change(True)
+        except Exception:
+            logging.warning("Shared database health check failed", exc_info=True)
+            if self._on_health_change:
+                self._on_health_change(False)
 
     async def _refresh_instance(self, instance: ManagedInstance) -> None:
         if not instance.is_active:

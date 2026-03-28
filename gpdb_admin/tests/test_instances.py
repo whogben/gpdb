@@ -1117,12 +1117,12 @@ def _extract_instance_action(html: str, instance_name: str, action: str) -> str:
 def _read_stored_instance_password(manager, *, slug: str) -> object:
     services = manager.app.state.services
     assert services.captive_server is not None
-    assert services.resolved_config.auth.session_secret is not None
+    assert services.resolved_config.auth.instance_secret is not None
 
     async def _load() -> object:
         store = AdminStore(
             services.captive_server.get_uri(),
-            instance_secret=services.resolved_config.auth.session_secret,
+            instance_secret=services.resolved_config.auth.instance_secret,
         )
         try:
             instance = await store.get_instance_by_slug(slug)

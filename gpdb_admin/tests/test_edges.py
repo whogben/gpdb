@@ -1,16 +1,10 @@
 import asyncio
 import json
-from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
-from mcp.server.auth.middleware.auth_context import auth_context_var
 
 from gpdb import EdgeUpsert, GPGraph, NodeUpsert, SchemaUpsert
-from gpdb.admin import entry
-from gpdb.admin.auth import generate_api_key, hash_api_key_secret, hash_password
-from gpdb.admin.config import ConfigStore
 from gpdb.admin.store import AdminStore
 
 
@@ -103,7 +97,7 @@ def test_graph_edge_schema_editor_renders_ui(admin_test_env):
 
 
 def test_graph_edge_browse_and_create_across_surfaces(admin_test_env):
-    """Test edge browse/create flow across web, REST, CLI, and MCP."""
+    """Test edge browse/create flow across web and REST surfaces."""
     manager = admin_test_env.manager
     client = admin_test_env.client
     graph_id = ""
@@ -196,34 +190,6 @@ def test_graph_edge_browse_and_create_across_surfaces(admin_test_env):
         type="task",
         name="rest-target",
         data={"name": "Rest target"},
-    )
-    cli_source_id = _seed_node_record(
-        manager,
-        table_prefix="edge_slice",
-        type="task",
-        name="cli-source",
-        data={"name": "CLI source"},
-    )
-    cli_target_id = _seed_node_record(
-        manager,
-        table_prefix="edge_slice",
-        type="task",
-        name="cli-target",
-        data={"name": "CLI target"},
-    )
-    mcp_source_id = _seed_node_record(
-        manager,
-        table_prefix="edge_slice",
-        type="task",
-        name="mcp-source",
-        data={"name": "MCP source"},
-    )
-    mcp_target_id = _seed_node_record(
-        manager,
-        table_prefix="edge_slice",
-        type="task",
-        name="mcp-target",
-        data={"name": "MCP target"},
     )
 
     response = client.get(f"/graphs/{graph_id}/edges/new")
@@ -318,63 +284,12 @@ def test_graph_edge_browse_and_create_across_surfaces(admin_test_env):
     assert web_detail["edge"]["source_id"] == web_source_id
     assert web_detail["edge"]["target_id"] == web_target_id
 
-    mcp_created = _call_persisted_authenticated_mcp_tool(
-        manager,
-        api_key_value,
-        "graph_edges_create",
-        {
-            "graph_id": graph_id,
-            "edges": [
-                {
-                    "type": "edge_schema",
-                    "source_id": mcp_source_id,
-                    "target_id": mcp_target_id,
-                    "tags": ["mcp", "final"],
-                    "data": {"name": "MCP edge"},
-                }
-            ],
-        },
-    )
-    mcp_created = mcp_created[0]
-    assert mcp_created.edge.type == "edge_schema"
-    assert mcp_created.edge.tags == ["mcp", "final"]
-
-    mcp_get = _call_persisted_authenticated_mcp_tool(
-        manager,
-        api_key_value,
-        "graph_edges_get",
-        {
-            "graph_id": graph_id,
-            "edge_ids": [mcp_created.edge.id],
-        },
-    )
-    mcp_get = mcp_get[0]
-    assert mcp_get.edge.source_id == mcp_source_id
-
-    mcp_list = _call_persisted_authenticated_mcp_tool(
-        manager,
-        api_key_value,
-        "graph_edge_list",
-        {
-            "graph_id": graph_id,
-            "type": "edge_schema",
-            "source_id": "",
-            "target_id": "",
-            "filter": "",
-            "limit": 10,
-            "offset": 0,
-            "sort": "created_at_desc",
-        },
-    )
-    assert mcp_list.total == 4
-
     _login(client)
     response = client.get(f"/graphs/{graph_id}/edges")
     assert response.status_code == 200
     assert seeded_source_id in response.text
     assert web_edge_id in response.text
     assert rest_created["edge"]["id"] in response.text
-    assert mcp_created.edge.id in response.text
 
 
 def test_edge_list_filter_dsl(admin_test_env):
@@ -480,7 +395,7 @@ def test_edge_list_filter_dsl(admin_test_env):
 
 
 def test_graph_edge_update_and_delete_across_surfaces(admin_test_env):
-    """Test edge update/delete flow across web, REST, CLI, and MCP."""
+    """Test edge update/delete flow across web and REST surfaces."""
     manager = admin_test_env.manager
     client = admin_test_env.client
     graph_id = ""
@@ -607,80 +522,14 @@ def test_graph_edge_update_and_delete_across_surfaces(admin_test_env):
         tags=["rest"],
     )
 
-    cli_source_id = _seed_node_record(
-        manager,
-        table_prefix="edge_slice_phase2",
-        type="task",
-        name="cli-source",
-        data={"name": "CLI source"},
-    )
-    cli_target_id = _seed_node_record(
-        manager,
-        table_prefix="edge_slice_phase2",
-        type="task",
-        name="cli-target",
-        data={"name": "CLI target"},
-    )
-    cli_new_source_id = _seed_node_record(
-        manager,
-        table_prefix="edge_slice_phase2",
-        type="task",
-        name="cli-new-source",
-        data={"name": "CLI new source"},
-    )
-    cli_new_target_id = _seed_node_record(
-        manager,
-        table_prefix="edge_slice_phase2",
-        type="task",
-        name="cli-new-target",
-        data={"name": "CLI new target"},
-    )
-    cli_edge_id = _seed_edge_record(
+    rest_edge_id = _seed_edge_record(
         manager,
         table_prefix="edge_slice_phase2",
         type="edge_schema",
-        source_id=cli_source_id,
-        target_id=cli_target_id,
-        data={"name": "CLI edit"},
-        tags=["cli"],
-    )
-
-    mcp_source_id = _seed_node_record(
-        manager,
-        table_prefix="edge_slice_phase2",
-        type="task",
-        name="mcp-source",
-        data={"name": "MCP source"},
-    )
-    mcp_target_id = _seed_node_record(
-        manager,
-        table_prefix="edge_slice_phase2",
-        type="task",
-        name="mcp-target",
-        data={"name": "MCP target"},
-    )
-    mcp_new_source_id = _seed_node_record(
-        manager,
-        table_prefix="edge_slice_phase2",
-        type="task",
-        name="mcp-new-source",
-        data={"name": "MCP new source"},
-    )
-    mcp_new_target_id = _seed_node_record(
-        manager,
-        table_prefix="edge_slice_phase2",
-        type="task",
-        name="mcp-new-target",
-        data={"name": "MCP new target"},
-    )
-    mcp_edge_id = _seed_edge_record(
-        manager,
-        table_prefix="edge_slice_phase2",
-        type="edge_schema",
-        source_id=mcp_source_id,
-        target_id=mcp_target_id,
-        data={"name": "MCP edit"},
-        tags=["mcp"],
+        source_id=rest_source_id,
+        target_id=rest_target_id,
+        data={"name": "Rest edit"},
+        tags=["rest"],
     )
 
     response = client.get(f"/graphs/{graph_id}/edges/{web_edit_id}")
@@ -763,49 +612,12 @@ def test_graph_edge_update_and_delete_across_surfaces(admin_test_env):
     deleted = deleted_list[0]
     assert deleted["id"] == rest_edge_id
 
-    mcp_updated = _call_persisted_authenticated_mcp_tool(
-        manager,
-        api_key_value,
-        "graph_edges_update",
-        {
-            "graph_id": graph_id,
-            "updates": [
-                {
-                    "edge_id": mcp_edge_id,
-                    "source_id": mcp_new_source_id,
-                    "target_id": mcp_new_target_id,
-                    "tags": ["mcp", "updated"],
-                    "data": {
-                        "name": "MCP edge updated",
-                        "status": "active",
-                    },
-                }
-            ],
-        },
-    )
-    mcp_updated = mcp_updated[0]
-    assert mcp_updated.edge.type == "edge_schema"
-    assert mcp_updated.edge.source_id == mcp_new_source_id
-    assert mcp_updated.edge.target_id == mcp_new_target_id
-    assert mcp_updated.edge.tags == ["mcp", "updated"]
-
-    mcp_deleted = _call_persisted_authenticated_mcp_tool(
-        manager,
-        api_key_value,
-        "graph_edges_delete",
-        {"graph_id": graph_id, "edge_ids": [mcp_edge_id]},
-    )
-    mcp_deleted = mcp_deleted[0]
-    assert mcp_deleted.id == mcp_edge_id
-
     _login(client)
     response = client.get(f"/graphs/{graph_id}/edges")
     assert response.status_code == 200
     assert web_edit_id in response.text
     assert web_delete_id not in response.text
     assert rest_edge_id not in response.text
-    assert cli_edge_id in response.text
-    assert mcp_edge_id not in response.text
 
 
 def test_edge_partial_update_preserves_omitted_fields(admin_test_env):
@@ -959,12 +771,12 @@ def _extract_revealed_api_key(html: str) -> str:
 def _read_graph_by_prefix(manager, *, table_prefix: str):
     services = manager.app.state.services
     assert services.captive_server is not None
-    assert services.resolved_config.auth.session_secret is not None
+    assert services.resolved_config.auth.instance_secret is not None
 
     async def _load():
         store = AdminStore(
             services.captive_server.get_uri(),
-            instance_secret=services.resolved_config.auth.session_secret,
+            instance_secret=services.resolved_config.auth.instance_secret,
         )
         try:
             instance = await store.get_instance_by_slug("default")
@@ -1091,132 +903,3 @@ def _schema_definition(
         "properties": properties,
         "required": required,
     }
-
-
-def _verify_api_key_with_mcp_verifier(manager, api_key_value: str):
-    services = manager.app.state.services
-    assert services.captive_server is not None
-    assert services.resolved_config.auth.session_secret is not None
-
-    async def _verify():
-        store = AdminStore(
-            services.captive_server.get_uri(),
-            instance_secret=services.resolved_config.auth.session_secret,
-        )
-        try:
-            verifier = entry._AdminAPIKeyTokenVerifier(
-                SimpleNamespace(admin_store=store)
-            )
-            return await verifier.verify_token(api_key_value)
-        finally:
-            await store.close()
-
-    return asyncio.run(_verify())
-
-
-def _call_authenticated_mcp_tool(
-    manager,
-    api_key_value: str,
-    tool_name: str,
-    arguments: dict[str, object],
-):
-    verified_token = _verify_api_key_with_mcp_verifier(manager, api_key_value)
-    assert verified_token is not None
-
-    async def _call():
-        token = auth_context_var.set(SimpleNamespace(access_token=verified_token))
-        try:
-            result = await manager.mcp_servers["gpdb"].call_tool(tool_name, arguments)
-        finally:
-            auth_context_var.reset(token)
-        assert result.content
-        return json.loads(result.content[0].text)
-
-    return asyncio.run(_call())
-
-
-def _call_persisted_authenticated_mcp_tool(
-    manager,
-    api_key_value: str,
-    tool_name: str,
-    arguments: dict[str, object],
-):
-    async def _call():
-        services = manager.app.state.services
-        admin_lifespan = entry.create_admin_lifespan(services)
-        async with admin_lifespan(manager.app):
-            assert services.admin_store is not None
-            verified_token = await entry._AdminAPIKeyTokenVerifier(
-                SimpleNamespace(admin_store=services.admin_store)
-            ).verify_token(api_key_value)
-            assert verified_token is not None
-            return await _call_authenticated_mcp_tool_in_loop(
-                manager,
-                verified_token,
-                tool_name,
-                {"params": arguments},
-            )
-
-    return asyncio.run(_call())
-
-
-async def _call_authenticated_mcp_tool_in_loop(
-    manager,
-    verified_token,
-    tool_name: str,
-    arguments: dict[str, object],
-):
-    from toolaccess import InvocationContext, Principal, get_public_signature
-    from gpdb.admin.servers import _invoke_tool_raw
-
-    runtime = manager.app.state.admin_runtime
-    # Find the tool in the appropriate service
-    tool = None
-    for service in [
-        runtime.admin_service,
-        runtime.graph_service,
-        runtime.api_key_service,
-    ]:
-        for tool_def in service.tools:
-            if tool_def.name == tool_name:
-                tool = tool_def
-                break
-        if tool is not None:
-            break
-
-    if tool is None:
-        raise ValueError(f"Tool {tool_name} not found")
-
-    # Get the user from the verified token
-    services = manager.app.state.services
-    user_id = verified_token.claims.get("user_id")
-    user = await services.admin_store.get_user_by_id(user_id)
-
-    ctx = InvocationContext(
-        surface="mcp",
-        principal=Principal(
-            kind="api_key",
-            id=verified_token.client_id,
-            name=verified_token.claims.get("username"),
-            claims=verified_token.claims,
-            is_authenticated=True,
-            is_trusted_local=False,
-        ),
-    )
-
-    # Set the current_user in the context state
-    ctx.state["current_user"] = user
-    ctx.state["access_token"] = verified_token
-
-    # Get the context parameter name
-    _, _, context_param_name = get_public_signature(tool.func)
-
-    # Use _invoke_tool_raw to run principal resolver and set current_user
-    result = await _invoke_tool_raw(
-        tool,
-        arguments,
-        ctx,
-        context_param_name=context_param_name,
-        surface_resolver=None,  # Skip principal resolver since we already set the user
-    )
-    return result

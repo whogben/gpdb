@@ -15,3 +15,7 @@ class InstanceAlreadyExistsError(RuntimeError):
 
 class GraphAlreadyExistsError(RuntimeError):
     """Raised when a managed graph prefix already exists for an instance."""
+
+
+class VersionMismatchError(RuntimeError):
+    """Raised when admin server version does not match the database version."""

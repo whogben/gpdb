@@ -31,6 +31,22 @@ class DataDirSource(str, Enum):
     DEFAULT = "default"
 
 
+class PostgresMode(str, Enum):
+    """Postgres connection mode."""
+
+    CAPTIVE = "captive"
+    EXTERNAL = "external"
+
+
+class PostgresConfig(BaseModel):
+    """Postgres connection configuration."""
+
+    mode: PostgresMode = PostgresMode.CAPTIVE
+    url: str | None = None
+    expose_postgres: bool = False
+    expose_port: int = 5433
+
+
 class ServerConfig(BaseModel):
     """Config values that shape how the admin server starts."""
 
@@ -49,6 +65,7 @@ class AuthConfig(BaseModel):
     """File-backed auth settings for the admin runtime."""
 
     session_secret: str | None = None
+    instance_secret: str | None = None
 
 
 class VizConfig(BaseModel):
@@ -64,6 +81,7 @@ class AdminConfig(BaseModel):
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     viz: VizConfig = Field(default_factory=VizConfig)
+    postgres: PostgresConfig = Field(default_factory=PostgresConfig)
 
 
 @dataclass(frozen=True)
@@ -90,6 +108,7 @@ class ResolvedConfig:
     server: ServerConfig
     runtime: RuntimeConfig
     auth: AuthConfig
+    postgres: PostgresConfig
 
 
 def default_data_dir() -> Path:
@@ -178,6 +197,29 @@ class ConfigStore:
         if os.environ.get(PUBLIC_URL_ENV_VAR):
             file_config.server.public_url = os.environ.get(PUBLIC_URL_ENV_VAR)
 
+        if os.environ.get("GPDB_POSTGRES_MODE"):
+            file_config.postgres.mode = PostgresMode(os.environ.get("GPDB_POSTGRES_MODE"))
+
+        if os.environ.get("GPDB_POSTGRES_URL"):
+            file_config.postgres.url = os.environ.get("GPDB_POSTGRES_URL")
+
+        if os.environ.get("GPDB_EXPOSE_POSTGRES"):
+            file_config.postgres.expose_postgres = os.environ.get("GPDB_EXPOSE_POSTGRES").lower() in ("true", "1", "yes", "on")
+
+        if os.environ.get("GPDB_EXPOSE_PORT"):
+            file_config.postgres.expose_port = int(os.environ.get("GPDB_EXPOSE_PORT"))
+
+        if os.environ.get("GPDB_INSTANCE_SECRET"):
+            file_config.auth.instance_secret = os.environ.get("GPDB_INSTANCE_SECRET")
+
+        # Validation: external mode requires url
+        if file_config.postgres.mode == PostgresMode.EXTERNAL and not file_config.postgres.url:
+            raise ValueError("postgres.url must be set when postgres.mode is 'external'")
+
+        # Validation: external mode requires instance_secret
+        if file_config.postgres.mode == PostgresMode.EXTERNAL and not file_config.auth.instance_secret:
+            raise ValueError("auth.instance_secret must be set when postgres.mode is 'external'")
+
         runtime = file_config.runtime.model_copy(deep=True)
         # Effective data dir is always the resolved location (never from file).
         runtime.data_dir = str(self.location.data_dir)
@@ -189,6 +231,7 @@ class ConfigStore:
             server=file_config.server.model_copy(deep=True),
             runtime=runtime,
             auth=file_config.auth.model_copy(deep=True),
+            postgres=file_config.postgres.model_copy(deep=True),
         )
 
     def save(self, config: AdminConfig) -> Path:

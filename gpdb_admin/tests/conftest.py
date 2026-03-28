@@ -92,6 +92,7 @@ def _create_test_manager(tmp_path: Path):
             "port = 8747\n"
             "[auth]\n"
             'session_secret = "test-session-secret"\n'
+            'instance_secret = "test-instance-secret"\n'
         ),
         encoding="utf-8",
     )

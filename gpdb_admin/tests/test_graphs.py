@@ -165,12 +165,12 @@ def _extract_revealed_api_key(html: str) -> str:
 def _read_graph_by_prefix(manager, *, table_prefix: str):
     services = manager.app.state.services
     assert services.captive_server is not None
-    assert services.resolved_config.auth.session_secret is not None
+    assert services.resolved_config.auth.instance_secret is not None
 
     async def _load():
         store = AdminStore(
             services.captive_server.get_uri(),
-            instance_secret=services.resolved_config.auth.session_secret,
+            instance_secret=services.resolved_config.auth.instance_secret,
         )
         try:
             instance = await store.get_instance_by_slug("default")
@@ -243,12 +243,12 @@ def _seed_graph_content(manager, *, table_prefix: str) -> None:
 def _verify_api_key_with_mcp_verifier(manager, api_key_value: str):
     services = manager.app.state.services
     assert services.captive_server is not None
-    assert services.resolved_config.auth.session_secret is not None
+    assert services.resolved_config.auth.instance_secret is not None
 
     async def _verify():
         store = AdminStore(
             services.captive_server.get_uri(),
-            instance_secret=services.resolved_config.auth.session_secret,
+            instance_secret=services.resolved_config.auth.instance_secret,
         )
         try:
             verifier = entry._AdminAPIKeyTokenVerifier(

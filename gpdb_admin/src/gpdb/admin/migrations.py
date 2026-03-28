@@ -6,8 +6,11 @@ import logging
 from typing import Any, Callable, List, Tuple
 
 from gpdb import SchemaUpsert
+from gpdb.admin.store.exceptions import VersionMismatchError
 from gpdb.migrations import run_migrations
-from sqlalchemy.ext.asyncio import AsyncConnection
+from sqlalchemy import text
+from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +20,7 @@ _BASELINE_ADMIN_NODE_SCHEMAS: tuple[SchemaUpsert, ...] = (
     SchemaUpsert(name="graph", json_schema={"type": "object"}, kind="node"),
     SchemaUpsert(name="user", json_schema={"type": "object"}, kind="node"),
     SchemaUpsert(name="api_key", json_schema={"type": "object"}, kind="node"),
+    SchemaUpsert(name="postgres_credential", json_schema={"type": "object"}, kind="node"),
 )
 _BASELINE_ADMIN_NODE_NAMES = frozenset(s.name for s in _BASELINE_ADMIN_NODE_SCHEMAS)
 
@@ -50,8 +54,22 @@ async def _migrate_1000_admin_baseline(admin_store: Any) -> None:
     await db.set_schemas(to_apply)
 
 
+async def _migrate_1001_server_versions(admin_store: Any) -> None:
+    """Create the admin_server_versions table for version compatibility tracking."""
+    create_table_sql = text("""
+        CREATE TABLE IF NOT EXISTS admin_server_versions (
+            server_id TEXT PRIMARY KEY,
+            major_minor TEXT NOT NULL,
+            connected_at TIMESTAMPTZ DEFAULT now()
+        )
+    """)
+    async with admin_store.db.sqla_engine.begin() as conn:
+        await conn.execute(create_table_sql)
+
+
 ADMIN_MIGRATIONS: List[AdminMigration] = [
     (1000, "admin baseline schemas", _migrate_1000_admin_baseline),
+    (1001, "server versions table", _migrate_1001_server_versions),
 ]
 
 # ---------------------------------------------------------------------------
@@ -74,3 +92,58 @@ async def run_admin_migrations(admin_store: Any) -> int:
     ]
 
     return await run_migrations(engine, scope="admin", migrations=wrapped)
+
+
+# ---------------------------------------------------------------------------
+# Version compatibility
+# ---------------------------------------------------------------------------
+
+
+async def check_version_compatibility(engine: AsyncEngine, expected_version: str) -> None:
+    """Check that all registered server versions match the expected version.
+
+    Args:
+        engine: SQLAlchemy async engine
+        expected_version: The major.minor version string to check against (e.g., "0.6")
+
+    Raises:
+        VersionMismatchError: If any registered server has a different version
+    """
+    select_versions = text("SELECT server_id, major_minor FROM admin_server_versions")
+    try:
+        async with engine.connect() as conn:
+            result = await conn.execute(select_versions)
+            rows = result.fetchall()
+    except ProgrammingError:
+        logger.warning("admin_server_versions table does not exist - host may not have run migrations yet")
+        return
+
+    if not rows:
+        logger.warning("admin_server_versions table is empty - host may not have written yet")
+        return
+
+    for server_id, major_minor in rows:
+        if major_minor != expected_version:
+            raise VersionMismatchError(
+                f"Version mismatch: server {server_id} has version {major_minor}, "
+                f"but expected {expected_version}"
+            )
+
+
+async def register_server_version(engine: AsyncEngine, server_id: str, version: str) -> None:
+    """Register or update a server's version in the admin_server_versions table.
+
+    Args:
+        engine: SQLAlchemy async engine
+        server_id: Unique identifier for this server instance
+        version: The major.minor version string (e.g., "0.6")
+    """
+    upsert_sql = text("""
+        INSERT INTO admin_server_versions (server_id, major_minor, connected_at)
+        VALUES (:server_id, :major_minor, now())
+        ON CONFLICT (server_id) DO UPDATE SET
+            major_minor = EXCLUDED.major_minor,
+            connected_at = EXCLUDED.connected_at
+    """)
+    async with engine.begin() as conn:
+        await conn.execute(upsert_sql, {"server_id": server_id, "major_minor": version})

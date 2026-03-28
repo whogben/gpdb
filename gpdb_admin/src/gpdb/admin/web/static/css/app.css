@@ -1281,3 +1281,40 @@ a {
     font-size: 0.8rem;
   }
 }
+
+/* Settings page */
+.env-badge {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.25rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: rgba(103, 112, 124, 0.15);
+  color: var(--muted-text);
+  vertical-align: middle;
+  margin-left: 0.4rem;
+}
+
+.password-field {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.password-field input {
+  flex: 1;
+}
+
+.password-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  background: var(--page-bg);
+  color: var(--text-color);
+  cursor: pointer;
+  font-size: 1rem;
+}
