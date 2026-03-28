@@ -27,14 +27,6 @@
 </div>
 
 <section class="dashboard-section">
-  <div class="section-heading">
-    <div>
-      <p class="eyebrow">Registry</p>
-      <h2>Schema list</h2>
-      <p class="resource-note">{{ schema_list.total }} {{ schema_kind }} schema{{ "" if schema_list.total == 1 else "s" }} matched</p>
-    </div>
-  </div>
-
   <div class="schema-kind-switch" role="tablist" aria-label="Schema kind">
     <a class="schema-kind-switch__opt{% if schema_kind == 'node' %} schema-kind-switch__opt--active{% endif %}"
       role="tab" aria-selected="{{ 'true' if schema_kind == 'node' else 'false' }}"

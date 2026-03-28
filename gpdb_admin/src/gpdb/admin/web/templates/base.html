@@ -35,26 +35,29 @@
       {% block titlebar_right %}{% endblock %}
     </header>
 
-    <!-- Navigation Menu -->
-    <nav class="nav-menu" data-nav-menu>
-      {% include 'partials/nav_menu_content.html' %}
-    </nav>
-    <button class="nav-overlay" data-nav-overlay aria-label="Close navigation"></button>
+    <!-- Navigation and Content Wrapper -->
+    <div class="app-body">
+      <!-- Navigation Menu -->
+      <nav class="nav-menu" data-nav-menu>
+        {% include 'partials/nav_menu_content.html' %}
+      </nav>
+      <button class="nav-overlay" data-nav-overlay aria-label="Close navigation"></button>
 
-    <!-- Information Strap -->
-    <div class="info-strap" data-info-strap hidden>
-      <div class="info-strap-content" data-info-strap-content></div>
-      <button class="info-strap-close" data-info-strap-close aria-label="Close notification">✕</button>
+      <!-- Main Content -->
+      <main class="main-content {% block main_extra_class %}{% endblock %}">
+        <!-- Information Strap -->
+        <div class="info-strap" data-info-strap hidden>
+          <div class="info-strap-content" data-info-strap-content></div>
+          <button class="info-strap-close" data-info-strap-close aria-label="Close notification">✕</button>
+        </div>
+
+        {% block page_messages %}
+        {% if error_message %}<p class="form-error">{{ error_message }}</p>{% endif %}
+        {% if success_message %}<p class="form-success">{{ success_message }}</p>{% endif %}
+        {% endblock %}
+        {% block content %}{% endblock %}
+      </main>
     </div>
-
-    <!-- Main Content -->
-    <main class="main-content {% block main_extra_class %}{% endblock %}">
-      {% block page_messages %}
-      {% if error_message %}<p class="form-error">{{ error_message }}</p>{% endif %}
-      {% if success_message %}<p class="form-success">{{ success_message }}</p>{% endif %}
-      {% endblock %}
-      {% block content %}{% endblock %}
-    </main>
   </div>
   {% block scripts %}{% endblock %}
 </body>

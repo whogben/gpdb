@@ -21,6 +21,15 @@ from pathlib import Path
 GEPHI_LITE_REPO = "https://github.com/gephi/gephi-lite.git"
 DEFAULT_VERSION = "@gephi/gephi-lite@1.0.2"
 
+# CSS rules to hide unsupported Gephi Lite UI elements.
+# Each entry is a (selector, comment) tuple. Add/remove as needed.
+GEPHI_HIDDEN_CSS_RULES = [
+    (".graph-title", "Graph/data page title bar"),
+    ("header .col-2.col-sm-4 .dropdown-toggle", "Header left: Workspace dropdown"),
+    ("header section.col-2.col-sm-4", "Header right: theme/locale/logo"),
+    ("#data-page .side-menu > li:first-child", "Data page first side-menu tab (Data Creation)"),
+]
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 GEPHI_SOURCE = PROJECT_ROOT / "temp_refs" / "gephi-lite"
 GEPHI_APP_DIR = GEPHI_SOURCE / "packages" / "gephi-lite"
@@ -142,6 +151,38 @@ def patch_gephi_index_for_iframe_embed() -> None:
     print(f"Patched {path.name} for iframe-relative height")
 
 
+def _build_hide_css(rules: list[tuple[str, str]]) -> str:
+    """Build a <style> block that hides elements matching CSS selectors."""
+    lines = [
+        "    <!-- gpdb: hide unsupported UI elements -->",
+        "    <style>",
+    ]
+    for selector, comment in rules:
+        lines.append(f"      /* {comment} */")
+        lines.append(f"      {selector} {{ display: none !important; }}")
+    lines.extend([
+        "    </style>",
+    ])
+    return "\n".join(lines) + "\n"
+
+
+def patch_gephi_index_hide_elements() -> None:
+    """Inject CSS rules that hide unsupported Gephi Lite UI elements."""
+    if not GEPHI_HIDDEN_CSS_RULES:
+        return
+    path = GEPHI_OUTPUT / "index.html"
+    text = path.read_text(encoding="utf-8")
+    marker = "<!-- gpdb: hide unsupported UI elements -->"
+    if marker in text:
+        return
+    inject = _build_hide_css(GEPHI_HIDDEN_CSS_RULES)
+    i = text.rfind("</head>")
+    if i == -1:
+        sys.exit(f"No </head> in {path}")
+    path.write_text(text[:i] + inject + text[i:], encoding="utf-8")
+    print(f"Patched {path.name} to hide {len(GEPHI_HIDDEN_CSS_RULES)} UI elements")
+
+
 def copy_gephi_lite_app() -> None:
     """Copy the Vite build output to our static directory."""
     build_dir = GEPHI_APP_DIR / "build"
@@ -152,6 +193,7 @@ def copy_gephi_lite_app() -> None:
     shutil.copytree(build_dir, GEPHI_OUTPUT)
     print(f"Copied gephi-lite build to {GEPHI_OUTPUT}")
     patch_gephi_index_for_iframe_embed()
+    patch_gephi_index_hide_elements()
 
 
 def main() -> None:

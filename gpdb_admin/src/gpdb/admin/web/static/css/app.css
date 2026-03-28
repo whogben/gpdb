@@ -29,6 +29,14 @@ a {
   min-height: 100vh;
 }
 
+/* App Body - wraps nav menu and main content */
+.app-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 /* Titlebar */
 .titlebar {
   display: flex;
@@ -122,20 +130,22 @@ a {
   padding: 0 0.75rem;
 }
 
-/* Navigation Menu */
+/* Navigation Menu — base: fixed, hidden off-screen */
 .nav-menu {
   position: fixed;
   top: var(--titlebar-height);
   left: 0;
   bottom: 0;
-  width: 280px;
+  width: 200px;
   max-width: 85vw;
   z-index: 200;
   transform: translateX(-100%);
   transition: transform 0.3s ease;
 }
 
-.nav-menu--open {
+/* Case: Narrow + Open — fixed, visible, overlay with scrim */
+.nav-menu--overlay.nav-menu--open {
+  position: fixed;
   transform: translateX(0);
 }
 
@@ -175,8 +185,12 @@ a {
   margin-bottom: 0;
 }
 
+.nav-spacer {
+  flex: 1;
+  min-height: 0;
+}
+
 .nav-footer {
-  margin-top: auto;
   padding-top: 1rem;
   font-size: 0.75rem;
   color: var(--muted-text);
@@ -187,6 +201,12 @@ a {
   text-transform: uppercase;
   letter-spacing: 0.12em;
   margin-right: 0.35rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.nav-footer-label:hover {
+  text-decoration: underline;
 }
 
 .nav-footer-version {
@@ -234,6 +254,15 @@ a {
   background: var(--border-color);
 }
 
+.nav-link--active {
+  background: var(--accent-color);
+  color: white;
+}
+
+.nav-link--active:hover {
+  background: color-mix(in srgb, var(--accent-color) 85%, white);
+}
+
 .nav-link--settings {
   display: inline-flex;
   align-items: center;
@@ -244,6 +273,20 @@ a {
   border-radius: 0.5rem;
   font-size: 1.05rem;
   color: var(--muted-text);
+}
+
+.nav-link-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border-radius: 0.5rem;
+  font-size: 1.05rem;
+  font-family: serif;
+  font-style: italic;
+  font-weight: bold;
 }
 
 .nav-link--danger {
@@ -306,7 +349,7 @@ a {
 /* Main Content */
 .main-content {
   flex: 1;
-  padding: 1.5rem 1rem;
+  padding: 3rem 2rem;
   width: 100%;
   max-width: 1200px;
   margin: 0 auto;
@@ -336,20 +379,30 @@ a {
 }
 
 /* Responsive: Desktop nav menu can stay open */
+/* Note: This breakpoint (801px) must match NAV_PUSH_BREAKPOINT in ui.js */
 @media (min-width: 801px) {
-  .nav-menu.nav-menu--persistent {
-    position: sticky;
-    top: var(--titlebar-height);
-    transform: translateX(0);
-    height: calc(100vh - var(--titlebar-height));
+  .app-body {
+    flex-direction: row;
   }
 
-  .nav-menu.nav-menu--persistent .nav-overlay {
+  /* Wide + Open: sticky, visible, squishes content */
+  .nav-menu--push.nav-menu--open {
+    position: sticky;
+    top: var(--titlebar-height);
+    height: calc(100vh - var(--titlebar-height));
+    transform: translateX(0);
+    flex-shrink: 0;
+  }
+
+  .nav-menu .nav-overlay {
     display: none;
   }
 
   .main-content {
-    padding: 1rem 0.5rem;
+    padding: 2rem 1rem;
+    max-width: 1200px;
+    margin: 0 auto;
+    flex: 1;
   }
 }
 
@@ -381,7 +434,7 @@ a {
   }
 
   .main-content {
-    padding: 0;
+    padding: 2rem 1.5rem;
   }
 }
 

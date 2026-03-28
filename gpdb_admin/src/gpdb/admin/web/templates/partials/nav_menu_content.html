@@ -37,12 +37,8 @@
         </a>
     </div>
     {% endif %}
-    <div class="nav-section" data-nav-section="system">
-        <label class="nav-label">System</label>
-        <a class="nav-link" href="{{ mount_prefix }}{{ web_app.url_path_for('home') }}" data-nav-link="dashboard">
-            ⌂ Dashboard
-        </a>
-    </div>
+
+    <div class="nav-spacer"></div>
 
     <div class="nav-section" data-nav-section="profile">
         <label class="nav-label">{{ current_user.username if current_user else 'Guest' }}</label>
@@ -57,10 +53,10 @@
         </a>
     </div>
 
-    {% if admin_version %}
     <div class="nav-footer">
-        <span class="nav-footer-label">gpdb-admin</span>
+        {% if admin_version %}
+        <a class="nav-footer-label" href="https://github.com/whogben/gpdb" target="_blank" rel="noopener noreferrer">gpdb-admin</a>
         <span class="nav-footer-version">v{{ admin_version }}</span>
+        {% endif %}
     </div>
-    {% endif %}
 </div>

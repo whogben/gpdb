@@ -1,6 +1,5 @@
 {% if graphs is defined %}
 <div class="nav-section" data-graph-selector-section>
-    <label class="nav-label">Graph</label>
     {% set selected_graph_id = (
         current_graph.id
         if current_graph is defined and current_graph
@@ -17,11 +16,10 @@
             {% endif %}
         </select>
         {% if graphs and graphs|length > 0 and selected_graph_id %}
-        <a class="nav-link nav-link--settings"
+        <a class="nav-link nav-link-icon"
             href="{{ mount_prefix }}{{ web_app.url_path_for('graph_overview_page', graph_id=selected_graph_id) }}"
-            data-graph-settings-link
-            aria-label="Open graph settings">
-            ⚙️
+            aria-label="View graph overview">
+            i
         </a>
         {% endif %}
     </div>

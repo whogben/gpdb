@@ -7,28 +7,79 @@
     var navOverlay;
     var infoStrap, infoStrapContent, infoStrapClose;
     var graphSelect, graphSettingsLink;
+    var NAV_MENU_STATE_KEY = "gpdb_nav_menu_open";
+    var NAV_PUSH_BREAKPOINT = 801;
 
-    function toggleNavMenu(show) {
-        if (show === undefined) {
-            show = !navMenu.classList.contains("nav-menu--open");
-        }
-        if (show) {
-            navMenu.classList.add("nav-menu--open");
-            if (navOverlay) {
-                navOverlay.classList.add("nav-overlay--open");
-            }
-        } else {
-            navMenu.classList.remove("nav-menu--open");
-            if (navOverlay) {
-                navOverlay.classList.remove("nav-overlay--open");
-            }
+    function saveNavMenuState(isOpen) {
+        try {
+            localStorage.setItem(NAV_MENU_STATE_KEY, isOpen ? "open" : "closed");
+        } catch (e) {
         }
     }
 
-    function closeAllMenus() {
-        navMenu.classList.remove("nav-menu--open");
+    function loadNavMenuState() {
+        try {
+            var state = localStorage.getItem(NAV_MENU_STATE_KEY);
+            return state === "open";
+        } catch (e) {
+            return false;
+        }
+    }
+
+    // Apply the correct classes for the 4 states:
+    //   Wide + Open:    nav-menu--open nav-menu--push   (sticky, visible, squishes content)
+    //   Wide + Closed:  (no extra classes)               (fixed, hidden off-screen)
+    //   Narrow + Open:  nav-menu--open nav-menu--overlay (fixed, visible, overlay with scrim)
+    //   Narrow + Closed: (no extra classes)               (fixed, hidden off-screen)
+    function applyNavState(isOpen, skipTransition) {
+        if (skipTransition) {
+            navMenu.style.transition = "none";
+        }
+
+        // Reset all mode classes
+        navMenu.classList.remove("nav-menu--open", "nav-menu--push", "nav-menu--overlay");
         if (navOverlay) {
             navOverlay.classList.remove("nav-overlay--open");
+        }
+
+        if (isOpen) {
+            var isWideScreen = window.innerWidth >= NAV_PUSH_BREAKPOINT;
+            navMenu.classList.add("nav-menu--open");
+            if (isWideScreen) {
+                navMenu.classList.add("nav-menu--push");
+            } else {
+                navMenu.classList.add("nav-menu--overlay");
+                if (navOverlay) {
+                    navOverlay.classList.add("nav-overlay--open");
+                }
+            }
+        }
+
+        saveNavMenuState(isOpen);
+
+        if (skipTransition) {
+            navMenu.offsetHeight; // force reflow
+            navMenu.style.transition = "";
+        }
+    }
+
+    function toggleNavMenu(show, skipTransition) {
+        if (show === undefined) {
+            show = !navMenu.classList.contains("nav-menu--open");
+        }
+        applyNavState(show, skipTransition);
+    }
+
+    function closeAllMenus() {
+        applyNavState(false, false);
+    }
+
+    function restoreNavMenuState() {
+        var isOpen = loadNavMenuState();
+        var isWideScreen = window.innerWidth >= NAV_PUSH_BREAKPOINT;
+        // Only restore open state on wide screens; narrow always starts closed
+        if (isOpen && isWideScreen) {
+            applyNavState(true, true);
         }
     }
 
@@ -143,10 +194,7 @@
 
         if (navOverlay) {
             navOverlay.addEventListener("click", function () {
-                navMenu.classList.remove("nav-menu--open");
-                if (navOverlay) {
-                    navOverlay.classList.remove("nav-overlay--open");
-                }
+                applyNavState(false, false);
             });
         }
 
@@ -159,13 +207,33 @@
         document.addEventListener("click", function (e) {
             var navLink = e.target.closest(".nav-link");
             if (navLink) {
-                closeAllMenus();
+                // On wide screens, keep nav menu open; on narrow screens, close it
+                if (window.innerWidth < NAV_PUSH_BREAKPOINT) {
+                    closeAllMenus();
+                }
             }
         });
 
         document.addEventListener("keydown", function (e) {
             if (e.key === "Escape") {
                 closeAllMenus();
+            }
+        });
+
+        // Re-apply nav state when crossing the push/overlay breakpoint
+        var mql = window.matchMedia("(min-width: " + NAV_PUSH_BREAKPOINT + "px)");
+        mql.addEventListener("change", function () {
+            var isOpen = navMenu.classList.contains("nav-menu--open");
+            applyNavState(isOpen, false);
+        });
+
+        // Highlight active navigation link (exact or path-prefix match)
+        var currentPath = window.location.pathname;
+        var navLinks = document.querySelectorAll('[data-nav-link]');
+        navLinks.forEach(function (link) {
+            var linkPath = link.getAttribute("href");
+            if (linkPath && (currentPath === linkPath || currentPath.indexOf(linkPath + "/") === 0)) {
+                link.classList.add("nav-link--active");
             }
         });
 
@@ -288,6 +356,7 @@
         initGraphSelector();
         initFilterBar();
         initDataEditorToggle();
+        restoreNavMenuState();
     }
 
     // --- Click-to-copy ID utility ---

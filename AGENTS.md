@@ -90,3 +90,4 @@ ToolAccess Integration:
 Code Style:
 - NEVER lazy import inside a function. Whenever there is an "import" that is not at the top level, move it to the top level and organize it alphabetically by group: standard, 3rd party, project.  (The only exception is inside tests, where a lazy import may be appropriate.)
 - NEVER USE REGEX OR OTHER PATTERN MATCHES TO MAKE EDITS. You simply cannot control what will be edited. You must always READ EVERYTHING AND MANUALLY EDIT ALL OCCURANCES when making updates to avoid unexpected changes.
+- Centralize configuration values: When introducing configuration values (e.g., breakpoints, constants, thresholds), define them in a single place (typically as constants at the top of the relevant module) and reference them throughout the code. Avoid hardcoding the same value in multiple locations. For values that span both JavaScript and CSS, document the relationship with comments in both files.
